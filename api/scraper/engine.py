@@ -159,18 +159,21 @@ class SniperEngine:
     async def discover_portal_url(self, portal_url: str, suburb: str, task_id: str = None) -> str:
         """Rapidly discovers the deep results URL for a specific suburb on a portal."""
         async with async_playwright() as p:
-            # Use headless for discovery for speed
-            browser = await p.chromium.launch(headless=True)
+            # Harden browser for Docker
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            )
             context = await browser.new_context(viewport={'width': 1280, 'height': 800})
             page = await context.new_page()
             
             try:
                 if task_id:
-                    update_task(task_id, "Brain", f"🧠 Discovery: Scouting {suburb} on {portal_url}...")
+                    update_task(task_id, "Brain", f"🏗️ Scouting {suburb}...")
                 
                 await page.goto(portal_url, wait_until="networkidle", timeout=30000)
                 
-                # Property24 Auto-Discovery
+                # Property24 Auto-Discovery Only
                 if "property24.com" in portal_url:
                     search_input = page.locator("#token-input-AutoCompleteItems, input[placeholder*='suburb' i]").first
                     await search_input.wait_for(state="visible", timeout=10000)
@@ -185,16 +188,7 @@ class SniperEngine:
                     await page.wait_for_url(lambda u: "/to-rent/" in u and len(u.split("/")) > 4, timeout=10000)
                     return page.url
 
-                # Gumtree Auto-Discovery
-                if "gumtree.co.za" in portal_url:
-                    search_input = page.locator("input[placeholder*='looking for' i], #search-query").first
-                    await search_input.wait_for(state="visible", timeout=10000)
-                    await search_input.fill(suburb)
-                    await page.keyboard.press("Enter")
-                    await page.wait_for_url(lambda u: "v1c" in u or "/s-" in u, timeout=10000)
-                    return page.url
-
-                return portal_url # Fallback
+                return portal_url
             except Exception as e:
                 print(f"Discovery Error: {str(e)}")
                 return portal_url
