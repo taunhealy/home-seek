@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #050505;
+  --color-foreground: #fafafa;
+  
+  --color-emerald-primary: #10b981;
+  --color-emerald-secondary: #059669;
+  --color-emerald-muted: rgba(16, 185, 129, 0.1);
+  
+  --font-sans: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --background: #050505;
+  --foreground: #fafafa;
+  --emerald: #10b981;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Premium Grid Backdrop */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Ambient Mesh Gradient */
+body::after {
+  content: "";
+  position: fixed;
+  top: -20%;
+  right: -10%;
+  width: 60%;
+  height: 60%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 70%);
+  filter: blur(80px);
+  z-index: -2;
+  pointer-events: none;
+  animation: mesh-float 20s infinite alternate ease-in-out;
+}
+
+@keyframes mesh-float {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-10%, 10%); }
+}
+
+/* Glassmorphism upgrade */
+.glass {
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+.glass-emerald {
+  background: rgba(16, 185, 129, 0.03);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.05);
+}
+
+.sniper-ping {
+  animation: ping-pulse 2s infinite;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+}
+
+@keyframes ping-pulse {
+  0% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); box-shadow: 0 0 25px rgba(16, 185, 129, 0.6); }
+  100% { opacity: 0.4; transform: scale(1); }
+}
+
+.card-gradient {
+  background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(16,185,129,0.01) 100%);
+}
