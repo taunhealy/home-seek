@@ -67,13 +67,11 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
             # 3. Scrape targets: If we have a location to search, ALWAYS use clean portals for a fresh start.
             if search_location != "South Africa":
                 scrape_targets = [
-                    {"name": "Property24 (Direct)", "url": "https://www.property24.com/to-rent"},
-                    {"name": "Gumtree (Direct)", "url": "https://www.gumtree.co.za/s-property/v1c2l1j1"}
+                    {"name": "Property24 (Direct)", "url": "https://www.property24.com/to-rent"}
                 ]
             else:
                 scrape_targets = sources if sources else [
-                    {"name": "Property24 Portal", "url": "https://www.property24.com/to-rent"},
-                    {"name": "Gumtree Portal", "url": "https://www.gumtree.co.za/s-property/v1c2l1j1"}
+                    {"name": "Property24 Portal", "url": "https://www.property24.com/to-rent"}
                 ]
 
             # 3. Discovery Stage: Scout for deep-links
@@ -83,6 +81,9 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
                 for source in scrape_targets:
                     source_url = source.get('url')
                     if not source_url: continue
+                    
+                    # Target only Property24 for now as per user request
+                    if "property24.com" not in source_url: continue
                     
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] Scouting {source.get('name')} for {search_location}...")
                     discovered_url = await engine.discover_portal_url(source_url, search_location, task_id=task_id)
@@ -97,7 +98,8 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
                         print(f"[{datetime.now().strftime('%H:%M:%S')}] Discovery Fallback: Using root portal.")
                         discovered_targets.append(source)
             else:
-                discovered_targets = scrape_targets
+                # Filter out Gumtree even in default mode if requested
+                discovered_targets = [s for s in scrape_targets if "property24.com" in s.get('url', '')]
 
             # 4. Scrape Stage: Direct Extraction
             for source in discovered_targets:
