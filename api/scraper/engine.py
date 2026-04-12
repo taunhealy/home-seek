@@ -8,14 +8,44 @@ from intelligence.extractor import GeminiExtractor
 from schemas import ExtractionResult
 # from database import update_task # Moving to local scopes to avoid circular imports
 
+try:
+    from crawl4ai import AsyncWebCrawler
+    CRAWL_AVAILABLE = True
+except ImportError:
+    CRAWL_AVAILABLE = False
+
 class SniperEngine:
     def __init__(self):
         self.extractor = GeminiExtractor()
         self.browserless_url = os.getenv("BROWSERLESS_URL") # e.g. wss://chrome.browserless.io?token=YOUR-TOKEN
 
     async def scrape_url(self, url: str, use_cookies: bool = True, task_id: Optional[str] = None, search_query: Optional[str] = None) -> ExtractionResult:
+        """The 'Sniper' extraction stage - now enhanced with Hybrid (Crawl4AI) support."""
         from database import update_task
         
+        # 🟢 HYBRID MODE: If we have Crawl4AI and it's a deep-link, use the specialized Sniper
+        is_deep_link = "/to-rent/" in url and len(url.split("/")) > 4
+        if CRAWL_AVAILABLE and is_deep_link:
+            if task_id:
+                update_task(task_id, "Extraction", "🕷️ Deploying Crawl4AI Sniper for precision extraction...")
+            
+            async with AsyncWebCrawler() as crawler:
+                result = await crawler.arun(
+                    url=url,
+                    bypass_cache=True,
+                    magic=True, # Handles bot-bypass and JS rendering
+                    wait_for="css:.p24_results, .p24_listings, #search-results"
+                )
+                
+                if result.success:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Crawl4AI Success! (Size: {len(result.markdown)} chars)")
+                    # Hand over the clean markdown to Gemini for structured extraction
+                    final_result = await self.extractor.extract(result.markdown, ExtractionResult)
+                    return final_result
+                else:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Crawl4AI Fallback: Error {result.error_message}")
+        
+        # 🟡 FALLBACK: Standard Playwright Sniper (still includes our Docker stability flags)
         if task_id:
             update_task(task_id, "Initializing", "🛠️ Initializing secure browser context...")
 
@@ -157,8 +187,39 @@ class SniperEngine:
             return result
 
     async def discover_portal_url(self, portal_url: str, suburb: str, task_id: str = None) -> str:
-        """Rapidly discovers the deep results URL for a specific suburb on a portal."""
+        """Instantaneously discovers the deep results URL for a specific suburb via internal APIs."""
         from database import update_task
+        import httpx
+        
+        if task_id:
+            update_task(task_id, "Brain", f"⚡️ Hyper-API: Scouting {suburb}...")
+            
+        # 1. Property24 Hyper-API Scout
+        if "property24.com" in portal_url:
+            try:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Discovery starting for {suburb}...")
+                api_url = f"https://www.property24.com/Search/AutoCompleteItems?term={suburb}"
+                
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(api_url)
+                    if response.status_code == 200:
+                        matches = response.json()
+                        if matches and len(matches) > 0:
+                            # Typically the first match is the most relevant
+                            item = matches[0]
+                            relative_url = item.get("Url")
+                            if relative_url:
+                                final_url = f"https://www.property24.com{relative_url}"
+                                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Success: {final_url}")
+                                if task_id:
+                                    update_task(task_id, "Brain", f"✅ Hyper-API Found: {suburb}")
+                                return final_url
+                
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API no match found. Falling back to browser...")
+            except Exception as e:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Error: {str(e)}")
+
+        # 2. Browser Fallback (Legacy Scout)
         async with async_playwright() as p:
             # Harden browser for Docker
             browser = await p.chromium.launch(
@@ -169,9 +230,6 @@ class SniperEngine:
             page = await context.new_page()
             
             try:
-                if task_id:
-                    update_task(task_id, "Brain", f"🏗️ Scouting {suburb}...")
-                
                 await page.goto(portal_url, wait_until="networkidle", timeout=30000)
                 
                 # Property24 Auto-Discovery Only
@@ -191,7 +249,7 @@ class SniperEngine:
 
                 return portal_url
             except Exception as e:
-                print(f"Discovery Error: {str(e)}")
+                print(f"Discovery Fallback Error: {str(e)}")
                 return portal_url
             finally:
                 await browser.close()

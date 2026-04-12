@@ -10,3 +10,4 @@ firebase-admin
 httpx
 python-dotenv
 pytest
+crawl4ai
