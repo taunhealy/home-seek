@@ -1,0 +1,25 @@
+# Environment
+.env
+.env.local
+.env.*.local
+service-account.json
+
+# Node
+node_modules/
+dist/
+.next/
+out/
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
