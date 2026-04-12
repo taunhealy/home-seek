@@ -201,12 +201,22 @@ class SniperEngine:
                 api_url = f"https://www.property24.com/Search/AutoCompleteItems?term={suburb}"
                 
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.get(api_url)
+                    headers = {
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Referer": "https://www.property24.com/to-rent",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                    }
+                    response = await client.get(api_url, headers=headers)
                     if response.status_code == 200:
                         matches = response.json()
+                        # Log response for debugging if empty
+                        if not matches:
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Match Warning: Response was empty list []")
+                        
                         if matches and len(matches) > 0:
                             # Typically the first match is the most relevant
                             item = matches[0]
+                            # Property24 AutoCompleteItems usually returns a partial URL in 'Url' field
                             relative_url = item.get("Url")
                             if relative_url:
                                 final_url = f"https://www.property24.com{relative_url}"
