@@ -74,12 +74,31 @@ class SniperEngine:
                                 await cookie_close.click()
                         except: pass
 
-                        # More robust selector with case-insensitivity flag 'i'
-                        search_input = page.locator("#token-input-AutoCompleteItems, input[placeholder*='suburb' i], input[placeholder*='Search' i]").first
+                        # Targets the specific Property24 AutoComplete search bar
+                        search_input = page.locator("#token-input-AutoCompleteItems, input[placeholder*='suburb' i]").first
                         await search_input.wait_for(state="visible", timeout=10000)
+                        
+                        # Clear and Type
+                        await search_input.click()
+                        await page.keyboard.press("Control+A")
+                        await page.keyboard.press("Backspace")
                         await search_input.fill(search_query)
-                        await asyncio.sleep(1)
+                        
+                        # Wait for suggestions dropdown and select the first one
+                        await asyncio.sleep(2)
+                        await page.keyboard.press("ArrowDown")
+                        await asyncio.sleep(0.5)
                         await page.keyboard.press("Enter")
+                        
+                        # Explicitly click the SEARCH button to trigger redirection
+                        search_btn = page.locator("button.btn-danger, button:has-text('Search')").first
+                        await search_btn.click()
+                        
+                        # Wait for the results page to load
+                        try:
+                            await page.wait_for_url(lambda url: "to-rent" in url and "search" not in url, timeout=10000)
+                        except:
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] Redirect timeout, proceeding with current URL: {page.url}")
                     elif "gumtree.co.za" in url:
                         # Gumtree search bar
                         search_input = page.locator("input[placeholder*='looking for' i], #search-query").first
@@ -89,6 +108,7 @@ class SniperEngine:
                     
                     # Wait for results page with a longer timeout
                     await page.wait_for_load_state("networkidle", timeout=30000)
+                    await asyncio.sleep(2) # Extra buffer for redirection
                     if task_id:
                         update_task(task_id, "Scanning", "🎯 Arrived at results page. Scanning...")
                 except Exception as e:

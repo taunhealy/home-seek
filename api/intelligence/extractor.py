@@ -79,3 +79,9 @@ class GeminiExtractor:
         except Exception as e:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] AI Filtering Error: {str(e)}")
             return []
+
+    async def determine_location(self, query: str) -> str:
+        """Uses AI to extract the primary geographic area from a user's free-text prompt."""
+        prompt = f"Identify the primary City or Suburb in South Africa mentioned in this rental search: '{query}'. Return ONLY the location name (e.g. 'Claremont' or 'Cape Town'). If no location is found, return 'South Africa'."
+        response = await self.llm.ainvoke(prompt)
+        return response.content.strip()

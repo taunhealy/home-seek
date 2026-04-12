@@ -55,19 +55,35 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
                     {"name": "Property24 Portal", "url": "https://www.property24.com/to-rent"},
                     {"name": "Gumtree Portal", "url": "https://www.gumtree.co.za/s-property/v1c2l1j1"}
                 ]
-            update_task(task_id, "Initializing", f"Found {len(sources)} sources to scan...")
+            
+            # 2. Determine Search Location from Prompt
+            update_task(task_id, "Brain", "🧠 Intelligence analyzing location...")
+            search_location = await engine.extractor.determine_location(search.search_query)
+            update_task(task_id, "Brain", f"🧠 Intelligence identified search area: {search_location}")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Smart Search Area: {search_location}")
             
             all_extracted_listings = []
             
-            # 2. Scrape each source
-            for source in sources:
+            # 3. Scrape targets: If we have a location to search, ALWAYS use clean portals for a fresh start.
+            if search_location != "South Africa":
+                scrape_targets = [
+                    {"name": "Property24 (Direct)", "url": "https://www.property24.com/to-rent"},
+                    {"name": "Gumtree (Direct)", "url": "https://www.gumtree.co.za/s-property/v1c2l1j1"}
+                ]
+            else:
+                scrape_targets = sources if sources else [
+                    {"name": "Property24 Portal", "url": "https://www.property24.com/to-rent"},
+                    {"name": "Gumtree Portal", "url": "https://www.gumtree.co.za/s-property/v1c2l1j1"}
+                ]
+
+            for source in scrape_targets:
                 source_url = source.get('url')
                 if not source_url: continue
                 
                 try:
                     update_task(task_id, f"Scraping {source.get('name', 'Source')}", f"🕷️ Connecting to {source_url}...")
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction starting for {source_url}...")
-                    result = await engine.scrape_url(source_url, task_id=task_id, search_query=search.search_query)
+                    result = await engine.scrape_url(source_url, task_id=task_id, search_query=search_location)
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction result: {len(result.listings)} items found, confidence: {result.confidence_score}")
                     all_extracted_listings.extend(result.listings)
                     update_task(task_id, f"Scraping {source.get('name', 'Source')}", f"✅ Extracted {len(result.listings)} items.")
@@ -79,7 +95,7 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
                 update_task(task_id, "Empty", "No listings found in sources.", completed=True)
                 return
 
-            # 3. AI Filter
+            # 4. AI Filter using Original Detailed Query
             update_task(task_id, "AI Filtering", f"🧠 Intelligence Engine evaluating {len(all_extracted_listings)} extracted items...")
             print(f"[{datetime.now().strftime('%H:%M:%S')}] AI Filtering {len(all_extracted_listings)} items for query: '{search.search_query}'")
             scored_listings = await engine.extractor.filter_listings(all_extracted_listings, search.search_query)
@@ -88,7 +104,7 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
             if len(all_extracted_listings) > 0 and not scored_listings:
                  update_task(task_id, "Filtering", "⚠️ Evaluated extracted items, but none met the 50% match score threshold.")
             
-            # 4. Save and optionally Notify
+            # 5. Save and Notify
             match_count = 0
             for item in scored_listings:
                 try:
@@ -97,7 +113,7 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
                         item.user_id = search.user_id
                         await save_listing(item.model_dump())
                     
-                        # 5. Notifications
+                        # WhatsApp/Notification integration
                         if search.alert_enabled:
                             tier = user_profile.get("tier", "free")
                             wa_number = user_profile.get("whatsapp")
