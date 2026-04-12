@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from intelligence.extractor import GeminiExtractor
 from schemas import ExtractionResult
-from database import update_task
+# from database import update_task # Moving to local scopes to avoid circular imports
 
 class SniperEngine:
     def __init__(self):
@@ -158,6 +158,7 @@ class SniperEngine:
 
     async def discover_portal_url(self, portal_url: str, suburb: str, task_id: str = None) -> str:
         """Rapidly discovers the deep results URL for a specific suburb on a portal."""
+        from database import update_task
         async with async_playwright() as p:
             # Harden browser for Docker
             browser = await p.chromium.launch(
