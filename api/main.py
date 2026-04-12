@@ -76,13 +76,38 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
                     {"name": "Gumtree Portal", "url": "https://www.gumtree.co.za/s-property/v1c2l1j1"}
                 ]
 
-            for source in scrape_targets:
+            # 3. Discovery Stage: Scout for deep-links
+            discovered_targets = []
+            if search_location.lower() != "south africa":
+                update_task(task_id, "Brain", f"🏗️ Discovery: Scouting deep-links for {search_location}...")
+                for source in scrape_targets:
+                    source_url = source.get('url')
+                    if not source_url: continue
+                    
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Scouting {source.get('name')} for {search_location}...")
+                    discovered_url = await engine.discover_portal_url(source_url, search_location, task_id=task_id)
+                    
+                    if discovered_url and discovered_url != source_url:
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] Discovery Success: {discovered_url}")
+                        discovered_targets.append({
+                            "name": f"{source.get('name')} (Discovered)",
+                            "url": discovered_url
+                        })
+                    else:
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] Discovery Fallback: Using root portal.")
+                        discovered_targets.append(source)
+            else:
+                discovered_targets = scrape_targets
+
+            # 4. Scrape Stage: Direct Extraction
+            for source in discovered_targets:
                 source_url = source.get('url')
                 if not source_url: continue
                 
                 try:
                     update_task(task_id, f"Scraping {source.get('name', 'Source')}", f"🕷️ Connecting to {source_url}...")
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction starting for {source_url}...")
+                    # We pass the search_location again for filtering, but scraping is direct
                     result = await engine.scrape_url(source_url, task_id=task_id, search_query=search_location)
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction result: {len(result.listings)} items found, confidence: {result.confidence_score}")
                     all_extracted_listings.extend(result.listings)

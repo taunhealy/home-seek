@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional
 from intelligence.extractor import GeminiExtractor
 from schemas import ExtractionResult
+from database import update_task
 
 class SniperEngine:
     def __init__(self):
@@ -60,7 +61,9 @@ class SniperEngine:
             await page.goto(url, wait_until="networkidle", timeout=60000)
 
             # --- DYNAMIC PORTAL SEARCH ---
-            if search_query and ("property24.com" in url or "gumtree.co.za" in url):
+            is_results_page = "/to-rent/" in url and len(url.split("/")) > 4
+            
+            if not is_results_page and search_query and ("property24.com" in url or "gumtree.co.za" in url):
                 if task_id:
                     update_task(task_id, "Searching", f"⌨️ Inputting search term: '{search_query}'...")
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] Portal detected. Typing search: {search_query}")
@@ -85,20 +88,32 @@ class SniperEngine:
                         await search_input.fill(search_query)
                         
                         # Wait for suggestions dropdown and select the first one
-                        await asyncio.sleep(2)
-                        await page.keyboard.press("ArrowDown")
-                        await asyncio.sleep(0.5)
-                        await page.keyboard.press("Enter")
+                        try:
+                            # Wait for the autocomplete dropdown to appear
+                            await page.wait_for_selector(".ui-autocomplete", timeout=5000)
+                            # Click the first suggestion item specifically
+                            await page.click(".ui-autocomplete li.ui-menu-item:first-child, .ui-autocomplete li:first-child")
+                            await asyncio.sleep(1)
+                        except:
+                            # Fallback if dropdown doesn't appear
+                            await page.keyboard.press("ArrowDown")
+                            await page.keyboard.press("Enter")
                         
-                        # Explicitly click the SEARCH button to trigger redirection
-                        search_btn = page.locator("button.btn-danger, button:has-text('Search')").first
+                        # Explicitly click the SEARCH button
+                        search_btn = page.locator("button.btn-danger, button:has-text('Search'), .p24_searchButton").first
                         await search_btn.click()
                         
-                        # Wait for the results page to load
+                        # Wait for the results page to load (look for suburb in URL)
                         try:
-                            await page.wait_for_url(lambda url: "to-rent" in url and "search" not in url, timeout=10000)
+                            await page.wait_for_url(lambda u: "/to-rent/" in u and len(u.split("/")) > 4, timeout=10000)
                         except:
-                            print(f"[{datetime.now().strftime('%H:%M:%S')}] Redirect timeout, proceeding with current URL: {page.url}")
+                            # If we didn't redirect, take a screenshot to see why (SAFETY FIRST)
+                            try:
+                                if not page.is_closed():
+                                    os.makedirs("debug", exist_ok=True)
+                                    await page.screenshot(path=f"debug/failed_search_{task_id}.png")
+                                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Redirect failed. Screenshot saved.")
+                            except: pass
                     elif "gumtree.co.za" in url:
                         # Gumtree search bar
                         search_input = page.locator("input[placeholder*='looking for' i], #search-query").first
@@ -140,6 +155,51 @@ class SniperEngine:
             
             result = await self.extractor.extract(body_text, ExtractionResult)
             return result
+
+    async def discover_portal_url(self, portal_url: str, suburb: str, task_id: str = None) -> str:
+        """Rapidly discovers the deep results URL for a specific suburb on a portal."""
+        async with async_playwright() as p:
+            # Use headless for discovery for speed
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(viewport={'width': 1280, 'height': 800})
+            page = await context.new_page()
+            
+            try:
+                if task_id:
+                    update_task(task_id, "Brain", f"🧠 Discovery: Scouting {suburb} on {portal_url}...")
+                
+                await page.goto(portal_url, wait_until="networkidle", timeout=30000)
+                
+                # Property24 Auto-Discovery
+                if "property24.com" in portal_url:
+                    search_input = page.locator("#token-input-AutoCompleteItems, input[placeholder*='suburb' i]").first
+                    await search_input.wait_for(state="visible", timeout=10000)
+                    await search_input.fill(suburb)
+                    
+                    # Wait for autocomplete and CLICK first item
+                    await page.wait_for_selector(".ui-autocomplete", timeout=5000)
+                    await page.click(".ui-autocomplete li.ui-menu-item:first-child, .ui-autocomplete li:first-child")
+                    
+                    # Click SEARCH and wait for URL change
+                    await page.click("button.btn-danger, button:has-text('Search'), .p24_searchButton")
+                    await page.wait_for_url(lambda u: "/to-rent/" in u and len(u.split("/")) > 4, timeout=10000)
+                    return page.url
+
+                # Gumtree Auto-Discovery
+                if "gumtree.co.za" in portal_url:
+                    search_input = page.locator("input[placeholder*='looking for' i], #search-query").first
+                    await search_input.wait_for(state="visible", timeout=10000)
+                    await search_input.fill(suburb)
+                    await page.keyboard.press("Enter")
+                    await page.wait_for_url(lambda u: "v1c" in u or "/s-" in u, timeout=10000)
+                    return page.url
+
+                return portal_url # Fallback
+            except Exception as e:
+                print(f"Discovery Error: {str(e)}")
+                return portal_url
+            finally:
+                await browser.close()
 
 async def test_engine():
     # Quick test runner
