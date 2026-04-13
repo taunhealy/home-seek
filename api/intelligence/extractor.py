@@ -85,7 +85,12 @@ class GeminiExtractor:
         listings_json = json.dumps([l.model_dump() for l in listings], indent=2)
         try:
             response = await llm.ainvoke(prompt.format(query=query, listings_json=listings_json))
-            content = response.content.strip()
+            
+            # 🛡️ Handle list-type content (Gemini sometimes returns multiple parts)
+            if isinstance(response.content, list):
+                content = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in response.content]).strip()
+            else:
+                content = response.content.strip()
             print(f"[{datetime.now().strftime('%H:%M:%S')}] AI Raw Response: {content}")
             # Clean up markdown formatting if present
             if "```json" in content:
@@ -116,4 +121,9 @@ class GeminiExtractor:
         llm = self.get_llm(model_name)
         prompt = f"Identify the primary City or Suburb in South Africa mentioned in this rental search: '{query}'. Return ONLY the location name (e.g. 'Claremont' or 'Cape Town'). If no location is found, return 'South Africa'."
         response = await llm.ainvoke(prompt)
+        
+        # 🛡️ Handle list-type content
+        if isinstance(response.content, list):
+            return "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in response.content]).strip()
+        
         return response.content.strip()
