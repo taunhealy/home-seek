@@ -289,42 +289,6 @@ class SniperEngine:
                 return portal_url
             finally:
                 await browser.close()
-.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API No Match on any tunnel. Falling back to browser...")
-
-        # 2. Browser Fallback (Legacy Scout)
-        async with async_playwright() as p:
-            # Harden browser for Docker
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            )
-            context = await browser.new_context(viewport={'width': 1280, 'height': 800})
-            page = await context.new_page()
-            
-            try:
-                await page.goto(portal_url, wait_until="networkidle", timeout=30000)
-                
-                # Property24 Auto-Discovery Only
-                if "property24.com" in portal_url:
-                    search_input = page.locator("#token-input-AutoCompleteItems, input[placeholder*='suburb' i]").first
-                    await search_input.wait_for(state="visible", timeout=10000)
-                    await search_input.fill(suburb)
-                    
-                    # Wait for autocomplete and CLICK first item
-                    await page.wait_for_selector(".ui-autocomplete", timeout=5000)
-                    await page.click(".ui-autocomplete li.ui-menu-item:first-child, .ui-autocomplete li:first-child")
-                    
-                    # Click SEARCH and wait for URL change
-                    await page.click("button.btn-danger, button:has-text('Search'), .p24_searchButton")
-                    await page.wait_for_url(lambda u: "/to-rent/" in u and len(u.split("/")) > 4, timeout=10000)
-                    return page.url
-
-                return portal_url
-            except Exception as e:
-                print(f"Discovery Fallback Error: {str(e)}")
-                return portal_url
-            finally:
-                await browser.close()
 
 async def test_engine():
     # Quick test runner
