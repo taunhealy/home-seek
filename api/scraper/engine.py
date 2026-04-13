@@ -215,20 +215,31 @@ class SniperEngine:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             }
             
-            for endpoint in endpoints:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                # 🍪 STEP 1: Handshake (Visit home page to pick up session cookies)
                 try:
-                    import time
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Proofing endpoint: {endpoint}...")
-                    # Add cache-buster _ parameter commonly used by jQuery/AJAX
-                    params = {"term": suburb, "_": int(time.time() * 1000)}
-                    
-                    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🤝 🍪 Hyper-API: Initial Session Handshake with {portal_url}...")
+                    await client.get(portal_url, headers=headers)
+                except Exception as e:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🤝 🍪 Hyper-API: Handshake warning: {str(e)}")
+
+                # 🚀 STEP 2: Multi-Tunnel Probe
+                for endpoint in endpoints:
+                    try:
+                        import time
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Proofing endpoint: {endpoint}...")
+                        params = {"term": suburb, "_": int(time.time() * 1000)}
+                        
                         response = await client.get(endpoint, params=params, headers=headers)
                         
                         # DEBUG LOGGING: Let's see what the server actually says
                         print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Status: {response.status_code}")
                         if response.status_code != 200:
-                            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Response Error Body: {response.text[:200]}")
+                            # If it's still failing, let's see if we at least have cookies now
+                            cookie_count = len(client.cookies)
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Detail: Status {response.status_code}, Cookies: {cookie_count}")
+                            if "outdatedBrowser" in response.text:
+                                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Block: Still flagged as outdated browser.")
                         
                         if response.status_code == 200:
                             matches = response.json()
