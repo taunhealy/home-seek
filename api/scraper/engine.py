@@ -262,31 +262,32 @@ class SniperEngine:
                     search_input = page.locator("#token-input-AutoCompleteItems, input[placeholder*='suburb' i]").first
                     await search_input.wait_for(state="visible", timeout=15000)
                     
-                    # Human-like typing with random biological delays
+                    # Human-like typing
                     import random
                     await search_input.click()
-                    await page.wait_for_timeout(random.randint(500, 1000))
+                    await page.wait_for_timeout(random.randint(400, 800))
                     
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ⌨️🖐️ Ghost-Human: Typing {suburb}...")
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ⌨️🖐️ Nuclear-Human: Typing {suburb}...")
                     for char in suburb:
                         await page.keyboard.press(char)
-                        await page.wait_for_timeout(random.randint(50, 150))
+                        await page.wait_for_timeout(random.randint(40, 120))
                     
-                    # Wait for autocomplete dropdown
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧐 waiting for dropdown...")
-                    await page.wait_for_selector(".ui-autocomplete", timeout=10000)
-                    await page.wait_for_timeout(random.randint(300, 700))
+                    # Instead of waiting for the blocked dropdown, hit ENTER and CLICK Search
+                    await page.wait_for_timeout(random.randint(500, 1500))
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 Nuclear-Human: Blasting Search...")
                     
-                    # Keyboard navigation (Stealthier than clicking)
-                    await page.keyboard.press("ArrowDown")
-                    await page.wait_for_timeout(random.randint(200, 400))
                     await page.keyboard.press("Enter")
+                    # Also try clicking the actual button just in case
+                    try:
+                        search_btn = page.locator("button.btn-danger, .p24_searchButton, button:has-text('Search')").first
+                        await search_btn.click(timeout=3000)
+                    except: pass
                     
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 Search submitted. Waiting for URL change...")
-                    await page.wait_for_url(lambda u: "/to-rent/" in u and len(u.split("/")) > 4, timeout=15000)
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 Waiting for redirect to results...")
+                    await page.wait_for_url(lambda u: "/to-rent/" in u and (len(u.split("/")) > 4 or "9025" in u or suburb.lower() in u), timeout=20000)
                     
                     final_url = page.url
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Ghost-Human Success: {final_url}")
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Nuclear-Human Success: {final_url}")
                     return final_url
                 
                 return portal_url
