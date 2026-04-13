@@ -203,12 +203,15 @@ class SniperEngine:
             )
             page = await context.new_page()
             
+            # 🎙️ Bridge the browser console to our terminal
+            page.on("console", lambda msg: print(f"  [Browser] {msg.text}"))
+            
             try:
                 if task_id:
                     update_task(task_id, "Brain", f"💉 Injected-API: Scouting {suburb}...")
                 
-                # Navigate to the portal first to ensure we are in the correct domain context
-                await page.goto(portal_url, wait_until="commit") 
+                # Navigate to the portal with networkidle to ensure cookies/sessions are hot
+                await page.goto(portal_url, wait_until="networkidle", timeout=30000) 
                 
                 # 💉 Internal Injection Probes
                 item = await page.evaluate(f"""async () => {{
@@ -218,14 +221,22 @@ class SniperEngine:
                     ];
                     for (const url of endpoints) {{
                         try {{
+                            console.log('  -> Probing tunnel: ' + url);
                             const response = await fetch(url, {{
                                 headers: {{ 'X-Requested-With': 'XMLHttpRequest' }}
                             }});
-                            const matches = await response.json();
+                            const text = await response.text();
+                            console.log('  -> Response received: ' + text.substring(0, 100));
+                            
+                            const matches = JSON.parse(text);
                             if (matches && matches.length > 0) {{
+                                console.log('  -> MATCH FOUND: ' + matches[0].name || matches[0].value);
                                 return matches[0];
                             }}
-                        }} catch (e) {{ continue; }}
+                        }} catch (e) {{ 
+                            console.log('  -> Tunnel error: ' + e.message);
+                            continue; 
+                        }}
                     }}
                     return null;
                 }}""")
