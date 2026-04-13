@@ -4,6 +4,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 import os
 import json
+from json_repair import repair_json
 from datetime import datetime
 from typing import Type, TypeVar, Optional
 
@@ -86,7 +87,8 @@ class GeminiExtractor:
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
             
-            raw_data = json.loads(content)
+            # 🏁 Self-Healing JSON: Handle cutoffs and malformed output
+            raw_data = repair_json(content, return_objects=True)
             
             # 🧹 Data Massaging: Ensure nulls don't break strict type expectations
             if "listings" in raw_data:
@@ -133,7 +135,8 @@ class GeminiExtractor:
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
             
-            data = json.loads(content)
+            # 🏁 Self-Healing JSON
+            data = repair_json(content, return_objects=True)
             # AI sometimes wraps the list in an object like {"matches": [...]}
             matches = data if isinstance(data, list) else data.get("matches", [])
             
