@@ -47,10 +47,13 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] --- NEW SNIPER TASK STARTING [{task_id}] ---")
         try:
             # 1. Fetch secure profile and sources
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔑 Handshake: Fetching user profile for {search.user_id}...")
             user_profile = await get_user_profile(search.user_id)
-            # 1. Fetch Sources (Add default portals if none exist)
+            
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔑 Handshake: Fetching sources...")
             sources = await get_sources(search.user_id)
             if not sources:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔑 Handshake: No sources, using default portals.")
                 sources = [
                     {"name": "Property24 Portal", "url": "https://www.property24.com/to-rent"},
                     {"name": "Gumtree Portal", "url": "https://www.gumtree.co.za/s-property/v1c2l1j1"}
@@ -58,9 +61,11 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
             
             # 2. Determine Search Location from Prompt
             update_task(task_id, "Brain", "🧠 Intelligence analyzing location...")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Intelligence: Determinining location for '{search.search_query}'...")
             search_location = await engine.extractor.determine_location(search.search_query)
+            
             update_task(task_id, "Brain", f"🧠 Intelligence identified search area: {search_location}")
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Smart Search Area: {search_location}")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Intelligence: Smart Search Area: {search_location}")
             
             all_extracted_listings = []
             
