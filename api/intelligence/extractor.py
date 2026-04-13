@@ -52,16 +52,37 @@ class GeminiExtractor:
         )
         
         prompt = ChatPromptTemplate.from_template(prompt_text)
-        chain = prompt | llm | parser
         
         try:
-            result = await chain.ainvoke({
+            # We use the LLM directly instead of the chain to allow for pre-validation cleaning
+            response = await llm.ainvoke({
                 "text": text,
                 "instructions": parser.get_format_instructions()
             })
-            if hasattr(result, "listings"):
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction result: {len(result.listings)} items found, confidence: {getattr(result, 'confidence_score', 1.0)}")
-            return result
+            
+            # 🛡️ Handle list-type content (Gemini 3.0)
+            if isinstance(response.content, list):
+                content = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in response.content]).strip()
+            else:
+                content = response.content.strip()
+            
+            # Clean up markdown formatting
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+            
+            raw_data = json.loads(content)
+            
+            # 🧹 Data Massaging: Ensure nulls don't break strict type expectations
+            if "listings" in raw_data:
+                for l in raw_data["listings"]:
+                    # If we find a string 'null' or None, ensure it's None for Pydantic
+                    for field in ["price", "bedrooms", "bathrooms"]:
+                        if field in l and (l[field] == "null" or l[field] == ""):
+                            l[field] = None
+
+            return parser.parse(json.dumps(raw_data))
         except Exception as e:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction Error: {str(e)}")
             # Return an empty result object instead of crashing

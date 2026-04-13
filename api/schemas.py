@@ -3,10 +3,10 @@ from typing import List, Optional
 
 class RentalListing(BaseModel):
     title: str = Field(description="The catchy title of the rental listing")
-    price: Optional[int] = Field(None, description="The monthly rental price in ZAR")
-    address: Optional[str] = Field(None, description="The full address or area of the property")
-    bedrooms: Optional[float] = Field(description="Number of bedrooms")
-    bathrooms: Optional[float] = Field(description="Number of bathrooms")
+    price: Optional[int] = Field(default=None, description="The monthly rental price in ZAR")
+    address: Optional[str] = Field(default=None, description="The full address or area of the property")
+    bedrooms: Optional[float] = Field(default=None, description="Number of bedrooms")
+    bathrooms: Optional[float] = Field(default=None, description="Number of bathrooms")
     is_pet_friendly: bool = Field(description="Whether the property allows pets")
     has_solar: bool = Field(description="Whether the property has solar power or inverter system")
     has_borehole: bool = Field(description="Whether the property has a borehole or backup water")
