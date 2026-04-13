@@ -14,26 +14,37 @@ class GeminiExtractor:
         self.api_key = os.getenv("GEMINI_API_KEY")
         # Default LLM
         self.default_model = "gemini-flash-latest"
-        self._llm = None
+        # 🧠 Brain Cache: Store initialized models to avoid startup latency
+        self._model_cache = {}
 
     def get_llm(self, model_name: Optional[str] = None):
+        target_name = model_name or self.default_model
+        
         # 🛡️ Safety Translation Map for stubborn/legacy frontend strings
         model_map = {
             "gemini-2.0-flash-exp": "gemini-flash-latest",
             "gemini-1.5-flash": "gemini-flash-latest",
             "gemini-1.5-flash-latest": "gemini-flash-latest",
-            "gemini-3-flash-preview": "gemini-3-flash-preview", # Leave these if they work
+            "gemini-3-flash-preview": "gemini-3-flash-preview", 
             "gemini-pro-latest": "gemini-pro-latest"
         }
         
-        target_model = model_map.get(model_name) or model_name or self.default_model
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Brain: Activating model {target_model} (requested: {model_name})")
+        target_model_id = model_map.get(target_name) or target_name
         
-        return ChatGoogleGenerativeAI(
-            model=target_model,
+        # 🚀 Instant Recall: Check the cache first
+        if target_model_id in self._model_cache:
+            return self._model_cache[target_model_id]
+
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Brain: Activating model {target_model_id} (requested: {model_name})")
+        
+        llm = ChatGoogleGenerativeAI(
+            model=target_model_id,
             google_api_key=self.api_key,
             temperature=0
         )
+        
+        self._model_cache[target_model_id] = llm
+        return llm
 
     async def extract(self, text: str, schema: Type[T], model_name: Optional[str] = None) -> T:
         parser = PydanticOutputParser(pydantic_object=schema)
