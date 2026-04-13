@@ -13,7 +13,7 @@ class GeminiExtractor:
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-3-flash-preview",
+            model="gemini-2.0-flash",
             google_api_key=self.api_key,
             temperature=0
         )
