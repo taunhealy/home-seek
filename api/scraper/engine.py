@@ -210,28 +210,41 @@ class SniperEngine:
                 # Navigate to the portal first to ensure we are in the correct domain context
                 await page.goto(portal_url, wait_until="commit") 
                 
-                # Perform the "Internal Injection" fetch
-                discovered_url = await page.evaluate(f"""async () => {{
-                    try {{
-                        const response = await fetch('/queries/searchautocomplete?term={suburb}', {{
-                            headers: {{ 'X-Requested-With': 'XMLHttpRequest' }}
-                        }});
-                        const matches = await response.json();
-                        if (matches && matches.length > 0) {{
-                            return matches[0].Url || null;
-                        }}
-                    }} catch (e) {{
-                        return null;
+                # 💉 Internal Injection Probes
+                item = await page.evaluate(f"""async () => {{
+                    const endpoints = [
+                        '/queries/searchautocomplete?term={suburb}',
+                        '/Search/AutoCompleteItems?term={suburb}'
+                    ];
+                    for (const url of endpoints) {{
+                        try {{
+                            const response = await fetch(url, {{
+                                headers: {{ 'X-Requested-With': 'XMLHttpRequest' }}
+                            }});
+                            const matches = await response.json();
+                            if (matches && matches.length > 0) {{
+                                return matches[0];
+                            }}
+                        }} catch (e) {{ continue; }}
                     }}
                     return null;
                 }}""")
                 
-                if discovered_url:
-                    final_url = f"https://www.property24.com{discovered_url}"
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 💉 Injected-API Success: {final_url}")
-                    if task_id:
-                         update_task(task_id, "Brain", f"✅ Injected-API Found: {suburb}")
-                    return final_url
+                if item:
+                    # Parse the found object for any usable ID or URL
+                    relative_url = item.get("Url") or item.get("url")
+                    suburb_id = item.get("Id") or item.get("id") or item.get("value")
+                    
+                    if relative_url:
+                        final_url = f"https://www.property24.com{relative_url}"
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 💉 Injected-API Success (URL): {final_url}")
+                        if task_id:
+                             update_task(task_id, "Brain", f"✅ Injected-API Found: {suburb}")
+                        return final_url
+                    elif suburb_id:
+                        final_url = f"https://www.property24.com/to-rent/{suburb.lower()}/{suburb_id}"
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 💉 Injected-API Success (ID): {final_url}")
+                        return final_url
                 
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] 💉 Injected-API No matches found. Falling back to manual scout...")
                 
