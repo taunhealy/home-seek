@@ -5,21 +5,28 @@ from pydantic import BaseModel, Field
 import os
 import json
 from datetime import datetime
-from typing import Type, TypeVar
+from typing import Type, TypeVar, Optional
 
 T = TypeVar("T", bound=BaseModel)
 
 class GeminiExtractor:
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
+        # Default LLM
+        self.default_model = "gemini-1.5-flash"
+        self._llm = None
+
+    def get_llm(self, model_name: Optional[str] = None):
+        target_model = model_name or self.default_model
+        return ChatGoogleGenerativeAI(
+            model=target_model,
             google_api_key=self.api_key,
             temperature=0
         )
 
-    async def extract(self, text: str, schema: Type[T]) -> T:
+    async def extract(self, text: str, schema: Type[T], model_name: Optional[str] = None) -> T:
         parser = PydanticOutputParser(pydantic_object=schema)
+        llm = self.get_llm(model_name)
         
         prompt_text = (
             "You are a professional property data extractor. Your goal is to EXHAUSTIVELY extract ALL rental property listings from the text.\n"
@@ -34,7 +41,7 @@ class GeminiExtractor:
         )
         
         prompt = ChatPromptTemplate.from_template(prompt_text)
-        chain = prompt | self.llm | parser
+        chain = prompt | llm | parser
         
         try:
             result = await chain.ainvoke({
@@ -49,9 +56,11 @@ class GeminiExtractor:
             # Return an empty result object instead of crashing
             return schema(listings=[], confidence_score=0.0, raw_summary="Error during extraction")
 
-    async def filter_listings(self, listings: list, query: str) -> list:
+    async def filter_listings(self, listings: list, query: str, model_name: Optional[str] = None) -> list:
         if not listings:
             return []
+            
+        llm = self.get_llm(model_name)
             
         prompt = ChatPromptTemplate.from_template(
             "You are a rental sniper expert. Evaluate the follow property listings against the user's requirements.\n"
@@ -64,7 +73,7 @@ class GeminiExtractor:
         
         listings_json = json.dumps([l.model_dump() for l in listings], indent=2)
         try:
-            response = await self.llm.ainvoke(prompt.format(query=query, listings_json=listings_json))
+            response = await llm.ainvoke(prompt.format(query=query, listings_json=listings_json))
             content = response.content.strip()
             print(f"[{datetime.now().strftime('%H:%M:%S')}] AI Raw Response: {content}")
             # Clean up markdown formatting if present
@@ -91,8 +100,9 @@ class GeminiExtractor:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] AI Filtering Error: {str(e)}")
             return []
 
-    async def determine_location(self, query: str) -> str:
+    async def determine_location(self, query: str, model_name: Optional[str] = None) -> str:
         """Uses AI to extract the primary geographic area from a user's free-text prompt."""
+        llm = self.get_llm(model_name)
         prompt = f"Identify the primary City or Suburb in South Africa mentioned in this rental search: '{query}'. Return ONLY the location name (e.g. 'Claremont' or 'Cape Town'). If no location is found, return 'South Africa'."
-        response = await self.llm.ainvoke(prompt)
+        response = await llm.ainvoke(prompt)
         return response.content.strip()

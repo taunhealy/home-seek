@@ -19,7 +19,7 @@ class SniperEngine:
         self.extractor = GeminiExtractor()
         self.browserless_url = os.getenv("BROWSERLESS_URL") # e.g. wss://chrome.browserless.io?token=YOUR-TOKEN
 
-    async def scrape_url(self, url: str, use_cookies: bool = True, task_id: Optional[str] = None, search_query: Optional[str] = None) -> ExtractionResult:
+    async def scrape_url(self, url: str, use_cookies: bool = True, task_id: Optional[str] = None, search_query: Optional[str] = None, model_name: Optional[str] = None) -> ExtractionResult:
         """The 'Sniper' extraction stage - now enhanced with Hybrid (Crawl4AI) support."""
         from database import update_task
         
@@ -40,7 +40,7 @@ class SniperEngine:
                 if result.success:
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] Crawl4AI Success! (Size: {len(result.markdown)} chars)")
                     # Hand over the clean markdown to Gemini for structured extraction
-                    final_result = await self.extractor.extract(result.markdown, ExtractionResult)
+                    final_result = await self.extractor.extract(result.markdown, ExtractionResult, model_name=model_name)
                     return final_result
                 else:
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] Crawl4AI Fallback: Error {result.error_message}")
@@ -183,7 +183,7 @@ class SniperEngine:
             
             await browser.close()
             
-            result = await self.extractor.extract(body_text, ExtractionResult)
+            result = await self.extractor.extract(body_text, ExtractionResult, model_name=model_name)
             return result
 
     async def discover_portal_url(self, portal_url: str, suburb: str, task_id: str = None) -> str:

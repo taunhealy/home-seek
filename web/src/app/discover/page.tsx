@@ -63,6 +63,12 @@ const SourceSchema = z.object({
   name: z.string(),
 });
 
+const MODEL_OPTIONS = [
+  { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', desc: 'Optimized for speed & efficiency' },
+  { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash', desc: 'Experimental next-gen speed' },
+  { value: 'gemini-3-flash-preview', label: 'Gemini 3.0 (Soon)', desc: 'The future of rental sniping' }
+];
+
 type Listing = z.infer<typeof ListingSchema>;
 type Source = z.infer<typeof SourceSchema>;
 type Task = z.infer<typeof TaskSchema>;
@@ -79,6 +85,7 @@ export default function DiscoverPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [mounted, setMounted] = useState(false);
   const [indexError, setIndexError] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState(MODEL_OPTIONS[0].value);
 
   useEffect(() => {
     setMounted(true);
@@ -181,6 +188,7 @@ export default function DiscoverPage() {
         body: JSON.stringify({
           user_id: "demo-user",
           search_query: aiPrompt,
+          model: selectedModel,
           alert_enabled: alertEnabled
         })
       });
@@ -256,6 +264,27 @@ export default function DiscoverPage() {
                     >
                       <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${alertEnabled ? 'right-1' : 'left-1'}`} />
                     </button>
+                  </div>
+
+                  {/* Model Selector */}
+                  <div className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Cpu className="w-3 h-3 text-emerald-primary" />
+                      <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Intelligence Level</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                       {MODEL_OPTIONS.map((opt) => (
+                         <button
+                           key={opt.value}
+                           type="button"
+                           onClick={() => setSelectedModel(opt.value)}
+                           className={`flex flex-col items-start p-3 rounded-xl border transition-all text-left ${selectedModel === opt.value ? 'bg-emerald-primary/10 border-emerald-primary/40' : 'bg-black/40 border-white/5 hover:border-white/10'}`}
+                         >
+                            <span className={`text-[10px] font-bold ${selectedModel === opt.value ? 'text-emerald-primary' : 'text-white'}`}>{opt.label}</span>
+                            <span className="text-[8px] text-white/30 font-medium">{opt.desc}</span>
+                         </button>
+                       ))}
+                    </div>
                   </div>
 
                   {isDeploying || activeTask ? (

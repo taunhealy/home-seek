@@ -29,6 +29,7 @@ notifier_email = ResendEmailClient()
 class SearchTrigger(BaseModel):
     user_id: str
     search_query: str
+    model: str = "gemini-1.5-flash"
     alert_enabled: bool = False
 
 @app.get("/")
@@ -59,10 +60,18 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
                     {"name": "Gumtree Portal", "url": "https://www.gumtree.co.za/s-property/v1c2l1j1"}
                 ]
             
-            # 2. Determine Search Location from Prompt
+            # 2. Determine Search Location from Prompt (with Single-Word Shortcut)
             update_task(task_id, "Brain", "🧠 Intelligence analyzing location...")
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Intelligence: Determinining location for '{search.search_query}'...")
-            search_location = await engine.extractor.determine_location(search.search_query)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Intelligence: Check for single-word shortcut...")
+            
+            # If the query is just a single word, skip the AI call (Bypass Hangups)
+            words = search.search_query.strip().split()
+            if len(words) == 1 and words[0].isalpha():
+                search_location = words[0].capitalize()
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Shortcut: Single-word location identified: {search_location}")
+            else:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Intelligence: Determinining location via AI ({search.model}) for '{search.search_query}'...")
+                search_location = await engine.extractor.determine_location(search.search_query, model_name=search.model)
             
             update_task(task_id, "Brain", f"🧠 Intelligence identified search area: {search_location}")
             print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Intelligence: Smart Search Area: {search_location}")
@@ -115,7 +124,7 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
                     update_task(task_id, f"Scraping {source.get('name', 'Source')}", f"🕷️ Connecting to {source_url}...")
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction starting for {source_url}...")
                     # We pass the search_location again for filtering, but scraping is direct
-                    result = await engine.scrape_url(source_url, task_id=task_id, search_query=search_location)
+                    result = await engine.scrape_url(source_url, task_id=task_id, search_query=search_location, model_name=search.model)
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction result: {len(result.listings)} items found, confidence: {result.confidence_score}")
                     all_extracted_listings.extend(result.listings)
                     update_task(task_id, f"Scraping {source.get('name', 'Source')}", f"✅ Extracted {len(result.listings)} items.")
@@ -129,8 +138,8 @@ async def run_sniper_task(search: SearchTrigger, task_id: str):
 
             # 4. AI Filter using Original Detailed Query
             update_task(task_id, "AI Filtering", f"🧠 Intelligence Engine evaluating {len(all_extracted_listings)} extracted items...")
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] AI Filtering {len(all_extracted_listings)} items for query: '{search.search_query}'")
-            scored_listings = await engine.extractor.filter_listings(all_extracted_listings, search.search_query)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] AI Filtering ({search.model}) {len(all_extracted_listings)} items for query: '{search.search_query}'")
+            scored_listings = await engine.extractor.filter_listings(all_extracted_listings, search.search_query, model_name=search.model)
             print(f"[{datetime.now().strftime('%H:%M:%S')}] AI Scored: {len(scored_listings)} matches found above threshold.")
             
             if len(all_extracted_listings) > 0 and not scored_listings:
