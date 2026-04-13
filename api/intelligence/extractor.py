@@ -13,7 +13,7 @@ class GeminiExtractor:
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model="gemini-1.5-flash",
             google_api_key=self.api_key,
             temperature=0
         )
@@ -21,22 +21,33 @@ class GeminiExtractor:
     async def extract(self, text: str, schema: Type[T]) -> T:
         parser = PydanticOutputParser(pydantic_object=schema)
         
-        prompt = ChatPromptTemplate.from_template(
-            "You are a professional property data extractor. Your goal is to find ALL rental property listings in the text below.\n"
-            "Include basic details like Price, Location, Bedrooms, and a link to the property.\n"
-            "If the text contains multiple properties, extract every single one accurately.\n\n"
+        prompt_text = (
+            "You are a professional property data extractor. Your goal is to EXHAUSTIVELY extract ALL rental property listings from the text.\n"
+            "This text is a results page from a property portal. Each listing is unique. Do NOT summarize.\n\n"
+            "RULES:\n"
+            "1. Identify every property block (usually starts with a price like 'R 15,000').\n"
+            "2. For each block, extract the Price, Address, Bedrooms, and the detailed view link (URL).\n"
+            "3. If a listing is missing a field, leave it null but EXHAUSTIVELY find every listing on the page.\n"
+            "4. Ensure the 'source_url' is the absolute URL to that specific property.\n\n"
             "{instructions}\n\n"
             "TEXT TO ANALYZE:\n{text}"
         )
-
+        
+        prompt = ChatPromptTemplate.from_template(prompt_text)
         chain = prompt | self.llm | parser
         
-        result = await chain.ainvoke({
-            "text": text,
-            "instructions": parser.get_format_instructions()
-        })
-        
-        return result
+        try:
+            result = await chain.ainvoke({
+                "text": text,
+                "instructions": parser.get_format_instructions()
+            })
+            if hasattr(result, "listings"):
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction result: {len(result.listings)} items found, confidence: {getattr(result, 'confidence_score', 1.0)}")
+            return result
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction Error: {str(e)}")
+            # Return an empty result object instead of crashing
+            return schema(listings=[], confidence_score=0.0, raw_summary="Error during extraction")
 
     async def filter_listings(self, listings: list, query: str) -> list:
         if not listings:
