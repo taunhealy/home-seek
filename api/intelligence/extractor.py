@@ -73,7 +73,9 @@ class GeminiExtractor:
             )
             
             # We use the LLM directly instead of the chain to allow for pre-validation cleaning
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Intelligence: Sending {len(formatted_prompt)} chars to Gemini...")
             response = await llm.ainvoke(formatted_prompt)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Intelligence: Response received from Gemini.")
             
             # 🛡️ Handle list-type content (Gemini 3.0)
             if isinstance(response.content, list):
@@ -121,7 +123,9 @@ class GeminiExtractor:
         
         listings_json = json.dumps([l.model_dump() for l in listings], indent=2)
         try:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Intelligence: Ranking {len(listings)} listings against query...")
             response = await llm.ainvoke(prompt.format(query=query, listings_json=listings_json))
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Intelligence: Ranking complete.")
             
             # 🛡️ Handle list-type content (Gemini sometimes returns multiple parts)
             if isinstance(response.content, list):
