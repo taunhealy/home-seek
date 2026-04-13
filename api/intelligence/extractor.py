@@ -13,7 +13,7 @@ class GeminiExtractor:
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
         # Default LLM
-        self.default_model = "gemini-1.5-flash-latest"
+        self.default_model = "gemini-flash-latest"
         self._llm = None
 
     def get_llm(self, model_name: Optional[str] = None):

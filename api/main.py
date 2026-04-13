@@ -29,7 +29,7 @@ notifier_email = ResendEmailClient()
 class SearchTrigger(BaseModel):
     user_id: str
     search_query: str
-    model: str = "gemini-1.5-flash"
+    model: str = "gemini-flash-latest"
     alert_enabled: bool = False
 
 @app.get("/")
