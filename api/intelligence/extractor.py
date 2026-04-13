@@ -17,7 +17,18 @@ class GeminiExtractor:
         self._llm = None
 
     def get_llm(self, model_name: Optional[str] = None):
-        target_model = model_name or self.default_model
+        # 🛡️ Safety Translation Map for stubborn/legacy frontend strings
+        model_map = {
+            "gemini-2.0-flash-exp": "gemini-flash-latest",
+            "gemini-1.5-flash": "gemini-flash-latest",
+            "gemini-1.5-flash-latest": "gemini-flash-latest",
+            "gemini-3-flash-preview": "gemini-3-flash-preview", # Leave these if they work
+            "gemini-pro-latest": "gemini-pro-latest"
+        }
+        
+        target_model = model_map.get(model_name) or model_name or self.default_model
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Brain: Activating model {target_model} (requested: {model_name})")
+        
         return ChatGoogleGenerativeAI(
             model=target_model,
             google_api_key=self.api_key,
