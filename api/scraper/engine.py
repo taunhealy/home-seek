@@ -194,40 +194,49 @@ class SniperEngine:
         if task_id:
             update_task(task_id, "Brain", f"⚡️ Hyper-API: Scouting {suburb}...")
             
-        # 1. Property24 Hyper-API Scout
+        # 1. Property24 Hyper-API Scout (Dual-Tunnel)
         if "property24.com" in portal_url:
-            try:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Discovery starting for {suburb}...")
-                api_url = f"https://www.property24.com/Search/AutoCompleteItems?term={suburb}"
-                
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    headers = {
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Referer": "https://www.property24.com/to-rent",
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                    }
-                    response = await client.get(api_url, headers=headers)
-                    if response.status_code == 200:
-                        matches = response.json()
-                        # Log response for debugging if empty
-                        if not matches:
-                            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Match Warning: Response was empty list []")
-                        
-                        if matches and len(matches) > 0:
-                            # Typically the first match is the most relevant
-                            item = matches[0]
-                            # Property24 AutoCompleteItems usually returns a partial URL in 'Url' field
-                            relative_url = item.get("Url")
-                            if relative_url:
-                                final_url = f"https://www.property24.com{relative_url}"
-                                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Success: {final_url}")
-                                if task_id:
-                                    update_task(task_id, "Brain", f"✅ Hyper-API Found: {suburb}")
-                                return final_url
-                
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API no match found. Falling back to browser...")
-            except Exception as e:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Error: {str(e)}")
+            endpoints = [
+                "https://www.property24.com/queries/searchautocomplete",
+                "https://www.property24.com/Search/AutoCompleteItems"
+            ]
+            
+            headers = {
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": "https://www.property24.com/to-rent",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            }
+            
+            for endpoint in endpoints:
+                try:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Proofing endpoint: {endpoint}...")
+                    params = {"term": suburb}
+                    
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        response = await client.get(endpoint, params=params, headers=headers)
+                        if response.status_code == 200:
+                            matches = response.json()
+                            if matches and len(matches) > 0:
+                                item = matches[0]
+                                # Map ID or URL
+                                relative_url = item.get("Url") 
+                                suburb_id = item.get("Id") or item.get("id") or item.get("value")
+                                
+                                if relative_url:
+                                    final_url = f"https://www.property24.com{relative_url}"
+                                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Success: {final_url} via {endpoint}")
+                                    if task_id:
+                                        update_task(task_id, "Brain", f"✅ Hyper-API Found: {suburb}")
+                                    return final_url
+                                elif suburb_id:
+                                    # Backup: Construct URL if only ID returned
+                                    final_url = f"https://www.property24.com/to-rent/{suburb.lower()}/{suburb_id}"
+                                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Success (ID): {final_url}")
+                                    return final_url
+                except Exception as e:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Endpoint Error: {str(e)}")
+            
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API No Match on any tunnel. Falling back to browser...")
 
         # 2. Browser Fallback (Legacy Scout)
         async with async_playwright() as p:
