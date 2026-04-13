@@ -257,18 +257,38 @@ class SniperEngine:
                         print(f"[{datetime.now().strftime('%H:%M:%S')}] 💉 Injected-API Success (ID): {final_url}")
                         return final_url
                 
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] 💉 Injected-API No matches found. Falling back to manual scout...")
-                
-                # Fallback: Manual UI Scout (already in this page context)
+                # 🎭 Ghost-Human Manual Scout
                 if "property24.com" in portal_url:
                     search_input = page.locator("#token-input-AutoCompleteItems, input[placeholder*='suburb' i]").first
-                    await search_input.wait_for(state="visible", timeout=10000)
-                    await search_input.fill(suburb)
-                    await page.wait_for_selector(".ui-autocomplete", timeout=5000)
-                    await page.click(".ui-autocomplete li.ui-menu-item:first-child")
-                    await page.click("button.btn-danger, .p24_searchButton")
-                    await page.wait_for_url(lambda u: "/to-rent/" in u and len(u.split("/")) > 4, timeout=10000)
-                    return page.url
+                    await search_input.wait_for(state="visible", timeout=15000)
+                    
+                    # Human-like typing with random biological delays
+                    import random
+                    await search_input.click()
+                    await page.wait_for_timeout(random.randint(500, 1000))
+                    
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ⌨️🖐️ Ghost-Human: Typing {suburb}...")
+                    for char in suburb:
+                        await page.keyboard.press(char)
+                        await page.wait_for_timeout(random.randint(50, 150))
+                    
+                    # Wait for autocomplete dropdown
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧐 waiting for dropdown...")
+                    await page.wait_for_selector(".ui-autocomplete", timeout=10000)
+                    await page.wait_for_timeout(random.randint(300, 700))
+                    
+                    # Keyboard navigation (Stealthier than clicking)
+                    await page.keyboard.press("ArrowDown")
+                    await page.wait_for_timeout(random.randint(200, 400))
+                    await page.keyboard.press("Enter")
+                    
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 Search submitted. Waiting for URL change...")
+                    await page.wait_for_url(lambda u: "/to-rent/" in u and len(u.split("/")) > 4, timeout=15000)
+                    
+                    final_url = page.url
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Ghost-Human Success: {final_url}")
+                    return final_url
+                
                 return portal_url
             except Exception as e:
                 print(f"Injected Discovery Error: {str(e)}")
