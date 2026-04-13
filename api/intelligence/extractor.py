@@ -54,11 +54,14 @@ class GeminiExtractor:
         prompt = ChatPromptTemplate.from_template(prompt_text)
         
         try:
+            # 🎙️ Manually format the prompt since we're not using a chain anymore
+            formatted_prompt = prompt_text.format(
+                text=text,
+                instructions=parser.get_format_instructions()
+            )
+            
             # We use the LLM directly instead of the chain to allow for pre-validation cleaning
-            response = await llm.ainvoke({
-                "text": text,
-                "instructions": parser.get_format_instructions()
-            })
+            response = await llm.ainvoke(formatted_prompt)
             
             # 🛡️ Handle list-type content (Gemini 3.0)
             if isinstance(response.content, list):
