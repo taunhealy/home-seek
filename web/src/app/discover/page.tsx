@@ -64,9 +64,9 @@ const SourceSchema = z.object({
 });
 
 const MODEL_OPTIONS = [
-  { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', desc: 'Optimized for speed & efficiency' },
+  { value: 'gemini-1.5-flash-latest', label: 'Gemini 1.5 Flash', desc: 'Optimized for speed & efficiency' },
   { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash', desc: 'Experimental next-gen speed' },
-  { value: 'gemini-3-flash-preview', label: 'Gemini 3.0 (Soon)', desc: 'The future of rental sniping' }
+  { value: 'gemini-pro', label: 'Gemini Pro', desc: 'High-fidelity reasoning stable' }
 ];
 
 type Listing = z.infer<typeof ListingSchema>;
