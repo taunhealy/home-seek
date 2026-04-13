@@ -209,13 +209,24 @@ class SniperEngine:
             
             for endpoint in endpoints:
                 try:
+                    import time
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Proofing endpoint: {endpoint}...")
-                    params = {"term": suburb}
+                    # Add cache-buster _ parameter commonly used by jQuery/AJAX
+                    params = {"term": suburb, "_": int(time.time() * 1000)}
                     
-                    async with httpx.AsyncClient(timeout=10.0) as client:
+                    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                         response = await client.get(endpoint, params=params, headers=headers)
+                        
+                        # DEBUG LOGGING: Let's see what the server actually says
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Status: {response.status_code}")
+                        if response.status_code != 200:
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Response Error Body: {response.text[:200]}")
+                        
                         if response.status_code == 200:
                             matches = response.json()
+                            if not matches:
+                                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡️ Hyper-API Match Warning: {endpoint} returned empty list []")
+                            
                             if matches and len(matches) > 0:
                                 item = matches[0]
                                 # Map ID or URL
