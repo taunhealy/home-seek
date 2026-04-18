@@ -1,8 +1,23 @@
-# Environment
+# Environment & Secrets
 .env
-.env.local
-.env.*.local
+**/.env
+**/*.env.local
 service-account.json
+**/*.json
+!package.json
+!tsconfig.json
+!firebase.json
+!.firebaserc
+api/cookies.json
+api/local_session/
+api/debug/
+api/artifacts/
+api/logs.json
+api/nav_logs.json
+api/raw_logs.txt
+*.png
+*.jpg
+*.jpeg
 
 # Node
 node_modules/

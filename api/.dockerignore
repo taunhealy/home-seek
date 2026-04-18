@@ -15,3 +15,5 @@ lib64
 .dockerignore
 Dockerfile
 docker-compose.yml
+local_session/
+logs/

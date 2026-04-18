@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "home-seek-98294"
-  }
+  },
+  "targets": {
+    "home-seek-98294": {
+      "hosting": {
+        "homeseek": [
+          "homeseekza"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

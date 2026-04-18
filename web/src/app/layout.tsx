@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
-import { Outfit, Inter } from "next/font/google";
+import { Outfit, Cormorant_Garamond } from "next/font/google";
+import { Providers } from "./providers";
 import "./globals.css";
 
-const outfit = Outfit({
-  variable: "--font-outfit",
+const sans = Outfit({
   subsets: ["latin"],
+  variable: "--font-sans",
 });
 
-const inter = Inter({
-  variable: "--font-inter",
+const serif = Cormorant_Garamond({
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-serif",
 });
 
 export const metadata: Metadata = {
@@ -23,11 +25,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className={`${sans.variable} ${serif.variable} h-full`} suppressHydrationWarning>
       <body
-        className={`${outfit.variable} ${inter.variable} font-sans antialiased min-h-screen bg-background text-foreground`}
+        className={`antialiased min-h-screen bg-[#050505] text-white font-sans`}
       >
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

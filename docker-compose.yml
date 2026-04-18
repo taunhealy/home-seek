@@ -10,4 +10,5 @@ services:
     volumes:
       - ./api:/app
       - ./.env:/app/.env
+      - ./service-account.json:/app/service-account.json
     restart: always

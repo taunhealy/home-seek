@@ -1,640 +1,803 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { z } from 'zod';
-import { collection, query, orderBy, onSnapshot, limit, addDoc, deleteDoc, doc, serverTimestamp, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { motion, AnimatePresence } from 'framer-motion';
+import { PayPalButtons } from "@paypal/react-paypal-js";
+import { auth, googleAuthProvider } from '@/lib/firebase';
+import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { 
-  Target, 
-  Search, 
-  Zap, 
-  ExternalLink,
-  Loader2,
-  Plus,
-  X,
-  Globe,
-  MessageSquare,
-  Sparkles,
-  MapPin,
-  Home,
-  PawPrint,
-  Sun,
-  RefreshCw,
-  Bell,
-  History,
-  Cpu,
-  BedDouble,
-  Wind,
-  LayoutGrid,
-  Trash2
-} from 'lucide-react';
+  Globe, 
+  House, 
+  SunHorizon, 
+  Dog, 
+  Layout, 
+  Stack, 
+  UsersThree, 
+  CheckCircle,
+  Gear,
+  ChartPolar
+} from "@phosphor-icons/react";
 
-// --- SCHEMAS (ZOD) ---
-const ListingSchema = z.object({
-  id: z.string(),
-  title: z.string().default("Untitiled Property"),
-  price: z.number().default(0),
-  address: z.string().default("Unknown Address"),
-  bedrooms: z.number().optional(),
-  is_pet_friendly: z.boolean().default(false),
-  has_solar: z.boolean().default(false),
-  platform: z.string().default("Web"),
-  timestamp: z.any(),
-  imageUrl: z.string().optional(),
-  source_url: z.string().optional(),
-  match_score: z.number().optional(),
-  match_reason: z.string().optional(),
-});
-
-const TaskSchema = z.object({
-  id: z.string(),
-  user_id: z.string(),
-  query: z.string().default(""),
-  status: z.string().default("Pending"),
-  logs: z.array(z.string()).default([]),
-  timestamp: z.any(),
-  completed: z.boolean().default(false),
-});
-
-const SourceSchema = z.object({
-  id: z.string(),
-  url: z.string(),
-  name: z.string(),
-});
-
-const MODEL_OPTIONS = [
-  { value: 'gemini-flash-latest', label: 'Gemini Flash', desc: 'High-speed extraction' },
-  { value: 'gemini-pro-latest', label: 'Gemini Pro', desc: 'Complex reasoning' },
-  { value: 'gemini-3-flash-preview', label: 'Gemini 3.0 Preview', desc: 'Experimental Intelligence' }
-];
-
-type Listing = z.infer<typeof ListingSchema>;
-type Source = z.infer<typeof SourceSchema>;
-type Task = z.infer<typeof TaskSchema>;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function DiscoverPage() {
-  const [listings, setListings] = useState<Listing[]>([]);
-  const [sources, setSources] = useState<Source[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [newSourceUrl, setNewSourceUrl] = useState('');
+  const [activeTab, setActiveTab] = useState<'listings' | 'alerts'>('listings');
   const [aiPrompt, setAiPrompt] = useState('');
+  const [maxPrice, setMaxPrice] = useState(25000);
+  const [isEditingPrice, setIsEditingPrice] = useState(false);
+  const [selectedBedrooms, setSelectedBedrooms] = useState<number[]>([]);
+  const [rentalType, setRentalType] = useState<'all' | 'long-term' | 'short-term' | 'pet-sitting'>('all');
+  const [propertySubType, setPropertySubType] = useState<'all' | 'Whole' | 'Shared'>('all');
   const [isDeploying, setIsDeploying] = useState(false);
-  const [alertEnabled, setAlertEnabled] = useState(false);
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [activeTask, setActiveTask] = useState<any>(null);
+  const [listings, setListings] = useState<any>([]);
+  const [userProfile, setUserProfile] = useState<any>({ 
+    tier: 'free', 
+    id: 'taun_test_user',
+    billing_date: '2026-05-15',
+    status: 'active'
+  });
+  const [selectedSources, setSelectedSources] = useState<string[]>(['Property24', 'Sea Point Rentals', 'Huis Huis', 'RentUncle', 'RentUncle Pet Friendly']);
+  const [savedAlerts, setSavedAlerts] = useState<any[]>([]);
   const [mounted, setMounted] = useState(false);
-  const [indexError, setIndexError] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState(MODEL_OPTIONS[0].value);
+  const [user, setUser] = useState<any>(null);
+  const [platformFilter, setPlatformFilter] = useState('');
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [allSuburbs, setAllSuburbs] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isPetFriendly, setIsPetFriendly] = useState(true);
 
   useEffect(() => {
     setMounted(true);
-    // 1. Listen for Listings
-    const qListings = query(
-      collection(db, 'listings'),
-      where('user_id', '==', 'demo-user'),
-      orderBy('timestamp', 'desc')
-    );
-    const unsubscribeListings = onSnapshot(qListings, (snapshot) => {
-      const data = snapshot.docs.map(doc => {
-        const raw = { id: doc.id, ...doc.data() };
-        return ListingSchema.parse(raw); // This will "clean" and validate the data!
-      });
-      setListings(data); // Don't fallback to mock data, it confuses the user!
-      setLoading(false);
-    }, (error) => {
-      console.warn("Firestore Indexing in progress (Listings)...", error);
-      if (error.message.includes("requires an index")) {
-        setIndexError("Listings Index Needed");
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (u) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/user-profile/${u.uid}`);
+          if (res.ok) {
+            const profile = await res.json();
+            setUserProfile({ ...profile, id: u.uid }); // Explicit anchor
+          } else {
+            setUserProfile({ ...userProfile, id: u.uid, email: u.email });
+          }
+        } catch (e) {
+          setUserProfile({ ...userProfile, id: u.uid, email: u.email });
+        }
+      } else {
+        setUserProfile({ tier: 'free', id: 'guest' });
       }
     });
-
-    // 2. Listen for Sources
-    const qSources = query(collection(db, 'sources'), where('user_id', '==', 'demo-user'));
-    const unsubscribeSources = onSnapshot(qSources, (snapshot) => {
-      const data = snapshot.docs.map(doc => {
-        const raw = { id: doc.id, ...doc.data() };
-        return SourceSchema.parse(raw);
-      });
-      setSources(data);
-    });
-
-    // 3. Listen for Tasks (Active and History)
-    const qTasks = query(
-      collection(db, 'tasks'),
-      where('user_id', '==', 'demo-user'),
-      orderBy('timestamp', 'desc'),
-      limit(10)
-    );
-    const unsubscribeTasks = onSnapshot(qTasks, (snapshot) => {
-      const taskList = snapshot.docs.map(doc => {
-        const raw = { id: doc.id, ...doc.data() };
-        return TaskSchema.parse(raw);
-      });
-      setTasks(taskList);
-      
-      // Update active task if it's not completed
-      const current = taskList.find(t => !t.completed);
-      setActiveTask(current || null);
-    }, (error) => {
-      console.warn("Firestore Indexing in progress (Tasks)...", error);
-      if (error.message.includes("requires an index")) {
-        setIndexError("System Index Needed");
-      }
-    });
-
-    return () => {
-      unsubscribeListings();
-      unsubscribeSources();
-      unsubscribeTasks();
-    };
+    return () => unsubscribe();
   }, []);
 
-  const handleAddSource = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newSourceUrl) return;
-    try {
-      const name = new URL(newSourceUrl).hostname.replace('www.', '');
-      await addDoc(collection(db, 'sources'), {
-        url: newSourceUrl,
-        name: name,
-        user_id: 'demo-user',
-        createdAt: serverTimestamp()
-      });
-      setNewSourceUrl('');
-    } catch (err) {
-      console.error("Error adding source:", err);
-      alert("Invalid URL");
-    }
+  const formatCurrency = (val: number) => {
+    if (!mounted) return `R${val}`;
+    return `R${val.toLocaleString('en-ZA')}`;
   };
 
-  const handleDeleteSource = async (id: string) => {
+  const fetchMissions = async () => {
     try {
-      await deleteDoc(doc(db, 'sources', id));
-    } catch (err) {
-      console.error("Error deleting source:", err);
-    }
+      const res = await fetch(`${API_BASE_URL}/searches/${userProfile.id}`);
+      const data = await res.json();
+      setSavedAlerts(data);
+    } catch (e) { console.error("Failed to fetch alerts:", e); }
   };
 
-  const handleAiSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!aiPrompt || isDeploying || activeTask) return;
+  useEffect(() => {
+    if (mounted) fetchMissions();
     
+    // 🌍 FETCH GEOFENCE REGISTRY (v79.0)
+    if (mounted) {
+      fetch(`${API_BASE_URL}/geofence/suburbs`)
+        .then(res => res.json())
+        .then(data => setAllSuburbs(data))
+        .catch(err => console.error("Geofence sync failed:", err));
+    }
+  }, [mounted, userProfile.id]);
+
+  // 🛰️ SIGNAL SPOTLIGHT (Autocomplete Logic)
+  useEffect(() => {
+    if (!aiPrompt || aiPrompt.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    
+    // Filter suburbs based on the last part of the prompt
+    const parts = aiPrompt.split(/[\s,]+/);
+    const lastPart = parts[parts.length - 1].toLowerCase();
+    
+    if (lastPart.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const matches = allSuburbs
+      .filter(s => s.toLowerCase().startsWith(lastPart))
+      .filter(s => !aiPrompt.toLowerCase().includes(s.toLowerCase())) // Don't suggest if already there
+      .slice(0, 5);
+      
+    setSuggestions(matches);
+  }, [aiPrompt, allSuburbs]);
+
+  useEffect(() => {
+    let interval: any;
+    if (activeTask?.id) {
+      const timer = setTimeout(() => {
+        interval = setInterval(async () => {
+          try {
+            const res = await fetch(`${API_BASE_URL}/task/${activeTask.id}`);
+            if (res.status === 404) return;
+            const data = await res.json();
+            setActiveTask(data);
+            
+            if (data?.status?.includes?.('Found') || data?.status?.includes?.('Complete') || data?.status?.includes?.('Failed')) {
+              clearInterval(interval);
+              const resultsRes = await fetch(`${API_BASE_URL}/listings/${userProfile.id}`);
+              const resultsData = await resultsRes.json();
+              setListings(resultsData);
+              fetchMissions();
+            }
+          } catch (e) { console.error(e); }
+        }, 2000);
+      }, 1000);
+      
+      return () => { clearTimeout(timer); clearInterval(interval); };
+    }
+  }, [activeTask?.id, userProfile.id]);
+
+  const handleSubscriptionSuccess = async (tier: string, subscriptionId: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/update-tier`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userProfile.id, tier, subscription_id: subscriptionId })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        setUserProfile({ ...userProfile, tier });
+        alert(`Success! Your account has been upgraded to ${tier.toUpperCase()}.`);
+      }
+    } catch (e) { console.error("Update failed:", e); }
+  };
+
+  const deleteAlert = async (searchId: string) => {
+    if (!confirm("Are you sure you want to delete this alert?")) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/delete-alert/${userProfile.id}/${searchId}`, { method: 'DELETE' });
+      if (res.ok) fetchMissions();
+    } catch (e) { console.error("Delete failed:", e); }
+  };
+
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    try {
+      await signInWithPopup(auth, googleAuthProvider);
+    } catch (e: any) { 
+      if (e.code !== 'auth/cancelled-popup-request') {
+        console.error("Login failed:", e); 
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) { console.error("Logout failed:", e); }
+  };
+
+  const handleAiSearch = async (isAlertSave = false) => {
     setIsDeploying(true);
     try {
-      const response = await fetch('http://localhost:8000/deploy-sniper', {
+      const response = await fetch(`${API_BASE_URL}/deploy-sniper`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: "demo-user",
+          user_id: userProfile.id,
           search_query: aiPrompt,
-          model: selectedModel,
-          alert_enabled: alertEnabled
-        })
+          alert_enabled: isAlertSave,
+          max_price: maxPrice,
+          min_bedrooms: selectedBedrooms,
+          pet_friendly: isPetFriendly,
+          rental_type: rentalType,
+          property_sub_type: propertySubType,
+          sources: selectedSources
+        }),
       });
-      
       const data = await response.json();
-      if (data.status === 'accepted') {
-        // Task started! Listener will pick it up
-      } else {
-        alert(data.message || "Failed to deploy sniper");
-      }
-    } catch (err) {
-      console.error("Deploy error:", err);
-    } finally {
+      
+      // Tier Limit Checks
+      const limits: Record<string, number> = { 'free': 1, 'bronze': 5, 'silver': 10, 'gold': 50 };
+      const currentLimit = limits[userProfile.tier] || 1;
+      
+      if (isAlertSave && savedAlerts.length >= currentLimit) {
+        alert(`Mission Cap Reached! Your ${userProfile.tier.toUpperCase()} tier is limited to ${currentLimit} active snipers. Please upgrade to expand your discovery grid.`);
         setIsDeploying(false);
-    }
+        return;
+      }
+
+      if (data.status === 'limited') {
+        alert(data.message);
+      } else if (data.status === 'busy') {
+        alert("The Sniper Station is currently busy with another scan. Please wait a moment and try again.");
+      } else if (data.task_id) {
+        if (isAlertSave) {
+          setShowSuccessToast(true);
+          setTimeout(() => setShowSuccessToast(false), 4000);
+          // Clear current search form
+          setAiPrompt('');
+          // Refresh list immediately
+          fetchMissions();
+          setActiveTab('alerts');
+        } else {
+          setActiveTask({ id: data.task_id, status: 'Searching...', progress: 5 });
+          setActiveTab('listings');
+        }
+      }
+    } catch (error) { console.error(error); } finally { setIsDeploying(false); }
   };
 
+  const toggleSource = (name: string) => {
+    setSelectedSources(prev => 
+      prev.includes(name) ? prev.filter(s => s !== name) : [...prev, name]
+    );
+  };
 
-  if (!mounted) {
-    return <div className="min-h-screen bg-[#050505]" />;
-  }
+  useEffect(() => {
+    if (rentalType === 'short-term') {
+      setSelectedSources(['Sea Point Rentals (Short Term)', 'Cape Town Mid-Term (1-6 Months)', 'Cape Town Short/Long Rentals', 'Facebook Marketplace']);
+    } else if (rentalType === 'pet-sitting') {
+      setSelectedSources(['Huis Huis Pet Friendly (Cape Town)', 'RentUncle (Pet Friendly)']);
+      setIsPetFriendly(true);
+    } else {
+      // Long Term / All
+      if (isPetFriendly) {
+        setSelectedSources(['Property24 Pet Friendly', 'RentUncle (Pet Friendly)', 'Huis Huis Pet Friendly (Cape Town)']);
+      } else {
+        setSelectedSources(['Property24', 'Sea Point Rentals', 'Huis Huis', 'RentUncle', 'Facebook Marketplace']);
+      }
+    }
+  }, [rentalType, isPetFriendly]);
+
+  if (!mounted) return null;
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white font-outfit">
-      {/* Header */}
-      <nav className="px-8 py-6 flex justify-between items-center border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center gap-2">
-          <Target className="w-6 h-6 text-emerald-primary" />
-          <span className="text-xl font-black tracking-tighter">HOME<span className="text-emerald-primary">SEEK</span></span>
-        </div>
-        <div className="flex items-center gap-4">
-           <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10 text-[10px] font-black uppercase tracking-widest">
-              <div className="w-2 h-2 rounded-full bg-emerald-primary animate-pulse" />
-              Sniper Active
-           </div>
-        </div>
-      </nav>
-
-      <div className="flex flex-col lg:flex-row h-[calc(100vh-80px)] overflow-hidden">
-        {/* Left Side: Controls */}
-        <div className="w-full lg:w-[400px] border-r border-white/5 p-8 space-y-10 overflow-y-auto shrink-0 bg-[#080808]">
-          
-          {/* AI Prompt Window */}
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 text-emerald-primary">
-              <Sparkles className="w-4 h-4" />
-              <h3 className="text-xs font-black uppercase tracking-[0.2em]">AI Filter Search</h3>
+    <div className="min-h-screen bg-black text-white font-sans">
+      {/* 🚀 PREMIUM NAVBAR */}
+      <nav className="sticky top-0 z-50 backdrop-blur-xl bg-black/60 border-b border-white/5 px-6 md:px-12 py-4">
+        <div className="max-w-[1400px] mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+              <span className="text-black font-black text-xl">H</span>
             </div>
-            <div className="glass-emerald p-6 rounded-[2rem] border border-emerald-primary/10 space-y-4">
-              <div className="bg-black/40 p-4 rounded-2xl text-[11px] font-medium leading-relaxed text-white/60 border border-white/5">
-                <p className="mb-2 text-emerald-primary font-bold uppercase tracking-widest">Instructions:</p>
-                Describe your dream home. Mention <span className="text-white">budget</span>, <span className="text-white">neighborhoods</span>, <span className="text-white">pet policy</span>, and <span className="text-white">solar needs</span>. 
-                Our AI will parse sources and alert you instantly when a match lands.
-              </div>
-              <form onSubmit={handleAiSearch} className="space-y-4">
-                <textarea 
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder="e.g. 2 Bedroom in Claremont, pet friendly, under R20k with solar..."
-                  className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-primary/30 min-h-[100px] resize-none placeholder:text-white/20"
-                />
-                
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                    <div className="flex items-center gap-3">
-                      <Bell className={`w-4 h-4 ${alertEnabled ? 'text-emerald-primary' : 'text-white/20'}`} />
-                      <span className="text-[10px] font-black uppercase tracking-widest text-white/50">Alerts</span>
-                    </div>
-                    <button 
-                      type="button"
-                      onClick={() => setAlertEnabled(!alertEnabled)}
-                      className={`w-10 h-5 rounded-full relative transition-all ${alertEnabled ? 'bg-emerald-primary' : 'bg-white/10'}`}
-                    >
-                      <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${alertEnabled ? 'right-1' : 'left-1'}`} />
-                    </button>
-                  </div>
-
-                  {/* Model Selector */}
-                  <div className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Cpu className="w-3 h-3 text-emerald-primary" />
-                      <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Intelligence Level</span>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2">
-                       {MODEL_OPTIONS.map((opt) => (
-                         <button
-                           key={opt.value}
-                           type="button"
-                           onClick={() => setSelectedModel(opt.value)}
-                           className={`flex flex-col items-start p-3 rounded-xl border transition-all text-left ${selectedModel === opt.value ? 'bg-emerald-primary/10 border-emerald-primary/40' : 'bg-black/40 border-white/5 hover:border-white/10'}`}
-                         >
-                            <span className={`text-[10px] font-bold ${selectedModel === opt.value ? 'text-emerald-primary' : 'text-white'}`}>{opt.label}</span>
-                            <span className="text-[8px] text-white/30 font-medium">{opt.desc}</span>
-                         </button>
-                       ))}
-                    </div>
-                  </div>
-
-                  {isDeploying || activeTask ? (
-                    <div className="flex gap-2 w-full">
-                      <button 
-                        disabled 
-                        className="flex-1 bg-emerald-primary/10 text-emerald-primary/50 cursor-not-allowed font-black py-4 rounded-2xl flex items-center justify-center gap-2 text-sm border border-emerald-primary/10"
-                      >
-                        EXTRACTING... <RefreshCw className="w-3 h-3 animate-spin" />
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={async () => {
-                          if (activeTask) {
-                            try {
-                              await deleteDoc(doc(db, 'tasks', activeTask.id));
-                              setActiveTask(null);
-                            } catch (e) { console.error(e); }
-                          }
-                        }}
-                        className="p-4 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded-2xl border border-red-500/20 transition-all flex items-center justify-center"
-                        title="Force Stop & Clear Stuck Task"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <button 
-                      type="submit"
-                      className="w-full bg-emerald-primary hover:bg-emerald-secondary text-black font-black py-4 rounded-2xl transition-all flex items-center justify-center gap-2 text-sm"
-                    >
-                      UPDATE INTELLIGENCE <Zap className="w-3 h-3 fill-black" />
-                    </button>
-                  )}
-                </div>
-              </form>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">Home-Seek</h1>
+              <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest leading-none">Intelligence Engine</p>
             </div>
-          </section>
+          </div>
 
-          {/* Logs moved to center */}
-
-          {/* History Sidebar */}
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 text-white/40">
-              <History className="w-4 h-4" />
-              <h3 className="text-xs font-black uppercase tracking-[0.2em]">History</h3>
-            </div>
-            <div className="space-y-3">
-              {tasks.filter((t: any) => t.completed).slice(0, 3).map((task: any) => (
-                <div key={task.id} className="p-4 bg-white/5 border border-white/5 rounded-2xl hover:border-white/10 transition-all cursor-pointer group">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[9px] font-mono text-white/20 uppercase tracking-widest">
-                      {task.timestamp?.toDate ? new Date(task.timestamp.toDate()).toLocaleDateString() : 'Recent'}
-                    </span>
-                    <span className="text-[9px] bg-emerald-primary/10 text-emerald-primary px-2 py-0.5 rounded-full font-bold">SAVED</span>
-                  </div>
-                  <p className="text-[11px] text-white/60 line-clamp-1 leading-relaxed italic group-hover:text-white transition-colors">
-                    "{task.query}"
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Sources CRUD */}
-          <section className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-white/40">
-                <Globe className="w-4 h-4" />
-                <h3 className="text-xs font-black uppercase tracking-[0.2em]">Sources</h3>
-              </div>
-              <span className="text-[10px] font-black text-white/20 uppercase">{sources.length} Tracking</span>
+          <div className="flex items-center gap-8">
+            <div className="hidden md:flex items-center gap-6 mr-4 border-r border-white/10 pr-8">
+              <a href="/" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-white transition-all">Home</a>
+              <a href="/explore" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-white transition-all">Explore</a>
+              <a href="/discover" className="text-[10px] font-bold text-white uppercase tracking-widest border-b-2 border-emerald-500 pb-1">Alerts</a>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <AnimatePresence>
-                {sources.map(source => (
-                  <motion.div 
-                    key={source.id}
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="flex items-center gap-2 pl-3 pr-1 py-1.5 bg-white/5 border border-white/10 rounded-full group hover:border-emerald-primary/40 transition-all"
-                  >
-                    <span className="text-[10px] font-bold text-white/60 capitalize">{source.name}</span>
-                    <button 
-                      onClick={() => handleDeleteSource(source.id)}
-                      className="p-1 hover:bg-red-500/20 rounded-full text-white/20 hover:text-red-500 transition-all"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-              
-              <form onSubmit={handleAddSource} className="relative w-full mt-2">
-                <input 
-                  type="text" 
-                  value={newSourceUrl}
-                  onChange={(e) => setNewSourceUrl(e.target.value)}
-                  placeholder="Add new source URL..."
-                  className="w-full bg-white/5 border border-dashed border-white/10 rounded-2xl px-5 py-3 text-xs focus:outline-none focus:border-emerald-primary/50 transition-all placeholder:text-white/20"
-                />
-                <button 
-                  type="submit"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-emerald-primary rounded-xl text-black hover:bg-emerald-secondary transition-all"
+            <div className="text-right hidden lg:block">
+              <p className="text-[9px] uppercase tracking-[0.3em] text-emerald-500 font-bold mb-0.5">Terminal Active</p>
+              <p className="text-white/20 text-[9px] uppercase tracking-widest font-bold">ZAF Nodes Connected</p>
+            </div>
+
+            {user ? (
+              <div className="flex items-center gap-6">
+                 {user.photoURL && <img src={user.photoURL} className="w-8 h-8 rounded-full border border-white/10" alt="avatar" />}
+                 <button 
+                  onClick={handleLogout} 
+                  className="bg-white/5 border border-white/10 px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/20 hover:text-red-500 transition-all"
                 >
-                  <Plus className="w-3 h-3" />
+                  Log Out
                 </button>
-              </form>
-            </div>
-          </section>
-
-          {/* Notification Status */}
-          <section className="pt-6 border-t border-white/5">
-             <div className="flex items-center gap-4 p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl">
-                <div className="p-2 bg-blue-500/20 rounded-xl text-blue-500">
-                   <MessageSquare className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Alerts Configured</p>
-                  <p className="text-xs text-white/40 font-medium">WhatsApp: +27 72 *** ****</p>
-                </div>
-             </div>
-          </section>
-
-        </div>
-
-        {/* Right Side: Results Grid */}
-        <div className="flex-1 overflow-y-auto p-8 lg:p-12 bg-black">
-          <div className="max-w-6xl mx-auto space-y-10">
-            {activeTask ? (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="max-w-4xl mx-auto w-full pt-12"
-              >
-                <div className="relative group">
-                  {/* Decorative Elements */}
-                  <div className="absolute -inset-1 bg-gradient-to-r from-emerald-primary/20 via-blue-500/10 to-emerald-primary/20 rounded-[2.5rem] blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
-                  
-                  <div className="relative bg-[#0a0a0a] border border-emerald-primary/20 rounded-[2.5rem] overflow-hidden">
-                    {/* Header */}
-                    <div className="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-emerald-primary/10 rounded-2xl flex items-center justify-center border border-emerald-primary/20">
-                          <Cpu className="w-6 h-6 text-emerald-primary animate-pulse" />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-black uppercase tracking-widest text-white">Sniper Engine</h3>
-                          <p className="text-[10px] font-mono text-emerald-primary/50">ACTIVE SESSION: {activeTask.id.slice(0,12)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 px-4 py-2 bg-emerald-primary/10 rounded-full border border-emerald-primary/20">
-                        <div className="w-2 h-2 rounded-full bg-emerald-primary animate-ping" />
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-primary">Processing...</span>
-                      </div>
-                    </div>
-
-                    {/* Terminal Window */}
-                    <div className="p-8 font-mono text-[12px] leading-relaxed min-h-[400px] max-h-[60vh] overflow-y-auto custom-scrollbar bg-black/50">
-                      <div className="space-y-3">
-                        {activeTask.logs?.map((log: string, idx: number) => (
-                          <motion.div 
-                            key={idx}
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: 0.1 }}
-                            className="flex gap-4 group/log"
-                          >
-                            <span className="text-white/20 shrink-0">{(idx + 1).toString().padStart(2, '0')}</span>
-                            <span className="text-emerald-primary/40 shrink-0">[{new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'})}]</span>
-                            <span className={`
-                              ${idx === activeTask.logs.length - 1 ? 'text-emerald-primary font-bold' : 'text-white/60'}
-                              ${log.includes('🚀') || log.includes('🕷️') ? 'text-white flex items-center gap-2' : ''}
-                            `}>
-                              {log}
-                              {idx === activeTask.logs.length - 1 && (
-                                <span className="inline-block w-1.5 h-4 bg-emerald-primary ml-1 animate-pulse" />
-                              )}
-                            </span>
-                          </motion.div>
-                        ))}
-                        {activeTask.logs.length === 0 && (
-                          <div className="flex flex-col items-center justify-center py-20 text-white/20 space-y-4">
-                            <Loader2 className="w-8 h-8 animate-spin" />
-                            <p className="tracking-[0.3em] font-black uppercase text-[10px]">Initializing Core...</p>
-                          </div>
-                        )}
-                        <div id="logs-end" />
-                      </div>
-                    </div>
-
-                    {/* Footer Progress */}
-                    <div className="px-8 py-6 border-t border-white/5 bg-white/5 flex items-center justify-between">
-                      <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-2">
-                          <Globe className="w-3 h-3 text-white/20" />
-                          <span className="text-[10px] font-bold text-white/40 uppercase">Sources: 1/1</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Zap className="w-3 h-3 text-white/20" />
-                          <span className="text-[10px] font-bold text-white/40 uppercase">AI: Neural-V2</span>
-                        </div>
-                      </div>
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4].map((i) => (
-                          <div key={i} className={`w-8 h-1 rounded-full ${i <= 3 ? 'bg-emerald-primary/40' : 'bg-white/5'}`} />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            ) : (
-              <div className="space-y-10">
-                <div className="flex items-center justify-between">
-                   <h2 className="text-3xl font-black tracking-tight flex items-center gap-3">
-                     Intelligence Feed
-                     <span className="text-[10px] bg-emerald-primary/10 text-emerald-primary px-3 py-1 rounded-full border border-emerald-primary/20">LIVE</span>
-                   </h2>
-                   <div className="flex gap-2">
-                      <div className="w-10 h-10 bg-white/5 rounded-xl border border-white/10 flex items-center justify-center">
-                        <Search className="w-4 h-4 text-white/40" />
-                      </div>
-                   </div>
-                </div>
-
-                {loading && listings.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-64 space-y-4">
-                    {indexError ? (
-                      <div className="text-center space-y-4">
-                        <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto border border-amber-500/20">
-                          <Zap className="w-8 h-8 text-amber-500 animate-pulse" />
-                        </div>
-                        <div>
-                          <h3 className="text-xl font-bold text-amber-500">Database Indexing Required</h3>
-                          <p className="text-white/40 text-sm max-w-sm mt-1">Please check your browser console and click the Google link to enable this search view.</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <Loader2 className="w-10 h-10 text-emerald-primary animate-spin" />
-                        <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em]">Decrypting feed...</p>
-                      </>
-                    )}
-                  </div>
-                ) : listings.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-24 text-center space-y-6 bg-white/5 rounded-[3rem] border border-dashed border-white/10">
-                    <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto border border-white/10">
-                       <Search className="w-6 h-6 text-white/20" />
-                    </div>
-                    <div className="space-y-2">
-                       <h3 className="text-lg font-bold text-white/60">No Intelligence Found</h3>
-                       <p className="text-xs text-white/20 max-w-xs mx-auto">Try broadening your AI search parameters or adding more sources to scan.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <AnimatePresence>
-                      {listings.map((item, i) => (
-                        <motion.div 
-                          key={item.id} 
-                          layout
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.05 }}
-                          className="glass overflow-hidden group hover:border-emerald-primary/30 transition-all duration-500 flex flex-col rounded-[2rem] border border-white/5"
-                        >
-                          <div className="h-48 bg-white/5 relative overflow-hidden">
-                            <img 
-                              src={item.imageUrl || `/assets/property-${(i % 3) + 1}.png`} 
-                              alt="" 
-                              className="w-full h-full object-cover grayscale-[0.5] transition-all duration-700 group-hover:scale-110 group-hover:grayscale-0"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                            <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full text-[9px] font-black border border-white/10 uppercase tracking-widest">
-                              <Home className="w-2.5 h-2.5 text-emerald-primary" />
-                              {item.platform}
-                            </div>
-                            <div className="absolute bottom-4 left-4">
-                               <span className="text-2xl font-black text-white">
-                                 R {item.price.toLocaleString()}
-                               </span>
-                            </div>
-                          </div>
-                          
-                          <div className="p-6 space-y-4 flex-1 flex flex-col">
-                            <div className="flex-1 space-y-1">
-                              <h3 className="text-base font-bold leading-tight line-clamp-2 group-hover:text-emerald-primary transition-colors">
-                                {item.title}
-                              </h3>
-                              <p className="text-[11px] text-white/40 font-medium flex items-center gap-1.5">
-                                <MapPin className="w-3 h-3 text-emerald-primary" />
-                                {item.address}
-                              </p>
-                            </div>
-                            
-                            <div className="flex flex-wrap gap-1.5">
-                              {item.bedrooms && (
-                                <span className="bg-white/5 px-3 py-1 rounded-lg text-[9px] border border-white/5 font-bold uppercase">{item.bedrooms} BEDS</span>
-                              )}
-                              {item.is_pet_friendly && (
-                                <div className="bg-emerald-primary/10 text-emerald-primary px-3 py-1 rounded-lg text-[9px] border border-emerald-primary/20 font-black flex items-center gap-1.5">
-                                  <PawPrint className="w-2.5 h-2.5" /> PETS
-                                </div>
-                              )}
-                              {item.has_solar && (
-                                <div className="bg-amber-500/10 text-amber-500 px-3 py-1 rounded-lg text-[9px] border border-amber-500/20 font-black flex items-center gap-1.5">
-                                  <Sun className="w-2.5 h-2.5" /> SOLAR
-                                </div>
-                              )}
-                            </div>
-
-                            {/* AI Match Reason */}
-                            {(item as any).match_reason && (
-                              <div className="bg-emerald-primary/5 p-4 rounded-2xl border border-emerald-primary/10 relative overflow-hidden group/reason">
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2 text-emerald-primary">
-                                    <Sparkles className="w-3 h-3" />
-                                    <span className="text-[9px] font-black uppercase tracking-widest">AI Match Intel</span>
-                                  </div>
-                                  <span className="text-[10px] font-black text-emerald-primary/40">{(item as any).match_score}%</span>
-                                </div>
-                                <p className="text-[11px] text-white/60 leading-relaxed italic">
-                                  "{ (item as any).match_reason }"
-                                </p>
-                              </div>
-                            )}
-                            
-                            <a 
-                              href={item.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="w-full bg-white text-black font-black py-4 rounded-xl hover:bg-emerald-primary hover:text-white transition-all active:scale-95 flex items-center justify-center gap-2 text-xs mt-2"
-                            >
-                              OPEN LISTING <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </AnimatePresence>
-                  </div>
-                )}
               </div>
+            ) : (
+              <button 
+                onClick={handleLogin}
+                disabled={isLoggingIn}
+                className={`bg-white text-black px-8 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-500 transition-all ${isLoggingIn ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isLoggingIn ? 'Logging In...' : 'Log In'}
+              </button>
             )}
           </div>
         </div>
+      </nav>
+
+      <div className="max-w-[1400px] mx-auto p-6 md:p-12 space-y-12">
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+          
+          {/* New Alert Form */}
+          <div className="lg:col-span-3 space-y-8 lg:sticky lg:top-24 lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto custom-scrollbar pr-2">
+            <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6">
+              {/* Protocol Mode Toggle */}
+              <div className="mb-6 p-0.5 bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+                <div className="flex items-center justify-between p-4 bg-emerald-500/[0.03]">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-emerald-500/80 uppercase tracking-[0.2em] leading-none mb-1">Protocol Mode</span>
+                    <span className="text-[11px] font-bold text-white uppercase tracking-widest">Pet Friendly Focus</span>
+                  </div>
+                  <div className="flex bg-black/60 p-1 rounded-xl border border-white/5">
+                    <button 
+                      onClick={() => setIsPetFriendly(false)}
+                      className={`w-14 py-2 rounded-lg text-[10px] font-black transition-all ${!isPetFriendly ? 'bg-white/10 text-white shadow-lg' : 'text-white/20 hover:text-white/40'}`}
+                    >
+                      OFF
+                    </button>
+                    <button 
+                      onClick={() => setIsPetFriendly(true)}
+                      className={`w-14 py-2 rounded-lg text-[10px] font-black transition-all ${isPetFriendly ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'text-white/20 hover:text-white/40'}`}
+                    >
+                      ON
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Mission Category (NEW) */}
+              <div className="mb-8 space-y-4">
+                <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">Mission Category</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'all', label: 'All Listings', icon: Globe },
+                    { id: 'long-term', label: 'Long Term', icon: House },
+                    { id: 'short-term', label: 'Short Term', icon: SunHorizon },
+                    { id: 'pet-sitting', label: 'Pet-Sitting', icon: Dog }
+                  ].map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setRentalType(cat.id as any)}
+                      className={`px-3 py-3 rounded-xl border transition-all text-[9px] font-bold uppercase flex flex-col items-center gap-1.5 ${
+                        rentalType === cat.id 
+                          ? 'bg-emerald-500 border-emerald-400 text-black shadow-[0_0_20px_rgba(16,185,129,0.2)]' 
+                          : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      <cat.icon size={18} weight={rentalType === cat.id ? "fill" : "bold"} />
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Property Layout (NEW) */}
+              <div className="mb-8 space-y-4">
+                <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">Property Layout</h3>
+                <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5">
+                  {[
+                    { id: 'all', label: 'All', icon: Layout },
+                    { id: 'Whole', label: 'Whole', icon: Stack },
+                    { id: 'Shared', label: 'Shared', icon: UsersThree }
+                  ].map(type => (
+                    <button
+                      key={type.id}
+                      onClick={() => setPropertySubType(type.id as any)}
+                      className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase transition-all flex items-center justify-center gap-2 ${
+                        propertySubType === type.id 
+                          ? 'bg-white/10 text-white shadow-lg border border-white/10' 
+                          : 'text-white/30 hover:text-white/50'
+                      }`}
+                    >
+                      <type.icon size={14} weight={propertySubType === type.id ? "fill" : "bold"} />
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sources */}
+              <div className="mb-8 space-y-4">
+                <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">Active Intelligence Sources</h3>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { n: 'Property24', c: 'blue' },
+                    { n: 'Property24 Pet Friendly', c: 'emerald' },
+                    { n: 'Sea Point Rentals', c: 'indigo' },
+                    { n: 'Huis Huis', c: 'rose' },
+                    { n: 'Huis Huis Pet Friendly', c: 'emerald' },
+                    { n: 'RentUncle', c: 'orange' },
+                    { n: 'RentUncle Pet Friendly', c: 'emerald' }
+                  ].map(s => {
+                    const isActive = selectedSources.includes(s.n);
+                    return (
+                      <button 
+                        key={s.n} 
+                        onClick={() => toggleSource(s.n)}
+                        className={`px-3 py-1.5 rounded-lg border transition-all text-[9px] font-black uppercase flex items-center gap-1.5 ${
+                          isActive 
+                            ? `bg-${s.c}-500/20 text-${s.c}-400 border-${s.c}-500/40 shadow-[0_0_10px_rgba(16,185,129,0.1)]` 
+                            : 'bg-white/5 text-white/20 border-white/5 opacity-50 grayscale hover:grayscale-0 hover:opacity-100'
+                        }`}
+                      >
+                        <div className={`w-1 h-1 rounded-full ${isActive ? 'bg-current animate-pulse' : 'bg-white/20'}`} />
+                        {s.n}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="h-px bg-white/5 mb-8" />
+
+              <h2 className="text-lg font-bold mb-8">New Property Alert</h2>
+              
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  {/* Bedrooms */}
+                  <div className="flex flex-col gap-3 bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Target Bedrooms</span>
+                    <div className="grid grid-cols-5 gap-1">
+                      {[1, 2, 3, 4, 5].map(n => {
+                        const isSelected = selectedBedrooms.includes(n);
+                        return (
+                          <button 
+                            key={n} 
+                            onClick={() => {
+                              const newSelected = isSelected 
+                                ? selectedBedrooms.filter(b => b !== n)
+                                : [...selectedBedrooms, n].sort();
+                              
+                              setSelectedBedrooms(newSelected);
+                              
+                              // Update prompt with all selected rooms
+                              const tag = n === 5 ? '5+ Bedroom' : `${n} Bedroom`;
+                              setAiPrompt(prev => {
+                                if (isSelected) {
+                                  // Remove the tag cleanly
+                                  return prev.replace(new RegExp(`(\\b${tag}\\b,?\\s?|\\s?,?\\s?\\b${tag}\\b)`, 'gi'), '').trim().replace(/,\s*$/, '').replace(/^,\s*/, '');
+                                } else {
+                                  // Append the tag
+                                  const cleaned = prev.replace(/,\s*,/g, ',').trim();
+                                  const suffix = cleaned ? (cleaned.endsWith(',') ? ` ${tag}` : `, ${tag}`) : tag;
+                                  return (cleaned + suffix).replace(/^,\s*/, '').replace(/,\s*$/, '');
+                                }
+                              });
+                            }} 
+                            className={`py-3 rounded-lg flex items-center justify-center text-[10px] font-bold border transition-all ${isSelected ? 'bg-emerald-500 border-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10'}`}
+                          >
+                            {n === 5 ? '5+' : n}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-end mb-1">
+                      <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Search Description</label>
+                    </div>
+                    <textarea 
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      placeholder="e.g. 2 bedroom Sea Point"
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-emerald-500 transition-all min-h-[120px]"
+                    />
+                  </div>
+                  
+                  {/* Neighborhood Spotlight (Autocomplete) */}
+                  <AnimatePresence>
+                    {suggestions.length > 0 && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -5 }}
+                        className="flex flex-wrap gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl"
+                      >
+                        <span className="w-full text-[8px] font-black text-emerald-500 uppercase tracking-[0.2em] mb-1">Neighborhood Spotlight</span>
+                        {suggestions.map(s => (
+                          <button 
+                            key={s}
+                            onClick={() => {
+                              const parts = aiPrompt.split(/[\s,]+/);
+                              parts[parts.length - 1] = s;
+                              setAiPrompt(parts.join(' ') + ', ');
+                              setSuggestions([]);
+                            }}
+                            className="px-3 py-1.5 bg-emerald-500 text-black rounded-xl text-[10px] font-bold hover:scale-105 transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                          >
+                            + {s}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  
+                  {/* Protocol Presets (Fallback/Helpers) */}
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {[
+                      "Sea Point", "Green Point", "Camps Bay", "Gardens", "Newlands", "Constantia", "Muizenberg", "Water Included", "Safe", "Garage"
+                    ].map(tag => (
+                      <button 
+                        key={tag}
+                        onClick={() => setAiPrompt(prev => prev ? `${prev}, ${tag}, ` : `${tag}, `)}
+                        className="px-3 py-1 bg-white/5 hover:bg-white/10 border border-white/5 rounded-full text-[9px] font-bold text-white/40 hover:text-white transition-all underline decoration-emerald-500/30 underline-offset-4"
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-4 bg-white/5 p-4 rounded-2xl border border-white/5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Max Price</span>
+                    <button onClick={() => setIsEditingPrice(true)} className="text-xl font-bold hover:text-emerald-400">
+                      {formatCurrency(maxPrice)}
+                    </button>
+                  </div>
+                  <input type="range" min="5000" max="50000" step="500" value={maxPrice} onChange={(e) => setMaxPrice(parseInt(e.target.value))} className="w-full h-1 accent-emerald-500 bg-white/10 appearance-none rounded-full" />
+                </div>
+                
+                <AnimatePresence>
+                  {showSuccessToast && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-center justify-center gap-3 mt-4 overflow-hidden relative"
+                    >
+                      <motion.div 
+                        initial={{ scale: 0 }}
+                        animate={{ scale: [0, 1.2, 1] }}
+                        className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center text-black font-black text-[10px]"
+                      >
+                        ✓
+                      </motion.div>
+                      <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Protocol Accepted: Mission Saved</p>
+                      <motion.div 
+                        initial={{ x: '-100%' }}
+                        animate={{ x: '100%' }}
+                        transition={{ duration: 4, ease: "linear" }}
+                        className="absolute bottom-0 left-0 w-full h-0.5 bg-emerald-500/40"
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <div className="grid grid-cols-1 gap-3 pt-4">
+                  <button 
+                    onClick={() => handleAiSearch(true)} 
+                    disabled={isDeploying}
+                    className={`bg-emerald-500 text-black font-bold py-4 rounded-2xl text-xs uppercase transition-all ${isDeploying ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.02]'}`}
+                  >
+                    {isDeploying ? 'Saving Mission...' : 'Save Alert'}
+                  </button>
+                  <button 
+                    onClick={() => {
+                      console.log("🛰️ HUD: Initiating Quick Search Request...");
+                      handleAiSearch(false);
+                    }} 
+                    disabled={isDeploying} 
+                    className={`bg-white/10 border border-white/20 text-white font-bold py-4 rounded-2xl text-xs uppercase transition-all ${isDeploying ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white/20 hover:scale-[1.01] hover:border-emerald-500/50'}`}
+                  >
+                    {isDeploying ? 'Deploying Sniper...' : 'Quick Search Only'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Activity Feed */}
+          <div className="lg:col-span-6 space-y-8">
+            <div className="flex gap-12 border-b border-white/10">
+              <button onClick={() => setActiveTab('listings')} className={`pb-6 text-sm font-bold transition-all relative ${activeTab === 'listings' ? 'text-white' : 'text-white/20'}`}>
+                Past Listings
+                {activeTab === 'listings' && <motion.div layoutId="tab-pill" className="absolute bottom-0 left-0 w-full h-0.5 bg-emerald-500" />}
+              </button>
+              <button onClick={() => setActiveTab('alerts')} className={`pb-6 text-sm font-bold transition-all relative ${activeTab === 'alerts' ? 'text-white' : 'text-white/20'}`}>
+                My Alerts
+                {activeTab === 'alerts' && <motion.div layoutId="tab-pill" className="absolute bottom-0 left-0 w-full h-0.5 bg-emerald-500" />}
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {activeTab === 'listings' ? (
+                <div className="space-y-6">
+                  {/* Platform Filter HUD (v105.4) */}
+                  <div className="flex flex-wrap gap-2 mb-4 bg-white/[0.02] p-2 rounded-2xl border border-white/5">
+                    {['', 'Facebook', 'Property24', 'RentUncle'].map((plat) => (
+                      <button 
+                        key={plat}
+                        onClick={() => setPlatformFilter(plat)}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${platformFilter === plat ? 'bg-emerald-500 text-black shadow-lg' : 'text-white/30 hover:text-white hover:bg-white/5'}`}
+                      >
+                        {plat || 'All Sources'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {activeTask && (
+                    <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-3xl p-6">
+                      <div className="flex justify-between items-center mb-4">
+                        <p className="text-sm font-bold uppercase tracking-widest">{activeTask.status || "Searching..."}</p>
+                        <span className="text-xs font-bold text-emerald-500">{activeTask.progress || 0}%</span>
+                      </div>
+                      <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden mb-4">
+                        <motion.div initial={{ width: 0 }} animate={{ width: `${activeTask.progress || 0}%` }} className="h-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]" />
+                      </div>
+                      <div className="bg-black/80 border border-white/10 rounded-xl p-4 font-mono text-[10px] text-emerald-400/80 h-48 overflow-y-auto flex flex-col gap-1">
+                        {!activeTask.logs && <p>Awaiting telemetry...</p>}
+                        {activeTask.logs && activeTask.logs.map((log: string, i: number) => (
+                           <motion.div key={i} initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }}>
+                             {log}
+                           </motion.div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {listings
+                    .filter((l: any) => !platformFilter || l.platform === platformFilter)
+                    .map((l: any, idx: number) => (
+                    <motion.div key={idx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white/[0.03] border border-white/10 rounded-3xl p-8 group hover:border-white/20 transition-all">
+                      <div className="flex justify-between items-start mb-6">
+                        <div>
+                          <h4 className="font-bold text-xl mb-1">{l.title}</h4>
+                          <p className="text-xs text-white/40 font-bold uppercase tracking-widest">{l.address}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold">{formatCurrency(l.price)}</p>
+                          {l.property_sub_type === 'Shared' && (
+                            <span className="text-[9px] font-black text-orange-400 uppercase tracking-widest border border-orange-400/30 px-2 py-0.5 rounded-md mt-1 inline-block">Shared Room</span>
+                          )}
+                          <div className="flex gap-4 text-[9px] font-black uppercase tracking-widest text-white/30 mt-2">
+                             <span>🏗️ {l.bedrooms && l.bedrooms > 0 ? `${l.bedrooms} Bed` : 'Any Beds'}</span>
+                             <span>🚿 {l.bathrooms || 1} Bath</span>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-sm text-white/60 mb-8 border-l-2 border-emerald-500/30 pl-6 py-1 leading-relaxed">"{l.match_reason}"</p>
+                      <div className="flex gap-4">
+                        <a href={l.source_url} target="_blank" className="bg-white text-black px-8 py-3 rounded-xl text-xs font-bold uppercase hover:bg-emerald-400 transition-all">View Property</a>
+                        <span className="bg-white/5 px-6 py-3 rounded-xl text-[10px] font-bold text-white/20 uppercase tracking-widest flex items-center">{l.platform}</span>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {savedAlerts.length > 0 ? (
+                    savedAlerts.map((alert: any, idx: number) => {
+                      const displayQuery = alert.search_query.split('(')[0].trim();
+                      const isPetFriendly = alert.search_query.toLowerCase().includes('pet friendly');
+                      
+                      return (
+                        <div key={idx} className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 flex justify-between items-center group transition-all hover:bg-white/[0.05] hover:border-white/20">
+                          <div>
+                            <div className="flex items-center gap-3 mb-2">
+                              <h4 className="text-sm font-bold">{displayQuery}</h4>
+                              {isPetFriendly && (
+                                 <span className="bg-emerald-500/10 text-emerald-500 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter border border-emerald-500/20 flex items-center gap-1">
+                                   <Dog size={10} weight="fill" /> Pet-Sit Priority
+                                 </span>
+                              )}
+                            </div>
+                            <div className="flex gap-4 text-[10px] font-bold text-white/30 uppercase tracking-widest items-center">
+                              <div className="flex items-center gap-1.5 grayscale opacity-50">
+                                🏗️ {alert.min_bedrooms ? 
+                                    (Array.isArray(alert.min_bedrooms) ? alert.min_bedrooms.join(', ') : alert.min_bedrooms) + '+' : 
+                                    'Any'} Beds
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                💰 {formatCurrency(alert.max_price)} Max
+                              </div>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => deleteAlert(alert.id || alert.search_id)}
+                            className="text-white/10 group-hover:text-red-500/60 text-[10px] font-bold uppercase tracking-widest transition-all px-4 py-2 hover:bg-red-500/5 rounded-xl border border-transparent hover:border-red-500/10"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="bg-white/[0.02] border border-white/5 border-dashed rounded-3xl p-32 text-center">
+                      <p className="text-white/10 text-[10px] uppercase tracking-[0.5em] font-bold">No saved alerts found</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Sidebar (Account & Subscription) */}
+          <div className="lg:col-span-3 space-y-8 lg:sticky lg:top-24 lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto custom-scrollbar pl-2">
+            <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-8">
+              <div>
+                <h2 className="text-sm font-bold text-white/40 uppercase tracking-[0.2em] mb-4">Account Status</h2>
+                <div className="bg-emerald-500/10 border border-emerald-500/20 px-6 py-4 rounded-2xl">
+                  <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Active Plan</p>
+                  <p className="text-lg font-black text-white">{userProfile.tier.toUpperCase()}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Available Upgrades</h3>
+                
+                {userProfile.tier === 'free' && (
+                  <div className="bg-white/5 border border-white/5 p-6 rounded-2xl space-y-4 hover:border-white/10 transition-all">
+                    <div>
+                      <h4 className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Bronze Plan</h4>
+                      <p className="text-sm font-bold text-white">R100 / Month</p>
+                      <div className="space-y-1 mt-2">
+                         <p className="text-[9px] text-white/40">• 5 Active Sniper Alerts</p>
+                         <p className="text-[9px] text-white/40">• Access to P24 & RentUncle</p>
+                      </div>
+                    </div>
+                    <PayPalButtons 
+                      style={{ layout: 'horizontal', color: 'blue', shape: 'pill', label: 'subscribe', height: 35 }}
+                      createSubscription={(data, actions) => {
+                        const planId = process.env.NEXT_PUBLIC_PAYPAL_PLAN_BRONZE;
+                        return actions.subscription.create({ 'plan_id': planId || "" });
+                      }}
+                      onApprove={async (data) => handleSubscriptionSuccess('bronze', data.subscriptionID || '')}
+                    />
+                  </div>
+                )}
+
+                {userProfile.tier !== 'silver' && userProfile.tier !== 'gold' && (
+                  <div className="bg-white/10 border border-blue-500/20 p-6 rounded-2xl space-y-4 hover:border-blue-500/40 transition-all">
+                    <div>
+                      <h4 className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Silver Plan</h4>
+                      <p className="text-sm font-bold text-white">R200 / Month</p>
+                      <div className="space-y-1 mt-2">
+                         <p className="text-[9px] text-white/40">• 10 Active Sniper Alerts</p>
+                         <p className="text-[9px] text-white/60">• 2x Deep Scans Per Day</p>
+                         <p className="text-[9px] text-emerald-400/80 font-bold">• Pet-Friendly Semantic Extract</p>
+                      </div>
+                    </div>
+                    <PayPalButtons 
+                      style={{ layout: 'horizontal', color: 'blue', shape: 'pill', label: 'subscribe', height: 35 }}
+                      createSubscription={(data, actions) => {
+                        const planId = process.env.NEXT_PUBLIC_PAYPAL_PLAN_SILVER;
+                        return actions.subscription.create({ 'plan_id': planId || "" });
+                      }}
+                      onApprove={async (data) => handleSubscriptionSuccess('silver', data.subscriptionID || '')}
+                    />
+                  </div>
+                )}
+
+                {userProfile.tier !== 'gold' && (
+                  <div className="bg-emerald-500/5 border border-emerald-500/20 p-6 rounded-2xl space-y-4 hover:border-emerald-500/40 transition-all relative overflow-hidden">
+                    <div className="absolute top-0 right-0 bg-emerald-500 text-black text-[8px] font-black px-3 py-1 uppercase tracking-widest">Speed</div>
+                    <div>
+                      <h4 className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Gold Plan</h4>
+                      <p className="text-sm font-bold text-white">R300 / Month</p>
+                      <div className="space-y-1 mt-2">
+                         <p className="text-[9px] text-white/40">• 50 Active Sniper Alerts</p>
+                         <p className="text-[9px] text-emerald-500 font-bold tracking-tight">• Scans Every 10 Minutes</p>
+                      </div>
+                    </div>
+                    <PayPalButtons 
+                      style={{ layout: 'horizontal', color: 'black', shape: 'pill', label: 'subscribe', height: 35 }}
+                      createSubscription={(data, actions) => {
+                        const planId = process.env.NEXT_PUBLIC_PAYPAL_PLAN_GOLD;
+                        return actions.subscription.create({ 'plan_id': planId || "" });
+                      }}
+                      onApprove={async (data) => handleSubscriptionSuccess('gold', data.subscriptionID || '')}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
-    </main>
+    </div>
   );
 }
-

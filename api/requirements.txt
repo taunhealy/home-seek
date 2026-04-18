@@ -12,3 +12,4 @@ python-dotenv
 pytest
 crawl4ai
 json-repair
+playwright-stealth

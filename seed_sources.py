@@ -5,6 +5,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# [STABILITY] Ensure Firestore doesn't try to use the Scraping Proxy
+os.environ.pop('HTTP_PROXY', None)
+os.environ.pop('HTTPS_PROXY', None)
+os.environ.pop('http_proxy', None)
+os.environ.pop('https_proxy', None)
+
 def seed_default_sources():
     # Initialize Firebase
     cred_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
@@ -19,10 +25,11 @@ def seed_default_sources():
     db = firestore.client()
     
     defaults = [
-        {"name": "Property24", "url": "https://www.property24.com/to-rent/cape-town/western-cape/432"},
-        {"name": "Private Property", "url": "https://www.privateproperty.co.za/to-rent/western-cape/cape-town/1"},
-        {"name": "Facebook Marketplace", "url": "https://www.facebook.com/marketplace/capetown/propertyrentals"},
-        {"name": "Gumtree", "url": "https://www.gumtree.co.za/s-property-to-rent/cape-town/v1c2l3100001p1"}
+        {"name": "Property24", "url": "https://www.property24.com/to-rent/cape-town/western-cape/432", "type": "long-term"},
+        {"name": "Property24 Pet Friendly", "url": "https://www.property24.com/to-rent/cape-town/western-cape/432/pet-friendly", "type": "long-term"},
+        {"name": "Huis Huis (Short Term)", "url": "https://www.facebook.com/groups/158733218125929/", "type": "short-term"},
+        {"name": "Sea Point Rentals (Short Term)", "url": "https://www.facebook.com/groups/seapointrentals", "type": "short-term"},
+        {"name": "RentUncle", "url": "https://www.gumtree.co.za/s-property-to-rent/cape-town/v1c2l3100001p1", "type": "long-term"},
     ]
 
     print("Seeding default sources for demo-user...")
@@ -31,6 +38,7 @@ def seed_default_sources():
         source_data = {
             **source,
             "user_id": "demo-user",
+            "enabled": True,
             "createdAt": firestore.SERVER_TIMESTAMP
         }
         # Check if exists first to avoid duplicates
@@ -41,9 +49,9 @@ def seed_default_sources():
         
         if not existing:
             db.collection('sources').add(source_data)
-            print(f"✅ Added: {source['name']}")
+            print(f"[ADDED] {source['name']}")
         else:
-            print(f"⏭️  Skipping (already exists): {source['name']}")
+            print(f"[SKIPPING] {source['name']} (already exists)")
 
 if __name__ == "__main__":
     seed_default_sources()
