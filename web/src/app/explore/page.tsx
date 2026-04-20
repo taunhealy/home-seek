@@ -15,9 +15,10 @@ import {
   Mountains,
   PawPrint
 } from "@phosphor-icons/react";
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { fetchWithAuth } from '@/lib/api';
 
-const API_LOCAL = "http://localhost:8000";
-const API_CLOUD = process.env.NEXT_PUBLIC_CLOUD_API || "http://localhost:8000";
 
 export default function ExplorePage() {
   const [activeTab, setActiveTab] = useState('long-term');
@@ -26,6 +27,7 @@ export default function ExplorePage() {
   const [showPostModal, setShowPostModal] = useState(false);
   const [eliteSuburbs, setEliteSuburbs] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [user, setUser] = useState<any>(null);
   
   // Filters State
   const [filters, setFilters] = useState({
@@ -46,25 +48,34 @@ export default function ExplorePage() {
     bedrooms: '',
     description: '',
     source_url: '',
-    platform: 'Manual Post'
+    platform: 'Manual Post',
+    property_type: 'Apartment',
+    property_sub_type: 'Whole',
+    view_category: 'Other',
+    available_date: '',
+    is_furnished: false,
+    is_pet_friendly: false
   });
 
   const fetchExplore = async (type: string) => {
+    if (!auth.currentUser) return;
     setIsLoading(true);
     try {
       // [HYBRID] Always fetch the Market Grid from the Cloud
-      let url = `${API_CLOUD}/explore-listings?rental_type=${type}`;
-      if (filters.minPrice) url += `&min_price=${filters.minPrice}`;
-      if (filters.maxPrice) url += `&max_price=${filters.maxPrice}`;
-      if (filters.platform) url += `&platform=${filters.platform}`;
-      if (filters.area) url += `&area=${filters.area}`;
-      if (filters.view) url += `&view=${filters.view}`;
-      if (filters.layout) url += `&layout=${filters.layout}`;
-      if (filters.pets) url += `&pets=true`;
+      let endpoint = `/explore-listings?rental_type=${type}`;
+      if (filters.minPrice) endpoint += `&min_price=${filters.minPrice}`;
+      if (filters.maxPrice) endpoint += `&max_price=${filters.maxPrice}`;
+      if (filters.platform) endpoint += `&platform=${filters.platform}`;
+      if (filters.area) endpoint += `&area=${filters.area}`;
+      if (filters.view) endpoint += `&view=${filters.view}`;
+      if (filters.layout) endpoint += `&layout=${filters.layout}`;
+      if (filters.pets) endpoint += `&pets=true`;
       
-      const resp = await fetch(url);
-      const data = await resp.json();
-      setListings(Array.isArray(data) ? data : []);
+      const resp = await fetchWithAuth(endpoint);
+      if (resp && resp.ok) {
+        const data = await resp.json();
+        setListings(Array.isArray(data) ? data : []);
+      }
     } catch (e) {
       console.error("Explore fetch error:", e);
       setListings([]);
@@ -75,17 +86,28 @@ export default function ExplorePage() {
 
   const fetchSuburbs = async () => {
     try {
-      const resp = await fetch(`${API_CLOUD}/geofence/suburbs`);
-      const data = await resp.json();
-      setEliteSuburbs(Array.isArray(data) ? data : []);
+      const resp = await fetchWithAuth(`/geofence/suburbs`);
+      if (resp && resp.ok) {
+        const data = await resp.json();
+        setEliteSuburbs(Array.isArray(data) ? data : []);
+      }
     } catch (e) {
       console.error("Error fetching suburbs:", e);
     }
   };
 
   useEffect(() => {
-    fetchExplore(activeTab);
-    fetchSuburbs();
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) {
+        fetchExplore(activeTab);
+        fetchSuburbs();
+      } else {
+        setIsLoading(false);
+        setListings([]);
+      }
+    });
+    return () => unsubscribe();
   }, [activeTab, filters.area, filters.view, filters.layout, filters.pets, filters.platform, filters.minPrice, filters.maxPrice]);
 
   const handleManualPost = async (e: React.FormEvent) => {
@@ -99,7 +121,7 @@ export default function ExplorePage() {
         created_at: new Date().toISOString()
       };
       
-      const resp = await fetch(`${API_CLOUD}/listings/manual`, {
+      const resp = await fetchWithAuth(`/listings/manual`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -108,7 +130,7 @@ export default function ExplorePage() {
       if (resp.ok) {
         setShowPostModal(false);
         fetchExplore(activeTab);
-        setPostForm({ title: '', price: '', address: '', bedrooms: '', description: '', source_url: '', platform: 'Manual Post' });
+        setPostForm({ title: '', price: '', address: '', bedrooms: '', description: '', source_url: '', platform: 'Manual Post', property_type: 'Apartment', property_sub_type: 'Whole', view_category: 'Other', available_date: '', is_furnished: false, is_pet_friendly: false });
       }
     } catch (e) {
       console.error("Manual post error:", e);
@@ -148,9 +170,29 @@ export default function ExplorePage() {
         </div>
       </nav>
 
-      <main className="pt-32 pb-24 px-12 max-w-[1600px] mx-auto grid grid-cols-12 gap-12">
-        
-        {/* Advanced Filters Sidebar */}
+      <main className="pt-32 pb-24 px-12 max-w-[1600px] mx-auto">
+        {!user ? (
+          <div className="py-32 flex flex-col items-center justify-center text-center animate-in fade-in slide-in-from-bottom-4 duration-1000">
+            <div className="w-24 h-24 bg-emerald-500/10 rounded-[2.5rem] flex items-center justify-center mb-10 shadow-[0_0_50px_rgba(16,185,129,0.1)] border border-emerald-500/20">
+               <Globe size={48} className="text-emerald-500" weight="duotone" />
+            </div>
+            <h2 className="text-5xl font-serif font-medium mb-6 tracking-tight">Market Intel Restricted</h2>
+            <p className="text-white/30 max-w-xl mx-auto mb-12 text-lg leading-relaxed font-medium">
+               A verified session is required to access the Cape Town collective feed and shared residential intelligence.
+            </p>
+            <div className="flex flex-col items-center gap-6">
+              <button 
+                onClick={() => window.location.href = '/discover'}
+                className="bg-white text-black px-16 py-6 rounded-3xl font-black uppercase text-sm tracking-[0.3em] shadow-[0_30px_60px_rgba(255,255,255,0.1)] hover:bg-emerald-500 transition-all hover:scale-105 active:scale-95"
+              >
+                Go to Terminal
+              </button>
+              <p className="text-[10px] text-white/10 uppercase tracking-[0.4em] font-black">Authorized Personnel Only</p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-12 gap-12">
+            {/* Advanced Filters Sidebar */}
         <aside className="col-span-3 space-y-12">
           <div className="bg-white/[0.03] border border-white/10 rounded-[2.5rem] p-10 space-y-10 sticky top-32">
             <div>
@@ -388,6 +430,16 @@ export default function ExplorePage() {
                            {l.rental_type === 'short-term' ? '⏳ FLEX' : '🏗️ ANNUAL'}
                         </span>
                      )}
+                     {l.available_date && (
+                        <span className="bg-black/60 backdrop-blur-xl border border-white/10 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest text-white/60">
+                           📅 {l.available_date}
+                        </span>
+                     )}
+                     {l.property_type && (
+                        <span className="bg-black/60 backdrop-blur-xl border border-white/10 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest text-blue-400">
+                           {l.property_type}
+                        </span>
+                     )}
                      {l.is_pet_friendly && (
                         <span className="bg-black/60 backdrop-blur-xl border border-white/10 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest text-emerald-400">
                            🐕 PETS OK
@@ -439,7 +491,7 @@ export default function ExplorePage() {
                       </div>
                    </div>
 
-                   <div className="flex gap-4 text-[9px] font-black uppercase tracking-widest text-white/40">
+                   <div className="flex flex-wrap gap-4 text-[9px] font-black uppercase tracking-widest text-white/40">
                       <div className="flex items-center gap-2">
                          <div className="w-1 h-1 rounded-full bg-emerald-500" />
                          {l.bedrooms && l.bedrooms > 0 ? `${l.bedrooms} Bed` : 'Any Beds'}
@@ -448,6 +500,18 @@ export default function ExplorePage() {
                          <div className="w-1 h-1 rounded-full bg-blue-500" />
                          {l.bathrooms || 1} Bath
                       </div>
+                      {l.is_furnished && (
+                         <div className="flex items-center gap-2">
+                            <div className="w-1 h-1 rounded-full bg-orange-400" />
+                            Furnished
+                         </div>
+                      )}
+                      {l.property_sub_type === 'Shared' && (
+                         <div className="flex items-center gap-2 text-orange-400">
+                            <div className="w-1 h-1 rounded-full bg-orange-500" />
+                            Shared Room
+                         </div>
+                      )}
                    </div>
 
                    <div className="pt-4 border-t border-white/5 flex items-center justify-between">
@@ -467,8 +531,10 @@ export default function ExplorePage() {
                 <p className="text-white/20 text-xs font-bold uppercase tracking-[0.5em]">No active listings found in this category</p>
              </div>
           )}
+          </div>
         </div>
-      </main>
+      )}
+    </main>
 
       {/* Post Mission Modal */}
       <AnimatePresence>
@@ -544,6 +610,78 @@ export default function ExplorePage() {
                         placeholder="e.g. Sea Point"
                         className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition-all text-white"
                       />
+                   </div>
+
+                   <div className="space-y-4">
+                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Asset Class</label>
+                      <select 
+                        value={postForm.property_type}
+                        onChange={(e) => setPostForm({ ...postForm, property_type: e.target.value })}
+                        className="w-full bg-[#151515] border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 transition-all text-white appearance-none"
+                      >
+                         <option value="Apartment">Apartment</option>
+                         <option value="House">House</option>
+                         <option value="Studio">Studio</option>
+                         <option value="Cottage">Cottage</option>
+                         <option value="Townhouse">Townhouse</option>
+                      </select>
+                   </div>
+
+                   <div className="space-y-4">
+                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Vista</label>
+                      <select 
+                        value={postForm.view_category}
+                        onChange={(e) => setPostForm({ ...postForm, view_category: e.target.value })}
+                        className="w-full bg-[#151515] border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 transition-all text-white appearance-none"
+                      >
+                         <option value="Other">Standard / Other</option>
+                         <option value="Sea">Atlantic / Sea View</option>
+                         <option value="Mountain">Mountain View</option>
+                      </select>
+                   </div>
+
+                   <div className="space-y-4">
+                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Occupancy</label>
+                      <select 
+                        value={postForm.property_sub_type}
+                        onChange={(e) => setPostForm({ ...postForm, property_sub_type: e.target.value })}
+                        className="w-full bg-[#151515] border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 transition-all text-white appearance-none"
+                      >
+                         <option value="Whole">Whole Unit</option>
+                         <option value="Shared">Shared Room</option>
+                      </select>
+                   </div>
+
+                   <div className="space-y-4">
+                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Availability</label>
+                      <input 
+                        value={postForm.available_date}
+                        onChange={(e) => setPostForm({ ...postForm, available_date: e.target.value })}
+                        placeholder="e.g. 1st June"
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition-all text-white"
+                      />
+                   </div>
+
+                   <div className="flex items-center space-x-8 pt-6">
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <div 
+                          onClick={() => setPostForm({...postForm, is_furnished: !postForm.is_furnished})}
+                          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${postForm.is_furnished ? 'bg-emerald-500 border-emerald-500' : 'border-white/10'}`}
+                        >
+                           {postForm.is_furnished && <Plus size={14} className="text-black" strokeWidth={4} />}
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 group-hover:text-white transition-all">Furnished</span>
+                      </label>
+
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <div 
+                          onClick={() => setPostForm({...postForm, is_pet_friendly: !postForm.is_pet_friendly})}
+                          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${postForm.is_pet_friendly ? 'bg-blue-500 border-blue-500' : 'border-white/10'}`}
+                        >
+                           {postForm.is_pet_friendly && <Plus size={14} className="text-black" strokeWidth={4} />}
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 group-hover:text-white transition-all">Pet Friendly</span>
+                      </label>
                    </div>
 
                    <div className="col-span-2 space-y-4">

@@ -38,40 +38,49 @@ class SniperHub(ctk.CTk):
         self.btn_toggle_server = ctk.CTkButton(self.sidebar_frame, text="Boot Extraction Server", command=self.toggle_server)
         self.btn_toggle_server.grid(row=2, column=0, padx=20, pady=10)
 
+        # 🚀 [PROMINENT] HEADLESS TOGGLE
+        self.headless_var = ctk.BooleanVar(value=False)
+        self.headless_switch = ctk.CTkSwitch(self.sidebar_frame, text="Invisible Mode (Headless)", variable=self.headless_var)
+        self.headless_switch.grid(row=3, column=0, padx=20, pady=(5, 15))
+
         # NEW: AUTH MAINTENANCE
         self.auth_label = ctk.CTkLabel(self.sidebar_frame, text="🔐 SESSION AUTH", font=ctk.CTkFont(size=14, weight="bold"))
-        self.auth_label.grid(row=3, column=0, padx=20, pady=(30, 5))
+        self.auth_label.grid(row=4, column=0, padx=20, pady=(30, 5))
 
         self.btn_prime_session = ctk.CTkButton(self.sidebar_frame, text="Prime Login Session", command=self.prime_session, fg_color="#8b5cf6", hover_color="#7c3aed")
-        self.btn_prime_session.grid(row=4, column=0, padx=20, pady=10)
+        self.btn_prime_session.grid(row=5, column=0, padx=20, pady=10)
 
         # Targeting Controls
         self.target_label = ctk.CTkLabel(self.sidebar_frame, text="🎯 TARGETING", font=ctk.CTkFont(size=14, weight="bold"))
-        self.target_label.grid(row=5, column=0, padx=20, pady=(30, 5))
+        self.target_label.grid(row=6, column=0, padx=20, pady=(30, 5))
 
         self.keyword_entry = ctk.CTkEntry(self.sidebar_frame, placeholder_text="Keyword (e.g. Sea Point)")
-        self.keyword_entry.grid(row=6, column=0, padx=20, pady=5, sticky="ew")
+        self.keyword_entry.grid(row=7, column=0, padx=20, pady=5, sticky="ew")
 
         self.source_var = ctk.StringVar(value="Select Source")
         self.source_menu = ctk.CTkOptionMenu(self.sidebar_frame, variable=self.source_var, values=["Huis Huis", "Huis Huis Pet Friendly", "Sea Point Rentals", "FB Marketplace", "Property24"])
-        self.source_menu.grid(row=7, column=0, padx=20, pady=5, sticky="ew")
+        self.source_menu.grid(row=8, column=0, padx=20, pady=5, sticky="ew")
 
         self.btn_manual_snipe = ctk.CTkButton(self.sidebar_frame, text="Snipe Now", command=self.manual_snipe, fg_color="#f59e0b", hover_color="#d97706")
-        self.btn_manual_snipe.grid(row=8, column=0, padx=20, pady=10)
+        self.btn_manual_snipe.grid(row=9, column=0, padx=20, pady=10)
 
         # NEW: QUICK SNIPE
         self.quick_label = ctk.CTkLabel(self.sidebar_frame, text="[Missions] QUICK SNIPES", font=ctk.CTkFont(size=14, weight="bold"))
-        self.quick_label.grid(row=9, column=0, padx=20, pady=(30, 5))
+        self.quick_label.grid(row=10, column=0, padx=20, pady=(30, 5))
 
         self.btn_quick_seapoint = ctk.CTkButton(self.sidebar_frame, text="Snipe: Sea Point (Huis Huis)", command=self.quick_seapoint, fg_color="#ec4899", hover_color="#db2777")
-        self.btn_quick_seapoint.grid(row=10, column=0, padx=20, pady=10)
+        self.btn_quick_seapoint.grid(row=11, column=0, padx=20, pady=10)
 
         # Advanced Pulse & Diag (Moved down to prevent overlap)
-        self.btn_toggle_pulse = ctk.CTkButton(self.sidebar_frame, text="Trigger Manual Pulse", command=self.trigger_manual_heartbeat, fg_color="#3b82f6", hover_color="#2563eb")
-        self.btn_toggle_pulse.grid(row=11, column=0, padx=20, pady=(30, 10))
+        self.btn_re_match = ctk.CTkButton(self.sidebar_frame, text="🧠 ALERTS SCAN (DB ONLY)", command=self.intel_re_match, fg_color="#10b981", hover_color="#059669")
+        self.btn_re_match.grid(row=12, column=0, padx=20, pady=(30, 5))
+
+        self.btn_force_hunt = ctk.CTkButton(self.sidebar_frame, text="🏹 HUNT NOW (WEB SCAN)", command=self.force_pulse, fg_color="#3b82f6", hover_color="#2563eb")
+        self.btn_force_hunt.grid(row=13, column=0, padx=20, pady=5)
 
         self.btn_diag = ctk.CTkButton(self.sidebar_frame, text="Run Pro Diagnostic", command=self.run_prod_diag, fg_color="#6366f1", hover_color="#4f46e5")
-        self.btn_diag.grid(row=12, column=0, padx=20, pady=10)
+        self.btn_diag.grid(row=14, column=0, padx=20, pady=10)
+        
         
         # --- Main Console ---
         self.main_frame = ctk.CTkFrame(self)
@@ -125,9 +134,10 @@ class SniperHub(ctk.CTk):
             env = os.environ.copy()
             env["LOCAL_SNIPER"] = "True"
             env["PYTHONUNBUFFERED"] = "1"
+            env["HEADLESS"] = "true" if self.headless_var.get() else "false"
             
             self.server_process = subprocess.Popen(
-                "python -m uvicorn main_local:app --host 0.0.0.0 --port 8000", 
+                "python -m uvicorn main:app --host 0.0.0.0 --port 8000", 
                 shell=True, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.STDOUT, 
@@ -207,6 +217,78 @@ if __name__ == '__main__':
 
         threading.Thread(target=_thread, daemon=True).start()
 
+    def intel_re_match(self):
+        user_id = "taun_test_user"
+        self.log_text(f"🧠 ANALYZING GLOBAL INTEL for {user_id} (DB Only)...")
+        
+        def _post():
+            import time
+            success = False
+            for attempt in range(15): # 30s total window
+                try:
+                    res = requests.post(
+                        "http://127.0.0.1:8000/trigger-re-match", 
+                        json={"user_id": user_id},
+                        proxies={"http": None, "https": None},
+                        timeout=30
+                    )
+                    data = res.json()
+                    if data.get("status") == "success":
+                        self.log_text(f"✅ INTEL SCAN COMPLETE: Cross-referencing {data.get('intel_pool')} listings.")
+                        success = True
+                    else:
+                        self.log_text(f"❌ Intel Error: {data.get('message')}")
+                        break
+                    break
+                except requests.exceptions.ConnectionError:
+                    if attempt == 0:
+                        self.log_text("⏳ STATION: Server is still warming up... holding intel scan in queue.")
+                    time.sleep(2)
+                except Exception as e:
+                    self.log_text(f"❌ API Error: {e}")
+                    break
+            
+            if not success and attempt == 14:
+                 self.log_text("❌ TIMEOUT: Server failed to respond after 30s.")
+        
+        threading.Thread(target=_post, daemon=True).start()
+
+    def force_pulse(self):
+        user_id = "taun_test_user"
+        self.log_text(f"🚀 INITIATING PROACTIVE ALERTS SCAN for {user_id}...")
+        
+        def _post():
+            import time
+            success = False
+            for attempt in range(15): # 30s total window
+                try:
+                    res = requests.post(
+                        "http://127.0.0.1:8000/trigger-full-scan", 
+                        json={"user_id": user_id},
+                        proxies={"http": None, "https": None},
+                        timeout=30
+                    )
+                    data = res.json()
+                    if data.get("status") == "success":
+                        self.log_text(f"✅ BATCH DISPATCHED: {data.get('mission_count')} alerts in queue.")
+                        success = True
+                    else:
+                        self.log_text(f"❌ Batch Error: {data.get('message')}")
+                        break
+                    break
+                except requests.exceptions.ConnectionError:
+                    if attempt == 0:
+                        self.log_text("⏳ STATION: Server is still warming up... holding global scan in queue.")
+                    time.sleep(2)
+                except Exception as e:
+                    self.log_text(f"❌ API Error: {e}")
+                    break
+            
+            if not success and attempt == 14:
+                 self.log_text("❌ TIMEOUT: Server failed to respond after 30s.")
+        
+        threading.Thread(target=_post, daemon=True).start()
+
     def manual_snipe(self):
         keyword = self.keyword_entry.get()
         source_name = self.source_var.get()
@@ -225,16 +307,28 @@ if __name__ == '__main__':
         
         self.log_text(f"🎯 SNIPING: {keyword} @ {source_name}...")
         def _post():
-            try:
-                # [LOCAL BYPASS] Ensure local commands don't go through the residential proxy
-                requests.post(
-                    "http://127.0.0.1:8000/trigger-snipe", 
-                    json={"query": keyword, "source_ids": [source_id], "user_id": "taun_test_user"},
-                    proxies={"http": None, "https": None},
-                    timeout=5
-                )
-            except Exception as e:
-                self.log_text(f"❌ API Error: {e}")
+            import time
+            success = False
+            for attempt in range(15): # 30s total window
+                try:
+                    requests.post(
+                        "http://127.0.0.1:8000/trigger-snipe", 
+                        json={"query": keyword, "source_ids": [source_id], "user_id": "taun_test_user"},
+                        proxies={"http": None, "https": None},
+                        timeout=30
+                    )
+                    success = True
+                    break
+                except requests.exceptions.ConnectionError:
+                    if attempt == 0:
+                        self.log_text("⏳ STATION: Server is still warming up... holding mission in queue.")
+                    time.sleep(2)
+                except Exception as e:
+                    self.log_text(f"❌ API Error: {e}")
+                    break
+            
+            if not success and attempt == 14:
+                 self.log_text("❌ TIMEOUT: Server failed to respond after 30s.")
         
         threading.Thread(target=_post, daemon=True).start()
 
@@ -254,7 +348,7 @@ if __name__ == '__main__':
                 requests.post("http://127.0.0.1:8000/force-pulse", timeout=5)
                 self.log_text("[SUCCESS] PULSE SIGNAL RECEIVED: Heartbeat commenced.")
             except: 
-                self.log_text("[FAILED] FAILED: Is the server (main_local.py) running?")
+                self.log_text("[FAILED] FAILED: Is the server (main.py) running?")
         
         threading.Thread(target=_kick, daemon=True).start()
 

@@ -9,9 +9,9 @@ import re
 import time
 from json_repair import repair_json
 from datetime import datetime
-from typing import Type, TypeVar, Optional
+from typing import Type, TypeVar, Optional, List
 import hashlib
-from database import record_hash, is_hash_scanned
+from services.database import record_hash, is_hash_scanned
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -23,15 +23,22 @@ class Listing(BaseModel):
     address: Optional[str] = Field(None, description="Clean suburb name")
     source_url: str
     platform: str
-    # Professional Metadata (v55.0)
+    
+    # Professional Metadata (v56.0)
+    property_type: Optional[str] = Field(None, description="Apartment, House, Studio, etc.")
+    property_sub_type: str = Field("Whole", description="Whole vs Shared")
     view_category: Optional[str] = Field(None, description="Categorization: 'Sea', 'Mountain', or 'Other'")
     is_furnished: Optional[bool] = Field(None, description="TRUE if furnished")
     amenities: list[str] = Field(default_factory=list, description="Features: e.g., ['Pool', 'Security', 'Fibre']")
     parking_slots: Optional[int] = Field(None, description="Number of parking spaces")
-    published_at: Optional[str] = Field(None, description="Original publication date/time (e.g. '2 hours ago', 'Yesterday')")
+    available_date: Optional[str] = Field(None, description="Immediate, 1 May, etc.")
+    contact_info: Optional[str] = Field(None, description="Phone/Email from text")
+    sqm: Optional[int] = Field(None, description="Square meters")
+    published_at: Optional[str] = Field(None, description="Original publication date/time")
+    
+    # Flags
     is_pet_friendly: Optional[bool] = None
     is_looking_for: bool = False
-    property_sub_type: str = Field("Whole", description="Set to 'Shared' if it is a room/shared house/flatshare, 'Whole' if it is an entire house or apartment.")
     description: Optional[str] = None
     match_score: int = 0
     match_reason: str = ""
@@ -40,6 +47,7 @@ class ExtractionResult(BaseModel):
     listings: list[Listing]
     confidence_score: float
     raw_summary: str
+    cached_hashes: List[str] = Field(default_factory=list)
 
 class GeminiExtractor:
     def __init__(self):
@@ -128,7 +136,7 @@ class GeminiExtractor:
     async def extract(self, text: str, schema: Type[T], model_name: Optional[str] = None, time_constraint: Optional[str] = None, search_query: Optional[str] = None) -> T:
         """Extracts listings using a chunked strategy - now with QUERY-BOUND HASH-SKIP for cost efficiency."""
         import hashlib
-        from database import is_hash_scanned, record_hash
+        from services.database import is_hash_scanned, record_hash
         
         # Clean white space and layout noise before checking size
         text = self._clean_text(text)
@@ -220,17 +228,22 @@ class GeminiExtractor:
             "FIELD RULES:\n"
             "1. Property Sub-Type: Strictly identify if the listing is for a 'Whole' property (entire apartment/house) or 'Shared' (a room in a house, flatshare, digs, or room-only).\n"
             "2. Pet Policy: Set is_pet_friendly=TRUE ONLY if the listing explicitly states pets are welcome.\n"
-            "3. Identify Category (rental_type): \n"
+            "3. Identify Category (rental_type/property_type): \n"
             "   - 'long-term': Standard 12 month+ leases.\n"
             "   - 'short-term': Flexible, daily/weekly/monthly stays (not sitting).\n"
-            "   - 'pet-sitting': UNIQUE CATEGORY for stay > 1 month where homeowner needs a pet/house-sitter in exchange for discounted rent.\n"
-            "4. Identify Availability: If a tenant is 'looking for' a place, 'ISO', or posting a 'wanted' ad, you MUST set is_looking_for: TRUE. Only set FALSE if the property is actually available for rent.\n"
-            "4. Price: Extract the monthly rental price as an integer. If '25k', set to 25000.\n"
-            "5. Address: Extract the specific SUBURB clearly (e.g., 'Sea Point', 'Gardens').\n"
-            "6. View Category: Based on text, set to 'Sea' (if mentions ocean/beach), 'Mountain' (if mentions table mountain/peaks), or 'Other'.\n"
-            "7. Furnished: Set is_furnished=TRUE if text mentions 'furnished', 'fully equipped'. Set FALSE if 'unfurnished'.\n"
-            "8. Amenities: Extract a list of perks like ['Pool', 'Security', 'Fibre', 'Garage', 'Gym'].\n"
-            "9. Published Date: Look for '2 hours ago', 'Yesterday', or specific dates and set published_at.\n\n"
+            "   - 'pet-sitting': UNIQUE CATEGORY for stay > 1 month where homeowner needs a pet/house-sitter.\n"
+            "   - Set 'property_type' to 'Apartment', 'House', 'Studio', 'Cottage', or 'Townhouse' based on description.\n"
+            "4. Availability & Contact: \n"
+            "   - Set 'available_date' (e.g., 'Immediate', '1st June').\n"
+            "   - Set 'contact_info' (Phone number or email address found in the text).\n"
+            "5. Identify Availability: If a tenant is 'looking for' a place, 'ISO', or posting a 'wanted' ad, you MUST set is_looking_for: TRUE. Only set FALSE if the property is actually available for rent.\n"
+            "6. Price: Extract the monthly rental price as an integer. If '25k', set to 25000.\n"
+            "7. Address: Extract the specific SUBURB clearly (e.g., 'Sea Point', 'Gardens').\n"
+            "8. View Category: Based on text, set to 'Sea' (if mentions ocean/beach), 'Mountain' (if mentions table mountain/peaks), or 'Other'.\n"
+            "9. Furnished: Set is_furnished=TRUE if text mentions 'furnished', 'fully equipped'. Set FALSE if 'unfurnished'.\n"
+            "10. Amenities: Extract a list of perks like ['Pool', 'Security', 'Fibre', 'Garage', 'Gym', 'Balcony', 'Parking'].\n"
+            "11. SQM: Extract the square meterage/footage as an integer if available (e.g. '80sqm' -> 80).\n"
+            "12. Published Date: Look for '2 hours ago', 'Yesterday', or specific dates and set published_at.\n\n"
             "10. DO NOT output null fields. If a field like 'bedrooms' or 'bathrooms' is unknown, OMIT the key entirely.\n"
             "IMPORTANT CONSTRAINT: {time_instruction}\n\n"
             "{instructions}\n\n"

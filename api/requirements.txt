@@ -13,3 +13,4 @@ pytest
 crawl4ai
 json-repair
 playwright-stealth
+google-cloud-tasks

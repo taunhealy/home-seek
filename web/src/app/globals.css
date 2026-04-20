@@ -91,3 +91,22 @@ body::after {
 .card-gradient {
   background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(16,185,129,0.01) 100%);
 }
+
+/* Tactical Minimalist Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.15);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #10b981;
+}

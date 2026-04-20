@@ -215,6 +215,121 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Pricing Section */}
+      <section id="pricing" className="py-32 px-8 max-w-7xl mx-auto space-y-16">
+        <div className="text-center space-y-4">
+          <h2 className="text-xs font-black uppercase tracking-[0.4em] text-emerald-primary">Access Protocols</h2>
+          <p className="text-4xl md:text-5xl font-black">CHOOSE YOUR INTEL TANK</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* FREE */}
+          <div className="bg-white/5 border border-white/5 p-8 rounded-[2.5rem] flex flex-col justify-between hover:border-white/10 transition-all group">
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-2">Standard</h3>
+                <p className="text-4xl font-black">FREE</p>
+              </div>
+              <ul className="space-y-4 text-sm font-medium text-white/60">
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
+                   24h Discovery Pulse
+                </li>
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
+                   Email Nightly Digest
+                </li>
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
+                   Standard Dashboard
+                </li>
+              </ul>
+            </div>
+            <Link href="/discover" className="mt-12 block text-center py-4 rounded-2xl bg-white/5 border border-white/10 font-black text-sm uppercase tracking-widest hover:bg-white/10 transition-all">Select Protocol</Link>
+          </div>
+
+          {/* BRONZE */}
+          <div className="bg-white/5 border border-white/5 p-8 rounded-[2.5rem] flex flex-col justify-between hover:border-white/10 transition-all">
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-sm font-bold text-emerald-primary uppercase tracking-widest mb-2">Silent Hunter</h3>
+                <p className="text-4xl font-black">R149<span className="text-sm opacity-40">/mo</span></p>
+              </div>
+              <ul className="space-y-4 text-sm font-medium text-white/80">
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
+                   8h Discovery Pulse
+                </li>
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
+                   WhatsApp Intelligence
+                </li>
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
+                   Autonomous Hunt Mode
+                </li>
+              </ul>
+            </div>
+            <Link href="/discover" className="mt-12 block text-center py-4 rounded-2xl bg-emerald-primary/10 border border-emerald-primary/20 text-emerald-primary font-black text-sm uppercase tracking-widest hover:bg-emerald-primary/20 transition-all">Upgrade to Bronze</Link>
+          </div>
+
+          {/* SILVER */}
+          <div className="bg-white/5 border-2 border-emerald-primary/30 p-8 rounded-[2.5rem] flex flex-col justify-between relative overflow-hidden shadow-[0_0_40px_rgba(16,185,129,0.1)]">
+            <div className="absolute top-0 right-0 bg-emerald-primary text-black px-4 py-1 text-[10px] font-black uppercase tracking-tighter rounded-bl-xl">POPULAR</div>
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-sm font-bold text-blue-400 uppercase tracking-widest mb-2">Proactive Sniper</h3>
+                <p className="text-4xl font-black">R299<span className="text-sm opacity-40">/mo</span></p>
+              </div>
+              <ul className="space-y-4 text-sm font-medium text-white/90">
+                <li className="flex items-center gap-3">
+                   <Zap className="w-4 h-4 text-emerald-primary fill-emerald-primary" />
+                   INSTANT MULTIPLEX ALERTS
+                </li>
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
+                   4h Discovery Pulse
+                </li>
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
+                   Priority Area Locking
+                </li>
+              </ul>
+            </div>
+            <Link href="/discover" className="mt-12 block text-center py-4 rounded-2xl bg-emerald-primary text-black font-black text-sm uppercase tracking-widest hover:shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all">Upgrade to Silver</Link>
+          </div>
+
+          {/* GOLD */}
+          <div className="bg-gradient-to-br from-emerald-950/50 to-black border-2 border-emerald-primary/50 p-8 rounded-[2.5rem] flex flex-col justify-between shadow-[0_0_50px_rgba(16,185,129,0.2)]">
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-sm font-bold text-yellow-500 uppercase tracking-widest mb-2">Discovery Overlord</h3>
+                <p className="text-4xl font-black">R499<span className="text-sm opacity-40">/mo</span></p>
+              </div>
+              <ul className="space-y-4 text-sm font-medium text-white">
+                <li className="flex items-center gap-3">
+                   <Zap className="w-4 h-4 text-emerald-primary fill-emerald-primary" />
+                   ZERO-LATENCY ALERTING
+                </li>
+                <li className="flex items-center gap-3 text-emerald-primary">
+                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
+                   1h Discovery Pulse
+                </li>
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
+                   Unlimited Alert Agents
+                </li>
+              </ul>
+            </div>
+            <Link href="/discover" className="mt-12 block text-center py-4 rounded-2xl bg-white text-black font-black text-sm uppercase tracking-widest hover:bg-emerald-primary hover:text-white transition-all shadow-xl">Activate Overlord</Link>
+          </div>
+        </div>
+        
+        <p className="text-center text-white/20 text-xs font-bold uppercase tracking-[0.2em]">
+           * MULTIPLEX ALERTS enable real-time detection across all discovery missions in the network.
+        </p>
+      </section>
+
       {/* Footer */}
       <footer className="py-20 px-8 border-t border-white/5">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-12">

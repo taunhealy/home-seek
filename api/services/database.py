@@ -67,7 +67,7 @@ def create_listing_id(listing: dict) -> str:
     # Use SHA-256 for high-fidelity deduplication
     return hashlib.sha256(payload.encode()).hexdigest()[:24]
 
-from geofence import is_area_elite
+from core.geofence import is_area_elite
 
 async def save_listing(user_id: str, listing: any, task_id: Optional[str] = None):
     """Save a listing to Firestore with deduplication and curation (v50.1)."""
@@ -84,12 +84,7 @@ async def save_listing(user_id: str, listing: any, task_id: Optional[str] = None
             print_safe(f"[DATABASE] Error: Listing is not a dict (type: {type(listing)}). Skipping.")
             return
 
-    # [GEOFENCE] 🛡️ Filter non-elite/dodgy areas (v50.1)
-    # Check address first, then fallback to title for area detection
-    area_candidate = listing.get("address", "") or listing.get("title", "")
-    if not is_area_elite(area_candidate):
-        print_safe(f"[GEOFENCE] 🚫 Blocking listing in non-elite area: {area_candidate[:30]}...")
-        return
+
 
     # [LINK HEALING] Ensure we have a functional URL (v48.0)
     url = str(listing.get("source_url", ""))
@@ -136,14 +131,41 @@ async def get_sources():
     docs = db.collection("sources").where(filter=FieldFilter("enabled", "==", True)).stream()
     return [{"id": d.id, **d.to_dict()} for d in docs]
 
-async def get_user_profile(user_id: str):
-    """Get user profile and preferences."""
+async def get_user_profile(user_id: str, token_data: Optional[dict] = None):
+    """Get user profile and lazy-init if missing (v45.0)."""
     db = get_db()
-    if not db: return {}
-    doc = db.collection("users").document(user_id).get()
+    if not db: return {"id": user_id, "tier": "free"}
+    
+    doc_ref = db.collection("users").document(user_id)
+    doc = doc_ref.get()
+    
     if doc.exists:
         return {"id": user_id, **doc.to_dict()}
-    return {"id": user_id, "tier": "free", "whatsapp": None}
+    
+    # 🐣 NEW USER FLOW: Lazy-Init (v45.0)
+    # If the user doesn't exist but we have their Google Token info, 
+    # we provision their account record immediately.
+    new_profile = {
+        "tier": "free",
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "last_active": firestore.SERVER_TIMESTAMP,
+    }
+    
+    if token_data:
+        new_profile.update({
+            "email": token_data.get("email"),
+            "name": token_data.get("name"),
+            "photo": token_data.get("picture"),
+            "auth_provider": "google"
+        })
+    
+    # Special Handling for the master tester account
+    if user_id == "taun_test_user":
+        new_profile["tier"] = "silver"
+
+    doc_ref.set(new_profile)
+    print_safe(f"[IDENTITY] Provisioned new profile for user: {user_id}")
+    return {**new_profile, "id": user_id}
 
 async def create_task(user_id: str, search_query: str):
     """Create a unique task for UI tracking."""
@@ -173,7 +195,7 @@ async def update_task(task_id: str, stage: str, message: str, progress: int = 0,
         if completed: data["completed"] = True
         db.collection("tasks").document(task_id).update(data)
     except Exception as e:
-        print(f"[DB] Task Update Error: {str(e)}")
+        print_safe(f"[DB] Task Update Error: {str(e)}")
 
 async def is_hash_scanned(hash_key: str):
     """Checks if this exact block has been seen and analyzed before."""
@@ -194,7 +216,7 @@ async def record_hash(hash_key: str, metadata: dict = None):
             "metadata": metadata or {}
         })
     except Exception as e:
-        print(f"[DB] Failed to record fingerprint: {e}")
+        print_safe(f"[DB] Failed to record fingerprint: {e}")
 
 async def get_users_by_tier(tier: str) -> list:
     """Get all user profiles belonging to a specific tier."""
@@ -214,17 +236,17 @@ async def save_search(user_id: str, search: dict):
     """Save or update a persistent search alert for a user."""
     db = get_db()
     if not db: 
-        print("[DB] Error: Firestore client not initialized.")
+        print_safe("[DB] Error: Firestore client not initialized.")
         return None
     try:
         search_id = hashlib.sha256(f"{user_id}-{search.get('search_query', '')}".lower().encode()).hexdigest()
         search["user_id"] = user_id
         search["updated_at"] = firestore.SERVER_TIMESTAMP
         db.collection("users").document(user_id).collection("alerts").document(search_id).set(search, merge=True)
-        print(f"[DB] Alert Linked successfully to {user_id} [ID: {search_id}]")
+        print_safe(f"[DB] Alert Linked successfully to {user_id} [ID: {search_id}]")
         return search_id
     except Exception as e:
-        print(f"[DB] CRITICAL: Failed to link alert to user in Firestore: {str(e)}")
+        print_safe(f"[DB] CRITICAL: Failed to link alert to user in Firestore: {str(e)}")
         return None
 
 async def get_global_cookies():
@@ -261,7 +283,7 @@ async def get_listings_by_keys(urls: list[str], hashes: list[str]) -> list[dict]
                     if data.get('title') not in seen:
                         results.append(data)
     except Exception as e:
-        print(f"[DB] Recall Warning: {e}")
+        print_safe(f"[DB] Recall Warning: {e}")
     return results
 
 async def get_known_listings(urls: list[str], hashes: list[str]) -> set[str]:
@@ -305,6 +327,6 @@ async def save_global_cookies(cookies: list):
             "cookies": cookies,
             "updated_at": firestore.SERVER_TIMESTAMP
         })
-        print("💾 Session State Synchronized with Firestore.")
+        print_safe("[DB] Session State Synchronized with Firestore.")
     except Exception as e:
-        print(f"💾 Failed to save global cookies: {e}")
+        print_safe(f"[DB] Failed to save global cookies: {e}")

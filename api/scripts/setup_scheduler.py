@@ -27,7 +27,7 @@ def setup_gcp_scheduler(project_id, service_url):
             "gcloud", "scheduler", "jobs", "create", "http", name,
             f"--schedule={cron}",
             f"--uri={url}",
-            "--http-method=GET",
+            "--http-method=POST",
             f"--project={project_id}",
             "--location=europe-west1", # Common GCP location, adjust if needed
             f"--description=Home-Seek {tier.capitalize()} automated listing scan"

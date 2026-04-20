@@ -13,8 +13,8 @@ async def run():
         if proxy_url:
             import urllib.parse
             parsed = urllib.parse.urlparse(proxy_url)
-            # Standard format for Decodo/BrightData
-            username = f"{parsed.username}-session-prime" if parsed.username else None
+            # Use 'prime-session' to ensure a stable IP for the login process
+            username = parsed.username + "-session-prime" if parsed.username else None
             proxy_config = {"server": f"{parsed.hostname}:{parsed.port}", "username": username, "password": parsed.password}
 
         context = await p.chromium.launch_persistent_context(

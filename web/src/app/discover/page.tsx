@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PayPalButtons } from "@paypal/react-paypal-js";
+import { fetchWithAuth, API_BASE_URL, fetchSuburbs } from '@/lib/api';
 import { auth, googleAuthProvider } from '@/lib/firebase';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { 
@@ -15,10 +16,16 @@ import {
   UsersThree, 
   CheckCircle,
   Gear,
-  ChartPolar
+  ChartPolar,
+  Plus
 } from "@phosphor-icons/react";
+import { formatCurrency } from '@/lib/utils';
+import { ListingCard } from '@/components/ListingCard';
+import { AlertItem } from '@/components/AlertItem';
+import { Navbar } from '@/components/Navbar';
+import { ListingSchema, AlertSchema, type Listing, type Alert } from '@/lib/schemas';
+import { INTELLIGENCE_SOURCES, TIER_LIMITS, type IntelligenceSource } from '@/lib/constants';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function DiscoverPage() {
   const [activeTab, setActiveTab] = useState<'listings' | 'alerts'>('listings');
@@ -30,22 +37,17 @@ export default function DiscoverPage() {
   const [propertySubType, setPropertySubType] = useState<'all' | 'Whole' | 'Shared'>('all');
   const [isDeploying, setIsDeploying] = useState(false);
   const [activeTask, setActiveTask] = useState<any>(null);
-  const [listings, setListings] = useState<any>([]);
-  const [userProfile, setUserProfile] = useState<any>({ 
-    tier: 'free', 
-    id: 'taun_test_user',
-    billing_date: '2026-05-15',
-    status: 'active'
-  });
-  const [selectedSources, setSelectedSources] = useState<string[]>(['Property24', 'Sea Point Rentals', 'Huis Huis', 'RentUncle', 'RentUncle Pet Friendly']);
-  const [savedAlerts, setSavedAlerts] = useState<any[]>([]);
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [userProfile, setUserProfile] = useState<any>({ tier: 'free' });
+  const [selectedSources, setSelectedSources] = useState<string[]>(INTELLIGENCE_SOURCES.map(s => s.id));
+  const [savedAlerts, setSavedAlerts] = useState<Alert[]>([]);
   const [mounted, setMounted] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [platformFilter, setPlatformFilter] = useState('');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [allSuburbs, setAllSuburbs] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [isPetFriendly, setIsPetFriendly] = useState(true);
+  const [petPolicy, setPetPolicy] = useState<'all' | 'yes' | 'no'>('all');
 
   useEffect(() => {
     setMounted(true);
@@ -53,47 +55,58 @@ export default function DiscoverPage() {
       setUser(u);
       if (u) {
         try {
-          const res = await fetch(`${API_BASE_URL}/user-profile/${u.uid}`);
-          if (res.ok) {
+          const res = await fetchWithAuth(`/user-profile/${u.uid}`);
+          if (res && res.ok) {
             const profile = await res.json();
-            setUserProfile({ ...profile, id: u.uid }); // Explicit anchor
+            // Single source of truth: always use verified Firebase UID
+            setUserProfile({ ...profile, id: u.uid });
           } else {
-            setUserProfile({ ...userProfile, id: u.uid, email: u.email });
+            setUserProfile({ tier: 'free', id: u.uid });
           }
-        } catch (e) {
-          setUserProfile({ ...userProfile, id: u.uid, email: u.email });
+        } catch {
+          setUserProfile({ tier: 'free', id: u.uid });
         }
       } else {
-        setUserProfile({ tier: 'free', id: 'guest' });
+        // User signed out — reset to null to trigger loading guard
+        setUserProfile(null);
       }
     });
     return () => unsubscribe();
   }, []);
 
-  const formatCurrency = (val: number) => {
-    if (!mounted) return `R${val}`;
-    return `R${val.toLocaleString('en-ZA')}`;
-  };
 
   const fetchMissions = async () => {
+    if (!userProfile?.id || !user) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/searches/${userProfile.id}`);
-      const data = await res.json();
-      setSavedAlerts(data);
-    } catch (e) { console.error("Failed to fetch alerts:", e); }
+      // 🟢 Part A: Fetch Active Alerts
+      const alertsRes = await fetchWithAuth(`/searches/${userProfile.id}`);
+      if (alertsRes && alertsRes.ok) {
+        const alertsData = await alertsRes.json();
+        const sanitized = alertsData.map((a: any) => AlertSchema.parse(a));
+        setSavedAlerts(sanitized);
+      }
+
+      // 🔵 Part B: Fetch Historical Listings (Past Matches)
+      const listingsRes = await fetchWithAuth(`/listings/${userProfile.id}`);
+      if (listingsRes && listingsRes.ok) {
+        const listingsData = await listingsRes.json();
+        const sanitized = listingsData.map((l: any) => ListingSchema.parse(l));
+        setListings(sanitized);
+      }
+    } catch (e) {
+      console.error("Failed to sync terminal data:", e);
+    }
   };
 
   useEffect(() => {
-    if (mounted) fetchMissions();
-    
-    // 🌍 FETCH GEOFENCE REGISTRY (v79.0)
-    if (mounted) {
-      fetch(`${API_BASE_URL}/geofence/suburbs`)
-        .then(res => res.json())
-        .then(data => setAllSuburbs(data))
-        .catch(err => console.error("Geofence sync failed:", err));
-    }
-  }, [mounted, userProfile.id]);
+    if (mounted && userProfile?.id) fetchMissions();
+  }, [mounted, userProfile?.id]);
+
+  // 🌍 GEOFENCE REGISTRY — Suburb autocomplete
+  useEffect(() => {
+    if (!mounted) return;
+    fetchSuburbs().then(setAllSuburbs);
+  }, [mounted]);
 
   // 🛰️ SIGNAL SPOTLIGHT (Autocomplete Logic)
   useEffect(() => {
@@ -111,7 +124,7 @@ export default function DiscoverPage() {
       return;
     }
 
-    const matches = allSuburbs
+    const matches = (Array.isArray(allSuburbs) ? allSuburbs : [])
       .filter(s => s.toLowerCase().startsWith(lastPart))
       .filter(s => !aiPrompt.toLowerCase().includes(s.toLowerCase())) // Don't suggest if already there
       .slice(0, 5);
@@ -125,16 +138,22 @@ export default function DiscoverPage() {
       const timer = setTimeout(() => {
         interval = setInterval(async () => {
           try {
-            const res = await fetch(`${API_BASE_URL}/task/${activeTask.id}`);
-            if (res.status === 404) return;
+            const res = await fetchWithAuth(`${API_BASE_URL}/task/${activeTask.id}`);
+            if (!res || res.status === 404) return;
             const data = await res.json();
-            setActiveTask(data);
             
-            if (data?.status?.includes?.('Found') || data?.status?.includes?.('Complete') || data?.status?.includes?.('Failed')) {
+            if (data.status === 'Completed' || data.status === 'Done') {
+              const sanitized = (data.results || []).map((l: any) => ListingSchema.parse(l));
+              setListings(sanitized);
+              setActiveTask(null);
               clearInterval(interval);
-              const resultsRes = await fetch(`${API_BASE_URL}/listings/${userProfile.id}`);
-              const resultsData = await resultsRes.json();
-              setListings(resultsData);
+            } else if (data?.status?.includes?.('Found') || data?.status?.includes?.('Complete') || data?.status?.includes?.('Failed')) {
+              clearInterval(interval);
+              const resultsRes = await fetchWithAuth(`/listings/${userProfile.id}`);
+              if (resultsRes && resultsRes.ok) {
+                 const resultsData = await resultsRes.json();
+                 setListings(resultsData);
+              }
               fetchMissions();
             }
           } catch (e) { console.error(e); }
@@ -143,19 +162,26 @@ export default function DiscoverPage() {
       
       return () => { clearTimeout(timer); clearInterval(interval); };
     }
-  }, [activeTask?.id, userProfile.id]);
+  }, [activeTask?.id, userProfile?.id]);
 
   const handleSubscriptionSuccess = async (tier: string, subscriptionId: string) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/update-tier`, {
+      const res = await fetchWithAuth(`${API_BASE_URL}/update-tier`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userProfile.id, tier, subscription_id: subscriptionId })
+        body: JSON.stringify({
+          tier: tier.toLowerCase(),
+          subscription_id: subscriptionId,
+          user_id: userProfile?.id,
+          updated_at: new Date().toISOString()
+        })
       });
-      const data = await res.json();
-      if (data.status === 'ok') {
-        setUserProfile({ ...userProfile, tier });
-        alert(`Success! Your account has been upgraded to ${tier.toUpperCase()}.`);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data.status === 'ok') {
+          setUserProfile({ ...userProfile, tier });
+          alert(`Success! Your account has been upgraded to ${tier.toUpperCase()}.`);
+        }
       }
     } catch (e) { console.error("Update failed:", e); }
   };
@@ -163,8 +189,8 @@ export default function DiscoverPage() {
   const deleteAlert = async (searchId: string) => {
     if (!confirm("Are you sure you want to delete this alert?")) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/delete-alert/${userProfile.id}/${searchId}`, { method: 'DELETE' });
-      if (res.ok) fetchMissions();
+      const res = await fetchWithAuth(`${API_BASE_URL}/delete-alert/${userProfile.id}/${searchId}`, { method: 'DELETE' });
+      if (res && res.ok) fetchMissions();
     } catch (e) { console.error("Delete failed:", e); }
   };
 
@@ -193,33 +219,42 @@ export default function DiscoverPage() {
   const handleAiSearch = async (isAlertSave = false) => {
     setIsDeploying(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/deploy-sniper`, {
+      // Access Check: Check Tier Limits (Client Side Fast-Fail)
+      const currentLimit = TIER_LIMITS[userProfile?.tier as keyof typeof TIER_LIMITS] || 0;
+      const currentAlerts = savedAlerts.length;
+      
+      if (isAlertSave && currentAlerts >= currentLimit && userProfile?.tier === 'free') {
+        alert(`Upgrade Required! Your current profile is restricted to exploration only. Please subscribe to start deploying automated snipers.`);
+        setIsDeploying(false);
+        return;
+      }
+      
+      if (isAlertSave && currentAlerts >= currentLimit) {
+        alert(`Mission Cap Reached! Your ${userProfile?.tier?.toUpperCase()} tier is limited to ${currentLimit} active snipers. Please upgrade to expand your discovery grid.`);
+        setIsDeploying(false);
+        return;
+      }
+
+      const response = await fetchWithAuth(`${API_BASE_URL}/deploy-sniper`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: userProfile.id,
+          // Always use the live Firebase UID — never trust derived state
+          user_id: user?.uid,
           search_query: aiPrompt,
           alert_enabled: isAlertSave,
           max_price: maxPrice,
           min_bedrooms: selectedBedrooms,
-          pet_friendly: isPetFriendly,
+          pet_friendly: petPolicy === 'yes',
+          pet_policy: petPolicy, // Passing both for compatibility
           rental_type: rentalType,
           property_sub_type: propertySubType,
           sources: selectedSources
         }),
       });
+      if (!response) return;
       const data = await response.json();
       
-      // Tier Limit Checks
-      const limits: Record<string, number> = { 'free': 1, 'bronze': 5, 'silver': 10, 'gold': 50 };
-      const currentLimit = limits[userProfile.tier] || 1;
-      
-      if (isAlertSave && savedAlerts.length >= currentLimit) {
-        alert(`Mission Cap Reached! Your ${userProfile.tier.toUpperCase()} tier is limited to ${currentLimit} active snipers. Please upgrade to expand your discovery grid.`);
-        setIsDeploying(false);
-        return;
-      }
-
       if (data.status === 'limited') {
         alert(data.message);
       } else if (data.status === 'busy') {
@@ -230,8 +265,8 @@ export default function DiscoverPage() {
           setTimeout(() => setShowSuccessToast(false), 4000);
           // Clear current search form
           setAiPrompt('');
-          // Refresh list immediately
-          fetchMissions();
+          // Refresh list with buffer for DB propagation
+          setTimeout(() => fetchMissions(), 300);
           setActiveTab('alerts');
         } else {
           setActiveTask({ id: data.task_id, status: 'Searching...', progress: 5 });
@@ -251,100 +286,107 @@ export default function DiscoverPage() {
     if (rentalType === 'short-term') {
       setSelectedSources(['Sea Point Rentals (Short Term)', 'Cape Town Mid-Term (1-6 Months)', 'Cape Town Short/Long Rentals', 'Facebook Marketplace']);
     } else if (rentalType === 'pet-sitting') {
-      setSelectedSources(['Huis Huis Pet Friendly (Cape Town)', 'RentUncle (Pet Friendly)']);
-      setIsPetFriendly(true);
+      setSelectedSources(INTELLIGENCE_SOURCES.filter((s: IntelligenceSource) => s.type === 'pet').map((s: IntelligenceSource) => s.id));
+      setPetPolicy('yes');
     } else {
-      // Long Term / All
-      if (isPetFriendly) {
-        setSelectedSources(['Property24 Pet Friendly', 'RentUncle (Pet Friendly)', 'Huis Huis Pet Friendly (Cape Town)']);
+      if (petPolicy === 'yes') {
+        setSelectedSources(INTELLIGENCE_SOURCES.filter((s: IntelligenceSource) => s.type === 'pet').map((s: IntelligenceSource) => s.id));
+      } else if (petPolicy === 'no') {
+        setSelectedSources(INTELLIGENCE_SOURCES.filter((s: IntelligenceSource) => s.type === 'standard').map((s: IntelligenceSource) => s.id));
       } else {
-        setSelectedSources(['Property24', 'Sea Point Rentals', 'Huis Huis', 'RentUncle', 'Facebook Marketplace']);
+        setSelectedSources(INTELLIGENCE_SOURCES.map((s: IntelligenceSource) => s.id));
       }
     }
-  }, [rentalType, isPetFriendly]);
+  }, [rentalType, petPolicy]);
 
-  if (!mounted) return null;
+  const handleUpdateProfile = async (updates: any) => {
+    if (!user) return;
+    try {
+      await fetchWithAuth(`/update-profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.uid, ...updates })
+      });
+      setUserProfile((prev: any) => ({ ...prev, ...updates }));
+    } catch (e) {
+      console.error("Failed to update profile telemetry:", e);
+    }
+  };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
+          <p className="text-[10px] font-bold text-white/40 uppercase tracking-[0.3em]">Synchronizing Identity...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black text-white font-sans">
-      {/* 🚀 PREMIUM NAVBAR */}
-      <nav className="sticky top-0 z-50 backdrop-blur-xl bg-black/60 border-b border-white/5 px-6 md:px-12 py-4">
-        <div className="max-w-[1400px] mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
-              <span className="text-black font-black text-xl">H</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">Home-Seek</h1>
-              <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest leading-none">Intelligence Engine</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-8">
-            <div className="hidden md:flex items-center gap-6 mr-4 border-r border-white/10 pr-8">
-              <a href="/" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-white transition-all">Home</a>
-              <a href="/explore" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-white transition-all">Explore</a>
-              <a href="/discover" className="text-[10px] font-bold text-white uppercase tracking-widest border-b-2 border-emerald-500 pb-1">Alerts</a>
-            </div>
-
-            <div className="text-right hidden lg:block">
-              <p className="text-[9px] uppercase tracking-[0.3em] text-emerald-500 font-bold mb-0.5">Terminal Active</p>
-              <p className="text-white/20 text-[9px] uppercase tracking-widest font-bold">ZAF Nodes Connected</p>
-            </div>
-
-            {user ? (
-              <div className="flex items-center gap-6">
-                 {user.photoURL && <img src={user.photoURL} className="w-8 h-8 rounded-full border border-white/10" alt="avatar" />}
-                 <button 
-                  onClick={handleLogout} 
-                  className="bg-white/5 border border-white/10 px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/20 hover:text-red-500 transition-all"
-                >
-                  Log Out
-                </button>
-              </div>
-            ) : (
-              <button 
-                onClick={handleLogin}
-                disabled={isLoggingIn}
-                className={`bg-white text-black px-8 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-500 transition-all ${isLoggingIn ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isLoggingIn ? 'Logging In...' : 'Log In'}
-              </button>
-            )}
-          </div>
-        </div>
-      </nav>
+      <Navbar 
+        user={user} 
+        profile={userProfile} 
+        handleLogout={handleLogout} 
+        onUpdateProfile={handleUpdateProfile}
+      />
 
       <div className="max-w-[1400px] mx-auto p-6 md:p-12 space-y-12">
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+        {!user ? (
+          <div className="py-32 flex flex-col items-center justify-center text-center animate-in fade-in slide-in-from-bottom-4 duration-1000">
+            <div className="w-24 h-24 bg-emerald-500/10 rounded-[2.5rem] flex items-center justify-center mb-10 shadow-[0_0_50px_rgba(16,185,129,0.1)] border border-emerald-500/20">
+               <Globe size={48} className="text-emerald-500" weight="duotone" />
+            </div>
+            <h2 className="text-5xl font-serif font-medium mb-6 tracking-tight">Intel Access Restricted</h2>
+            <p className="text-white/30 max-w-xl mx-auto mb-12 text-lg leading-relaxed font-medium">
+               The Home-Seek Intelligence Engine requires a verified ZAF node connection to deploy snipers, monitor neighborhoods, and relay real-time rental alerts.
+            </p>
+            <div className="flex flex-col items-center gap-6">
+              <button 
+                onClick={handleLogin}
+                className="bg-white text-black px-16 py-6 rounded-3xl font-black uppercase text-sm tracking-[0.3em] shadow-[0_30px_60px_rgba(255,255,255,0.1)] hover:bg-emerald-500 transition-all hover:scale-105 active:scale-95"
+              >
+                Initialize Secure Session
+              </button>
+              <p className="text-[10px] text-white/10 uppercase tracking-[0.4em] font-black">Authorized Personnel Only</p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 animate-in fade-in duration-700 overflow-x-hidden">
           
           {/* New Alert Form */}
-          <div className="lg:col-span-3 space-y-8 lg:sticky lg:top-24 lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto custom-scrollbar pr-2">
+          <div id="sniper-form" className="lg:col-span-3 space-y-8 lg:sticky lg:top-24 lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto custom-scrollbar pr-4">
             <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6">
-              {/* Protocol Mode Toggle */}
-              <div className="mb-6 p-0.5 bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-                <div className="flex items-center justify-between p-4 bg-emerald-500/[0.03]">
-                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-emerald-500/80 uppercase tracking-[0.2em] leading-none mb-1">Protocol Mode</span>
-                    <span className="text-[11px] font-bold text-white uppercase tracking-widest">Pet Friendly Focus</span>
-                  </div>
-                  <div className="flex bg-black/60 p-1 rounded-xl border border-white/5">
-                    <button 
-                      onClick={() => setIsPetFriendly(false)}
-                      className={`w-14 py-2 rounded-lg text-[10px] font-black transition-all ${!isPetFriendly ? 'bg-white/10 text-white shadow-lg' : 'text-white/20 hover:text-white/40'}`}
-                    >
-                      OFF
-                    </button>
-                    <button 
-                      onClick={() => setIsPetFriendly(true)}
-                      className={`w-14 py-2 rounded-lg text-[10px] font-black transition-all ${isPetFriendly ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'text-white/20 hover:text-white/40'}`}
-                    >
-                      ON
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <h2 className="text-[11px] font-black text-white/40 uppercase tracking-[0.4em] mb-10 text-center">New Property Alert</h2>
+              
+               {/* Pet Friendly Toggle */}
+               <div className="mb-6 p-0.5 bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+                 <div className="flex flex-col p-4 bg-emerald-500/[0.03]">
+                   <span className="text-[9px] font-black text-emerald-500/80 uppercase tracking-[0.2em] leading-none mb-3">Pet Friendly</span>
+                   <div className="flex bg-black/60 p-1 rounded-xl border border-white/5">
+                     <button 
+                       onClick={() => setPetPolicy('all')}
+                       className={`flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${petPolicy === 'all' ? 'bg-white/10 text-white shadow-lg' : 'text-white/20 hover:text-white/40'}`}
+                     >
+                       ALL
+                     </button>
+                     <button 
+                       onClick={() => setPetPolicy('yes')}
+                       className={`flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${petPolicy === 'yes' ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'text-white/20 hover:text-white/40'}`}
+                     >
+                       YES
+                     </button>
+                     <button 
+                       onClick={() => setPetPolicy('no')}
+                       className={`flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${petPolicy === 'no' ? 'bg-red-500/20 text-red-500 shadow-lg' : 'text-white/20 hover:text-white/40'}`}
+                     >
+                       NO
+                     </button>
+                   </div>
+                 </div>
+               </div>
 
               {/* Mission Category (NEW) */}
               <div className="mb-8 space-y-4">
@@ -401,44 +443,43 @@ export default function DiscoverPage() {
               <div className="mb-8 space-y-4">
                 <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">Active Intelligence Sources</h3>
                 <div className="flex flex-wrap gap-2">
-                  {[
-                    { n: 'Property24', c: 'blue' },
-                    { n: 'Property24 Pet Friendly', c: 'emerald' },
-                    { n: 'Sea Point Rentals', c: 'indigo' },
-                    { n: 'Huis Huis', c: 'rose' },
-                    { n: 'Huis Huis Pet Friendly', c: 'emerald' },
-                    { n: 'RentUncle', c: 'orange' },
-                    { n: 'RentUncle Pet Friendly', c: 'emerald' }
-                  ].map(s => {
-                    const isActive = selectedSources.includes(s.n);
+                  {INTELLIGENCE_SOURCES.map((s: IntelligenceSource) => {
+                    const isActive = selectedSources.includes(s.id);
                     return (
                       <button 
-                        key={s.n} 
-                        onClick={() => toggleSource(s.n)}
+                        key={s.id} 
+                        onClick={() => toggleSource(s.id)}
                         className={`px-3 py-1.5 rounded-lg border transition-all text-[9px] font-black uppercase flex items-center gap-1.5 ${
                           isActive 
-                            ? `bg-${s.c}-500/20 text-${s.c}-400 border-${s.c}-500/40 shadow-[0_0_10px_rgba(16,185,129,0.1)]` 
+                            ? `bg-${s.color}-500/20 text-${s.color}-400 border-${s.color}-500/40 shadow-[0_0_10px_rgba(16,185,129,0.1)]` 
                             : 'bg-white/5 text-white/20 border-white/5 opacity-50 grayscale hover:grayscale-0 hover:opacity-100'
                         }`}
                       >
                         <div className={`w-1 h-1 rounded-full ${isActive ? 'bg-current animate-pulse' : 'bg-white/20'}`} />
-                        {s.n}
+                        {s.label}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              <div className="h-px bg-white/5 mb-8" />
-
-              <h2 className="text-lg font-bold mb-8">New Property Alert</h2>
               
               <div className="space-y-6">
                 <div className="space-y-4">
                   {/* Bedrooms */}
                   <div className="flex flex-col gap-3 bg-white/5 p-4 rounded-2xl border border-white/5">
                     <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Target Bedrooms</span>
-                    <div className="grid grid-cols-5 gap-1">
+                    <div className="grid grid-cols-6 gap-1">
+                      <button
+                        onClick={() => setSelectedBedrooms([])}
+                        className={`py-3 rounded-xl text-[10px] font-bold transition-all border ${
+                          selectedBedrooms.length === 0 
+                            ? 'bg-white text-black border-white shadow-[0_10px_20px_rgba(255,255,255,0.1)]' 
+                            : 'bg-white/5 text-white/40 border-white/5 hover:border-white/20'
+                        }`}
+                      >
+                        ALL
+                      </button>
                       {[1, 2, 3, 4, 5].map(n => {
                         const isSelected = selectedBedrooms.includes(n);
                         return (
@@ -566,25 +607,13 @@ export default function DiscoverPage() {
                   )}
                 </AnimatePresence>
 
-                <div className="grid grid-cols-1 gap-3 pt-4">
                   <button 
                     onClick={() => handleAiSearch(true)} 
                     disabled={isDeploying}
-                    className={`bg-emerald-500 text-black font-bold py-4 rounded-2xl text-xs uppercase transition-all ${isDeploying ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.02]'}`}
+                    className={`w-full bg-emerald-500 text-black font-black py-4 rounded-2xl text-[10px] uppercase tracking-[0.2em] transition-all ${isDeploying ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.02] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:brightness-110 active:scale-95'}`}
                   >
-                    {isDeploying ? 'Saving Mission...' : 'Save Alert'}
+                    {isDeploying ? 'DEPLOYING MISSION...' : 'DEPLOY SMART SNIPER'}
                   </button>
-                  <button 
-                    onClick={() => {
-                      console.log("🛰️ HUD: Initiating Quick Search Request...");
-                      handleAiSearch(false);
-                    }} 
-                    disabled={isDeploying} 
-                    className={`bg-white/10 border border-white/20 text-white font-bold py-4 rounded-2xl text-xs uppercase transition-all ${isDeploying ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white/20 hover:scale-[1.01] hover:border-emerald-500/50'}`}
-                  >
-                    {isDeploying ? 'Deploying Sniper...' : 'Quick Search Only'}
-                  </button>
-                </div>
               </div>
             </div>
           </div>
@@ -639,107 +668,112 @@ export default function DiscoverPage() {
                   )}
 
                   {listings
-                    .filter((l: any) => !platformFilter || l.platform === platformFilter)
-                    .map((l: any, idx: number) => (
-                    <motion.div key={idx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white/[0.03] border border-white/10 rounded-3xl p-8 group hover:border-white/20 transition-all">
-                      <div className="flex justify-between items-start mb-6">
-                        <div>
-                          <h4 className="font-bold text-xl mb-1">{l.title}</h4>
-                          <p className="text-xs text-white/40 font-bold uppercase tracking-widest">{l.address}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-2xl font-bold">{formatCurrency(l.price)}</p>
-                          {l.property_sub_type === 'Shared' && (
-                            <span className="text-[9px] font-black text-orange-400 uppercase tracking-widest border border-orange-400/30 px-2 py-0.5 rounded-md mt-1 inline-block">Shared Room</span>
-                          )}
-                          <div className="flex gap-4 text-[9px] font-black uppercase tracking-widest text-white/30 mt-2">
-                             <span>🏗️ {l.bedrooms && l.bedrooms > 0 ? `${l.bedrooms} Bed` : 'Any Beds'}</span>
-                             <span>🚿 {l.bathrooms || 1} Bath</span>
-                          </div>
-                        </div>
-                      </div>
-                      <p className="text-sm text-white/60 mb-8 border-l-2 border-emerald-500/30 pl-6 py-1 leading-relaxed">"{l.match_reason}"</p>
-                      <div className="flex gap-4">
-                        <a href={l.source_url} target="_blank" className="bg-white text-black px-8 py-3 rounded-xl text-xs font-bold uppercase hover:bg-emerald-400 transition-all">View Property</a>
-                        <span className="bg-white/5 px-6 py-3 rounded-xl text-[10px] font-bold text-white/20 uppercase tracking-widest flex items-center">{l.platform}</span>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {savedAlerts.length > 0 ? (
-                    savedAlerts.map((alert: any, idx: number) => {
-                      const displayQuery = alert.search_query.split('(')[0].trim();
-                      const isPetFriendly = alert.search_query.toLowerCase().includes('pet friendly');
-                      
-                      return (
-                        <div key={idx} className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 flex justify-between items-center group transition-all hover:bg-white/[0.05] hover:border-white/20">
-                          <div>
-                            <div className="flex items-center gap-3 mb-2">
-                              <h4 className="text-sm font-bold">{displayQuery}</h4>
-                              {isPetFriendly && (
-                                 <span className="bg-emerald-500/10 text-emerald-500 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter border border-emerald-500/20 flex items-center gap-1">
-                                   <Dog size={10} weight="fill" /> Pet-Sit Priority
-                                 </span>
-                              )}
-                            </div>
-                            <div className="flex gap-4 text-[10px] font-bold text-white/30 uppercase tracking-widest items-center">
-                              <div className="flex items-center gap-1.5 grayscale opacity-50">
-                                🏗️ {alert.min_bedrooms ? 
-                                    (Array.isArray(alert.min_bedrooms) ? alert.min_bedrooms.join(', ') : alert.min_bedrooms) + '+' : 
-                                    'Any'} Beds
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                💰 {formatCurrency(alert.max_price)} Max
-                              </div>
-                            </div>
-                          </div>
-                          <button 
-                            onClick={() => deleteAlert(alert.id || alert.search_id)}
-                            className="text-white/10 group-hover:text-red-500/60 text-[10px] font-bold uppercase tracking-widest transition-all px-4 py-2 hover:bg-red-500/5 rounded-xl border border-transparent hover:border-red-500/10"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      );
-                    })
+                    .filter((l: any) => !platformFilter || l.platform === platformFilter).length > 0 ? (
+                    listings
+                      .filter((l: any) => !platformFilter || l.platform === platformFilter)
+                      .map((l: any, idx: number) => (
+                        <ListingCard key={idx} listing={l} idx={idx} />
+                      ))
                   ) : (
                     <div className="bg-white/[0.02] border border-white/5 border-dashed rounded-3xl p-32 text-center">
-                      <p className="text-white/10 text-[10px] uppercase tracking-[0.5em] font-bold">No saved alerts found</p>
+                      <p className="text-white/10 text-[10px] uppercase tracking-[0.5em] font-bold">No historical matches found</p>
                     </div>
                   )}
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  <div className="space-y-4">
+                    {savedAlerts.length > 0 ? (
+                      savedAlerts.map((alert: any, idx: number) => (
+                        <AlertItem key={idx} alert={alert} deleteAlert={deleteAlert} />
+                      ))
+                    ) : (
+                      <div className="bg-white/[0.02] border border-white/5 border-dashed rounded-3xl p-32 text-center">
+                        <p className="text-white/10 text-[10px] uppercase tracking-[0.5em] font-bold">No saved alerts found</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      const formElement = document.getElementById('sniper-form');
+                      formElement?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="w-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 py-6 rounded-3xl font-black uppercase text-[10px] tracking-[0.3em] hover:bg-emerald-500 hover:text-black transition-all group flex items-center justify-center gap-3"
+                  >
+                    <Plus size={16} weight="bold" /> Deploy New Sniper
+                  </button>
                 </div>
               )}
             </div>
           </div>
 
           {/* Right Sidebar (Account & Subscription) */}
-          <div className="lg:col-span-3 space-y-8 lg:sticky lg:top-24 lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto custom-scrollbar pl-2">
+          <div className="lg:col-span-3 space-y-8 lg:sticky lg:top-24 lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto overflow-x-hidden custom-scrollbar pl-2">
+            
+            {/* 📱 SIGNAL CHANNELS */}
+            <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-3xl p-6 space-y-6">
+               <div>
+                  <h2 className="text-sm font-bold text-emerald-500 uppercase tracking-[0.2em] mb-2">Signal Channels</h2>
+                  <p className="text-[9px] text-white/40 uppercase font-bold">Where to send your live alerts</p>
+               </div>
+               
+               <div className="space-y-4">
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-bold text-white/60 uppercase">WhatsApp Number</label>
+                     <div className="flex gap-2">
+                        <input 
+                           type="text" 
+                           placeholder="e.g. 27821234567"
+                           value={userProfile?.whatsapp || ''}
+                           onChange={(e) => setUserProfile({...userProfile, whatsapp: e.target.value})}
+                           className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-white placeholder:text-white/20 focus:outline-none focus:border-emerald-500/50 transition-all"
+                        />
+                        <button 
+                           onClick={async () => {
+                              try {
+                                 await fetchWithAuth(`${API_BASE_URL}/update-profile`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ user_id: user?.uid, whatsapp: userProfile?.whatsapp })
+                                 });
+                                 alert("Signal established! WhatsApp linked.");
+                              } catch (e) { console.error(e); }
+                           }}
+                           className="bg-emerald-500 text-black p-3 rounded-xl hover:bg-emerald-400 transition-all active:scale-95"
+                        >
+                           <CheckCircle size={18} weight="bold" />
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            </div>
+
             <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-8">
-              <div>
-                <h2 className="text-sm font-bold text-white/40 uppercase tracking-[0.2em] mb-4">Account Status</h2>
+               <div>
+                 <h2 className="text-sm font-bold text-white/40 uppercase tracking-[0.2em] mb-4">Account Status</h2>
                 <div className="bg-emerald-500/10 border border-emerald-500/20 px-6 py-4 rounded-2xl">
                   <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Active Plan</p>
-                  <p className="text-lg font-black text-white">{userProfile.tier.toUpperCase()}</p>
+                  <p className="text-lg font-black text-white">{userProfile?.tier?.toUpperCase() || 'FREE'}</p>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Available Upgrades</h3>
                 
-                {userProfile.tier === 'free' && (
+                {userProfile?.tier === 'free' && (
                   <div className="bg-white/5 border border-white/5 p-6 rounded-2xl space-y-4 hover:border-white/10 transition-all">
                     <div>
-                      <h4 className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Bronze Plan</h4>
-                      <p className="text-sm font-bold text-white">R100 / Month</p>
+                      <h4 className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Silent Hunter</h4>
+                      <p className="text-sm font-bold text-white">R149 / Month</p>
                       <div className="space-y-1 mt-2">
-                         <p className="text-[9px] text-white/40">• 5 Active Sniper Alerts</p>
-                         <p className="text-[9px] text-white/40">• Access to P24 & RentUncle</p>
+                         <p className="text-[12px] text-white/40">• 1 Active Alert</p>
+                         <p className="text-[12px] text-white/40">• 24-Hour Scans</p>
+                         <p className="text-[12px] text-white/40">• P24 + RentUncle</p>
                       </div>
                     </div>
                     <PayPalButtons 
-                      style={{ layout: 'horizontal', color: 'blue', shape: 'pill', label: 'subscribe', height: 35 }}
+                      style={{ layout: 'vertical', color: 'blue', shape: 'pill', label: 'subscribe', height: 35 }}
                       createSubscription={(data, actions) => {
                         const planId = process.env.NEXT_PUBLIC_PAYPAL_PLAN_BRONZE;
                         return actions.subscription.create({ 'plan_id': planId || "" });
@@ -749,19 +783,20 @@ export default function DiscoverPage() {
                   </div>
                 )}
 
-                {userProfile.tier !== 'silver' && userProfile.tier !== 'gold' && (
+                {userProfile?.tier !== 'silver' && userProfile?.tier !== 'gold' && (
                   <div className="bg-white/10 border border-blue-500/20 p-6 rounded-2xl space-y-4 hover:border-blue-500/40 transition-all">
                     <div>
-                      <h4 className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Silver Plan</h4>
-                      <p className="text-sm font-bold text-white">R200 / Month</p>
+                      <h4 className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Proactive Sniper</h4>
+                      <p className="text-sm font-bold text-white">R299 / Month</p>
                       <div className="space-y-1 mt-2">
-                         <p className="text-[9px] text-white/40">• 10 Active Sniper Alerts</p>
-                         <p className="text-[9px] text-white/60">• 2x Deep Scans Per Day</p>
-                         <p className="text-[9px] text-emerald-400/80 font-bold">• Pet-Friendly Semantic Extract</p>
+                         <p className="text-[12px] text-white/40">• 10 Active Alerts</p>
+                         <p className="text-[12px] text-white/60">• 2.5-Hour Scans</p>
+                         <p className="text-[12px] text-white/30">• Night Silence: 11PM - 5AM</p>
+                         <p className="text-[12px] text-emerald-400/80 font-bold">• Pet-Friendly AI Semantic</p>
                       </div>
                     </div>
                     <PayPalButtons 
-                      style={{ layout: 'horizontal', color: 'blue', shape: 'pill', label: 'subscribe', height: 35 }}
+                      style={{ layout: 'vertical', color: 'blue', shape: 'pill', label: 'subscribe', height: 35 }}
                       createSubscription={(data, actions) => {
                         const planId = process.env.NEXT_PUBLIC_PAYPAL_PLAN_SILVER;
                         return actions.subscription.create({ 'plan_id': planId || "" });
@@ -775,15 +810,16 @@ export default function DiscoverPage() {
                   <div className="bg-emerald-500/5 border border-emerald-500/20 p-6 rounded-2xl space-y-4 hover:border-emerald-500/40 transition-all relative overflow-hidden">
                     <div className="absolute top-0 right-0 bg-emerald-500 text-black text-[8px] font-black px-3 py-1 uppercase tracking-widest">Speed</div>
                     <div>
-                      <h4 className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Gold Plan</h4>
-                      <p className="text-sm font-bold text-white">R300 / Month</p>
+                      <h4 className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Discovery Overlord</h4>
+                      <p className="text-sm font-bold text-white">R499 / Month</p>
                       <div className="space-y-1 mt-2">
-                         <p className="text-[9px] text-white/40">• 50 Active Sniper Alerts</p>
-                         <p className="text-[9px] text-emerald-500 font-bold tracking-tight">• Scans Every 10 Minutes</p>
+                         <p className="text-[12px] text-white/40">• 100 Active Alerts</p>
+                         <p className="text-[12px] text-emerald-500 font-bold tracking-tight">• 1-Hour Scans (24/7)</p>
+                         <p className="text-[12px] text-white/40">• Full Facebook Integration</p>
                       </div>
                     </div>
                     <PayPalButtons 
-                      style={{ layout: 'horizontal', color: 'black', shape: 'pill', label: 'subscribe', height: 35 }}
+                      style={{ layout: 'vertical', color: 'black', shape: 'pill', label: 'subscribe', height: 35 }}
                       createSubscription={(data, actions) => {
                         const planId = process.env.NEXT_PUBLIC_PAYPAL_PLAN_GOLD;
                         return actions.subscription.create({ 'plan_id': planId || "" });
@@ -794,10 +830,11 @@ export default function DiscoverPage() {
                 )}
               </div>
             </div>
+            </div>
           </div>
-        </div>
-
+        )}
       </div>
     </div>
   );
 }
+
