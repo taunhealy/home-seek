@@ -29,8 +29,14 @@ for path in env_paths:
         print_safe(f"SUCCESS: Loaded .env from: {path}")
         break
 
-# [NETWORK] Residential Proxy Detection
-# No longer bypassing proxies here to allow Decodo rotation (v126.0)
+# [NETWORK] Surgical Proxy Isolation (v126.1)
+# gRPC (Firebase) crashes if it tries to use the residential proxy.
+# We move the proxy to SNIPER_PROXY so only Playwright uses it.
+os.environ["SNIPER_PROXY"] = os.getenv("HTTP_PROXY", "")
+os.environ["HTTP_PROXY"] = ""
+os.environ["HTTPS_PROXY"] = ""
+os.environ["http_proxy"] = ""
+os.environ["https_proxy"] = ""
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware

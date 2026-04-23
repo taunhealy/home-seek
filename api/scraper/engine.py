@@ -74,8 +74,9 @@ class SniperEngine:
             # [STABILITY] Visible minimized browser is highest trust
             is_headless = str(os.environ.get("HEADLESS", "false")).lower() == "true"
             
-            # [NETWORK] Inject Proxy if available
-            proxy_url = os.environ.get("HTTP_PROXY")
+            # [NETWORK] Inject Proxy if available (v126.1)
+            # Use isolated SNIPER_PROXY to avoid gRPC conflicts
+            proxy_url = os.environ.get("SNIPER_PROXY") or os.environ.get("HTTP_PROXY")
             ctx_args = {
                 "user_data_dir": user_data_path,
                 "headless": is_headless,
