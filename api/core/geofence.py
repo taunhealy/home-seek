@@ -9,7 +9,7 @@ PREMIUM_SUBURBS = {
 
     # 🌳 Southern Suburbs
     "constantia", "bishopscourt", "newlands", "claremont upper", 
-    "kenilworth upper", "rondebosch", "steenberg", "tokai", "kirstenhof", "bergvliet", "meadowridge", "tokai",
+    "kenilworth upper", "rondebosch", "steenberg", "tokai", "kirstenhof", "bergvliet", "meadowridge",
 
     # ⛰️ City Bowl Heights
     "higgovale", "oranjezicht", "tamboerskloof", "gardens", "vredehoek",

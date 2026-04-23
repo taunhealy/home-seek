@@ -37,7 +37,7 @@ async def simulate():
     whatsapp = profile.get("whatsapp")
     if whatsapp:
         wa_client = EvolutionClient()
-        wa_msg = f"🏠 *Home-Seek Sniper Match*\n\n*{listing['title']}*\n💰 R{listing['price']:,}\n📍 {listing['address']}\n🔗 {listing['source_url']}"
+        wa_msg = f"🏠 *Home-Seek Sniper Match*\n\n*{listing['title']}*\n💰 R{(listing.get('price') or 0):,}\n📍 {listing.get('address')}\n🔗 {listing.get('source_url')}"
         await wa_client.send_whatsapp(whatsapp, wa_msg)
         print(f"[SIGNAL] WhatsApp Signal Dispatched to {whatsapp}.")
 
@@ -53,19 +53,19 @@ async def simulate():
             </div>
             
             <h1 style="font-size: 24px; font-weight: 800; margin-bottom: 10px;">{listing['title']}</h1>
-            <p style="color: #10b981; font-size: 20px; font-weight: 800; margin-bottom: 20px;">R{listing['price']:,}</p>
+            <p style="color: #10b981; font-size: 20px; font-weight: 800; margin-bottom: 16px;">R{(listing.get('price') or 0):,}</p>
             
+            <div style="margin-bottom: 30px;">
+                <a href="{listing['source_url']}" style="background-color: #10b981; color: #000000; padding: 18px 40px; border-radius: 12px; font-weight: 900; text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; display: inline-block;">View Property</a>
+            </div>
+
             <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 20px; border-radius: 16px; margin-bottom: 30px;">
                 <p style="color: rgba(255,255,255,0.4); font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 5px;">Neighborhood</p>
                 <p style="margin: 0; font-size: 14px;">{listing['address']}</p>
             </div>
 
-            <div style="text-align: center; margin-bottom: 40px;">
-                <a href="{listing['source_url']}" style="background-color: #10b981; color: #000000; padding: 18px 40px; border-radius: 12px; font-weight: 900; text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; display: inline-block;">View Property</a>
-            </div>
-
             <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 30px; text-align: center;">
-                <p style="color: rgba(255,255,255,0.2); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3em;">Tactical Field Operations</p>
+                <p style="color: rgba(255,255,255,0.2); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3em;">home-seek.vercel.app</p>
                 <p style="color: rgba(255,255,255,0.2); font-size: 10px; margin-top: 10px;">
                     This is a simulation alert. To adjust terminal telemetry, visit your 
                     <a href="https://home-seek.vercel.app/discover" style="color: #10b981; text-decoration: none;">Discovery Dashboard</a>.

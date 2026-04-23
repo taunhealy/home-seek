@@ -13,7 +13,8 @@ import {
   UsersThree, 
   Waves,
   Mountains,
-  PawPrint
+  PawPrint,
+  User
 } from "@phosphor-icons/react";
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -27,6 +28,7 @@ export default function ExplorePage() {
   const [showPostModal, setShowPostModal] = useState(false);
   const [eliteSuburbs, setEliteSuburbs] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [user, setUser] = useState<any>(null);
   
   // Filters State
@@ -37,7 +39,9 @@ export default function ExplorePage() {
     area: '',
     view: '',
     layout: '',
-    pets: false
+    pets: false,
+    page: 1,
+    intent: 'listings' // Default to viewing listings
   });
 
   // Post Form State
@@ -70,11 +74,18 @@ export default function ExplorePage() {
       if (filters.view) endpoint += `&view=${filters.view}`;
       if (filters.layout) endpoint += `&layout=${filters.layout}`;
       if (filters.pets) endpoint += `&pets=true`;
+      if (filters.page) endpoint += `&page=${filters.page}`;
+      if (filters.intent) endpoint += `&intent=${filters.intent}`;
       
       const resp = await fetchWithAuth(endpoint);
       if (resp && resp.ok) {
         const data = await resp.json();
-        setListings(Array.isArray(data) ? data : []);
+        const newItems = Array.isArray(data) ? data : [];
+        if (filters.page > 1) {
+          setListings(prev => [...prev, ...newItems]);
+        } else {
+          setListings(newItems);
+        }
       }
     } catch (e) {
       console.error("Explore fetch error:", e);
@@ -108,7 +119,18 @@ export default function ExplorePage() {
       }
     });
     return () => unsubscribe();
-  }, [activeTab, filters.area, filters.view, filters.layout, filters.pets, filters.platform, filters.minPrice, filters.maxPrice]);
+  }, [
+    activeTab, 
+    filters.area, 
+    filters.view, 
+    filters.layout, 
+    filters.pets, 
+    filters.platform, 
+    filters.minPrice, 
+    filters.maxPrice,
+    filters.intent,
+    filters.page
+  ]);
 
   const handleManualPost = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,7 +216,30 @@ export default function ExplorePage() {
           <div className="grid grid-cols-12 gap-12">
             {/* Advanced Filters Sidebar */}
         <aside className="col-span-3 space-y-12">
-          <div className="bg-white/[0.03] border border-white/10 rounded-[2.5rem] p-10 space-y-10 sticky top-32">
+          <div className="bg-white/3 border border-white/10 rounded-[2.5rem] p-10 space-y-10">
+            <div>
+              <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Feed Intelligence</h2>
+              <div className="grid grid-cols-2 bg-white/5 p-1 rounded-2xl border border-white/5">
+                {[
+                  { id: 'listings', label: 'Listings', icon: House },
+                  { id: 'seekers', label: 'Seekers', icon: User }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setFilters({ ...filters, intent: tab.id, page: 1 })}
+                    className={`flex items-center justify-center gap-3 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                      filters.intent === tab.id 
+                        ? 'bg-emerald-500 text-black shadow-[0_0_20px_rgba(16,185,129,0.3)]' 
+                        : 'text-white/40 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <tab.icon size={14} weight={filters.intent === tab.id ? 'fill' : 'regular'} />
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div>
               <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Rental Horizon</h2>
               <div className="grid grid-cols-3 bg-white/5 p-1 rounded-2xl border border-white/5">
@@ -283,30 +328,55 @@ export default function ExplorePage() {
                 </div>
                 <input 
                   type="text"
-                  placeholder="Find elite area..."
+                  placeholder={filters.area || "Find area..."}
                   value={searchTerm}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-[10px] font-bold focus:outline-none focus:border-emerald-500/50 transition-all"
+                  className={`w-full bg-white/5 border rounded-xl pl-10 pr-10 py-3 text-[10px] font-bold focus:outline-none transition-all ${filters.area ? 'border-emerald-500/50 text-emerald-400' : 'border-white/10'}`}
                 />
                 
-                {/* Suggestions Dropdown */}
-                {searchTerm && (
-                  <div className="absolute left-0 right-0 top-full mt-2 bg-[#0A0A0B] border border-white/10 rounded-2xl shadow-2xl z-50 max-h-48 overflow-y-auto no-scrollbar">
+                {(searchTerm || filters.area) && (
+                  <button 
+                    onClick={() => {
+                      setFilters({...filters, area: ''});
+                      setSearchTerm('');
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/5 flex items-center justify-center text-white/20 hover:text-white hover:bg-white/10 transition-all"
+                  >
+                    <X size={10} />
+                  </button>
+                )}
+                
+                {/* Suggestions Dropdown (v52.2: Proactive Focus) */}
+                {(searchTerm || isSearchFocused) && (
+                  <div className="absolute left-0 right-0 top-full mt-2 bg-[#0A0A0B] border border-white/10 rounded-2xl shadow-2xl z-50 max-h-64 overflow-y-auto no-scrollbar animate-in fade-in zoom-in-95 duration-200">
+                    <div className="p-2 border-b border-white/[0.02]">
+                       <p className="px-3 py-1 text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">Elite Suburbs</p>
+                    </div>
                     {eliteSuburbs
                       .filter(s => s.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .slice(0, 15) // Limit for performance/UI
                       .map(suburb => (
                         <button
                           key={suburb}
                           onClick={() => {
                             setFilters({...filters, area: suburb});
                             setSearchTerm('');
+                            setIsSearchFocused(false);
                           }}
-                          className="w-full text-left px-5 py-3 text-[10px] font-bold text-white/60 hover:text-white hover:bg-white/5 transition-all flex items-center gap-3 border-b border-white/[0.02] last:border-0"
+                          className={`w-full text-left px-5 py-3 text-[10px] font-bold transition-all flex items-center justify-between border-b border-white/[0.02] last:border-0 hover:bg-emerald-500/10 ${filters.area === suburb ? 'text-emerald-400 bg-emerald-500/5' : 'text-white/60 hover:text-white'}`}
                         >
-                          <MapPin size={10} className="text-emerald-500" />
-                          {suburb}
+                          <div className="flex items-center gap-3">
+                            <MapPin size={10} className={filters.area === suburb ? 'text-emerald-400' : 'text-white/20'} />
+                            {suburb}
+                          </div>
+                          {filters.area === suburb && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]" />}
                         </button>
                       ))}
+                    {eliteSuburbs.filter(s => s.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
+                       <div className="px-5 py-4 text-[9px] font-bold text-white/20 uppercase tracking-widest text-center">No neighborhood matches</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -315,8 +385,8 @@ export default function ExplorePage() {
                 {[
                   'Sea Point', 'Green Point', 'Camps Bay', 'Bantry Bay', 
                   'Gardens', 'Oranjezicht', 'Higgovale', 
-                  'Constantia', 'Newlands', 'Claremont Upper',
-                  'Hout Bay', 'Noordhoek'
+                  'Constantia', 'Newlands', 'Meadowridge',
+                  'Muizenberg', 'Kalk Bay'
                 ].map(area => (
                   <button
                     key={area}
@@ -430,11 +500,6 @@ export default function ExplorePage() {
                            {l.rental_type === 'short-term' ? '⏳ FLEX' : '🏗️ ANNUAL'}
                         </span>
                      )}
-                     {l.available_date && (
-                        <span className="bg-black/60 backdrop-blur-xl border border-white/10 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest text-white/60">
-                           📅 {l.available_date}
-                        </span>
-                     )}
                      {l.property_type && (
                         <span className="bg-black/60 backdrop-blur-xl border border-white/10 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest text-blue-400">
                            {l.property_type}
@@ -476,7 +541,14 @@ export default function ExplorePage() {
                    </div>
 
                    <div className="absolute bottom-4 left-4 right-4 z-20 flex justify-between items-end text-white">
-                      <p className="text-xl font-black tracking-tighter">{formatCurrency(l.price)}<span className="text-[10px] text-white/40 font-bold tracking-normal ml-1">{l.rental_type === 'short-term' ? '/night' : '/mo'}</span></p>
+                      <div className="flex flex-col">
+                         {l.available_date && (
+                            <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-1 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-md w-fit border border-emerald-500/20">
+                               {l.available_date}
+                            </span>
+                         )}
+                         <p className="text-2xl font-black tracking-tighter drop-shadow-2xl">{formatCurrency(l.price)}<span className="text-[10px] text-white/40 font-bold tracking-normal ml-1">{l.rental_type === 'short-term' ? '/night' : '/mo'}</span></p>
+                      </div>
                       <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center backdrop-blur-xl bg-white/5 hover:bg-emerald-500 hover:text-black transition-all">
                          <Send size={14} />
                       </div>
@@ -526,6 +598,17 @@ export default function ExplorePage() {
             ))}
           </div>
 
+          {!isLoading && listings.length >= 100 && (
+             <div className="pt-12 flex justify-center">
+                <button 
+                  onClick={() => setFilters({ ...filters, page: (filters.page || 1) + 1 })}
+                  className="bg-white/5 border border-white/10 px-12 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                >
+                  Load More Intelligence
+                </button>
+             </div>
+          )}
+
           {!isLoading && listings.length === 0 && (
              <div className="bg-white/[0.02] border border-white/5 border-dashed rounded-[3rem] p-48 text-center">
                 <p className="text-white/20 text-xs font-bold uppercase tracking-[0.5em]">No active listings found in this category</p>
@@ -552,7 +635,7 @@ export default function ExplorePage() {
               initial={{ scale: 0.9, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, y: 20, opacity: 0 }}
-              className="relative w-full max-w-2xl bg-[#0f0f0f] border border-white/10 rounded-[3rem] overflow-hidden shadow-[0_50px_100px_rgba(0,0,0,0.8)]"
+              className="relative w-full max-w-2xl bg-[#0f0f0f] border border-white/10 rounded-[3rem] overflow-y-auto max-h-[90vh] shadow-[0_50px_100px_rgba(0,0,0,0.8)] custom-scrollbar"
             >
               <div className="p-12 space-y-10">
                 <div className="flex justify-between items-start text-white">

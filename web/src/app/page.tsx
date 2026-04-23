@@ -27,9 +27,9 @@ export default function Home() {
           <span className="text-2xl font-black tracking-tighter">HOME<span className="text-emerald-primary">SEEK</span></span>
         </div>
         <div className="hidden md:flex gap-8 text-sm font-bold uppercase tracking-widest text-white/60">
-          <a href="#how-it-works" className="hover:text-emerald-primary transition-colors">Protocol</a>
-          <a href="#features" className="hover:text-emerald-primary transition-colors">Intelligence</a>
-          <a href="#pricing" className="hover:text-emerald-primary transition-colors">Access</a>
+          <a href="#how-it-works" className="hover:text-emerald-primary transition-colors">Alerts</a>
+          <a href="#features" className="hover:text-emerald-primary transition-colors">Explore</a>
+          <a href="#pricing" className="hover:text-emerald-primary transition-colors">Pricing</a>
         </div>
         <Link 
           href="/discover" 
@@ -233,15 +233,15 @@ export default function Home() {
               <ul className="space-y-4 text-sm font-medium text-white/60">
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
-                   24h Discovery Pulse
+                   24h Check-in Frequency
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
-                   Email Nightly Digest
+                   Email Summaries
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
-                   Standard Dashboard
+                   Basic Dashboard
                 </li>
               </ul>
             </div>
@@ -258,15 +258,15 @@ export default function Home() {
               <ul className="space-y-4 text-sm font-medium text-white/80">
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   8h Discovery Pulse
+                   8h Check-in Frequency
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   WhatsApp Intelligence
+                   WhatsApp Notifications
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   Autonomous Hunt Mode
+                   Automated Tracking
                 </li>
               </ul>
             </div>
@@ -282,17 +282,17 @@ export default function Home() {
                 <p className="text-4xl font-black">R299<span className="text-sm opacity-40">/mo</span></p>
               </div>
               <ul className="space-y-4 text-sm font-medium text-white/90">
-                <li className="flex items-center gap-3">
+                <li className="flex items-center gap-3 text-emerald-primary">
                    <Zap className="w-4 h-4 text-emerald-primary fill-emerald-primary" />
-                   INSTANT MULTIPLEX ALERTS
+                   4h Check-in Frequency
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   4h Discovery Pulse
+                   Priority Support
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   Priority Area Locking
+                   Advanced Area Filters
                 </li>
               </ul>
             </div>
@@ -307,17 +307,17 @@ export default function Home() {
                 <p className="text-4xl font-black">R499<span className="text-sm opacity-40">/mo</span></p>
               </div>
               <ul className="space-y-4 text-sm font-medium text-white">
-                <li className="flex items-center gap-3">
+                <li className="flex items-center gap-3 text-emerald-primary font-bold">
                    <Zap className="w-4 h-4 text-emerald-primary fill-emerald-primary" />
-                   ZERO-LATENCY ALERTING
-                </li>
-                <li className="flex items-center gap-3 text-emerald-primary">
-                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   1h Discovery Pulse
+                   1h Check-in Frequency
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   Unlimited Alert Agents
+                   Instant Smart Alerts
+                </li>
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
+                   Unlimited Alert Tasks
                 </li>
               </ul>
             </div>

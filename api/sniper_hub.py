@@ -6,7 +6,7 @@ import sys
 import json
 import time
 import requests
-from datetime import datetime
+import datetime as dt
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("green")
@@ -102,7 +102,7 @@ class SniperHub(ctk.CTk):
         self.check_cookies()
 
     def log_text(self, message):
-        msg = f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n"
+        msg = f"[{dt.datetime.now().strftime('%H:%M:%S')}] {message}\n"
         self.terminal.insert("end", msg)
         self.terminal.see("end")
 

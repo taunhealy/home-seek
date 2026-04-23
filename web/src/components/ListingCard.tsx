@@ -23,7 +23,12 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing: l, idx }) => 
             {l.view_category === 'Sea' && <span title="Sea View" className="text-lg">🌊</span>}
             {l.view_category === 'Mountain' && <span title="Mountain View" className="text-lg">🏔️</span>}
           </div>
-          <p className="text-xs text-white/40 font-bold uppercase tracking-[0.2em]">{l.address}</p>
+          <p className="text-xs text-white/40 font-bold uppercase tracking-[0.2em] mb-1">{l.address}</p>
+          {l.created_at && (
+            <p className="text-[10px] text-white/20 font-medium lowercase tracking-wide">
+              captured: {new Date(l.created_at).toLocaleDateString('en-ZA').replace(/-/g, '/')}
+            </p>
+          )}
         </div>
         <div className="text-right">
           <p className="text-2xl font-bold tracking-tighter">{formatCurrency(l.price)}</p>
@@ -53,8 +58,13 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing: l, idx }) => 
               <span>🏠</span> Furnished
             </div>
           )}
-          {l.is_pet_friendly && (
+          {l.rental_type && (
             <div className="px-3 py-1.5 border border-blue-500/20 bg-blue-500/5 rounded-full text-[9px] font-black uppercase tracking-widest text-blue-400/80 flex items-center gap-2">
+              <span>🎯</span> {l.rental_type.replace(/-/g, ' ')}
+            </div>
+          )}
+          {l.is_pet_friendly && (
+            <div className="px-3 py-1.5 border border-amber-500/20 bg-amber-500/5 rounded-full text-[9px] font-black uppercase tracking-widest text-amber-500/80 flex items-center gap-2">
               <span>🐾</span> Pet Friendly
             </div>
           )}
@@ -86,20 +96,15 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing: l, idx }) => 
         <a 
           href={l.source_url} 
           target="_blank" 
-          className="w-full sm:flex-1 bg-emerald-500 hover:bg-emerald-400 text-black px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(16,185,129,0.1)] hover:shadow-[0_0_25px_rgba(16,185,129,0.3)] hover:scale-[1.02] active:scale-95"
+          className="w-fit bg-emerald-500 hover:bg-emerald-400 text-black px-12 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(16,185,129,0.1)] hover:shadow-[0_0_25px_rgba(16,185,129,0.3)] hover:scale-[1.02] active:scale-95"
         >
           <ArrowSquareOut size={16} weight="bold" />
           View Property
         </a>
         <div className="flex flex-col items-center sm:items-end w-full sm:w-auto">
-           <span className="w-full sm:w-auto bg-white/5 border border-white/10 px-6 py-4 rounded-2xl text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] flex items-center justify-center mb-1">
+           <span className="w-full sm:w-auto bg-white/5 border border-white/10 px-6 py-4 rounded-2xl text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] flex items-center justify-center">
              {l.platform}
            </span>
-           {l.created_at && (
-             <span className="text-[8px] font-black text-white/10 uppercase tracking-[0.3em]">
-               Captured: {new Date(l.created_at).toLocaleDateString('en-ZA')}
-             </span>
-           )}
         </div>
       </div>
     </motion.div>

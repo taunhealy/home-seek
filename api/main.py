@@ -41,10 +41,11 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List, Union
 from pydantic import BaseModel
+from services.templates import get_match_template, get_subscription_template, get_invoice_template
 import json
 import time
 import hashlib
-from datetime import datetime
+import datetime as dt
 from google.cloud import firestore
 from scraper.engine import SniperEngine
 from services.database import (
@@ -52,12 +53,13 @@ from services.database import (
     save_listing, 
     get_sources, 
     create_task, 
+    create_listing_id,
     update_task, 
     get_user_alerts,
     get_user_profile,
     save_search
 )
-from services.notifications import EvolutionClient, MailerSendClient
+from services.notifications import EvolutionClient, MailerSendClient, ResendEmailClient
 
 app = FastAPI(title="Home-Seek Unified Intelligence Core", version="1.0.0")
 
@@ -88,12 +90,13 @@ async def fetch_user_profile(user_id: str):
     return {**profile, "id": user_id}
 
 @app.get("/listings/{user_id}")
-async def fetch_user_listings(user_id: str):
+async def fetch_user_listings(user_id: str, page: int = 1):
     effective_id = get_effective_user_id(user_id)
     db = get_db()
+    limit = 50 * page # [HYBRID] Expand-as-you-go pagination for user feeds
     docs = db.collection("users").document(effective_id).collection("listings")\
              .order_by("created_at", direction=firestore.Query.DESCENDING)\
-             .limit(50).stream()
+             .limit(limit).stream()
     return [{"id": d.id, **d.to_dict()} for d in docs]
 
 @app.get("/searches/{user_id}")
@@ -110,18 +113,38 @@ async def fetch_explore_listings(
     max_price: Optional[int] = None,
     platform: Optional[str] = None,
     view: Optional[str] = None,
-    pets: Optional[bool] = None
+    pets: Optional[bool] = None,
+    layout: Optional[str] = None,
+    page: int = 1,
+    intent: Optional[str] = None
 ):
     """Global Feed for the Explore Page with Semantic Vista & Pet Filters."""
     db = get_db()
-    docs = db.collection("listings").limit(500).stream()
+    docs = db.collection("listings").limit(1000).stream()
     all_hits = [{"id": d.id, **d.to_dict()} for d in docs]
     
     res = []
     for h in all_hits:
+        # [INTENT] 🛡️ Surgical Shield: Distinguish between Listings and Seekers
+        if intent == 'listings':
+            if h.get("is_looking_for") is True: continue
+        elif intent == 'seekers':
+            if h.get("is_looking_for") is not True: continue
+
         if rental_type == 'long-term':
             if h.get("rental_type") not in ['long-term', None]: continue
+        elif rental_type == 'pet-sitting':
+            # [PET-SIT] 🐾 Specialized Logic: Identify rentals with pet-care obligations
+            is_petsit = h.get("rental_type") == 'pet-sitting'
+            if not is_petsit:
+                content = (str(h.get("title", "")) + " " + str(h.get("description", ""))).lower()
+                if any(k in content for k in ["pet sit", "house sit", "look after pets", "mind my", "care for pets"]):
+                    is_petsit = True
+            if not is_petsit: continue
         elif rental_type and h.get("rental_type") != rental_type: continue
+        
+        # [LAYOUT] 🛡️ Surgical Shield: Distinguish between Whole units and Shared rooms
+        if layout and h.get("property_sub_type") != layout: continue
         
         price = h.get("price") or 0
         if min_price and price < min_price: continue
@@ -146,17 +169,28 @@ async def fetch_explore_listings(
         res.append(h)
         
     res.sort(key=lambda x: str(x.get('created_at', '')), reverse=True)
-    return res[:100]
+    
+    # [PAGINATION] Slice results for the UI
+    per_page = 100
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    
+    return res[start_idx:end_idx]
 
 @app.post("/deploy-sniper")
 async def deploy_sniper(mission: dict, background_tasks: BackgroundTasks):
     user_id = mission.get("user_id", "taun_test_user")
     effective_id = get_effective_user_id(user_id)
     
-    query = mission.get("search_query", "")
+    query = mission.get("target_area") or mission.get("search_query", "")
     is_alert_save = mission.get("alert_enabled", False)
     
     if is_alert_save:
+        # Normalize ID based on Target Area (Primary) or Search Query (Fallback)
+        # This enforces 1 Area per Alert policy (v120.0)
+        search_id = hashlib.md5(query.lower().strip().encode()).hexdigest()[:12]
+        mission['search_id'] = search_id
+        
         # [SECURITY] Backend Limit Enforcement
         profile = await get_user_profile(effective_id)
         tier = profile.get("tier", "free").lower()
@@ -165,7 +199,7 @@ async def deploy_sniper(mission: dict, background_tasks: BackgroundTasks):
         BACKEND_LIMITS = {"free": 0, "bronze": 1, "silver": 10, "gold": 100}
         tier_limit = BACKEND_LIMITS.get(tier, 0)
         
-        from services.database import get_user_alerts
+        from services.database import get_user_alerts, save_search
         existing_alerts = await get_user_alerts(effective_id)
         
         if len(existing_alerts) >= tier_limit:
@@ -207,6 +241,12 @@ async def remove_alert(user_id: str, search_id: str):
     db.collection("users").document(user_id).collection("alerts").document(search_id).delete()
     return {"status": "ok"}
 
+@app.post("/update-alert/{user_id}/{search_id}")
+async def update_alert(user_id: str, search_id: str, payload: dict):
+    db = get_db()
+    db.collection("users").document(user_id).collection("alerts").document(search_id).set(payload, merge=True)
+    return {"status": "ok"}
+
 @app.post("/update-profile")
 async def update_profile(payload: dict):
     user_id = payload.get("user_id")
@@ -218,6 +258,78 @@ async def update_profile(payload: dict):
         "updated_at": firestore.SERVER_TIMESTAMP
     }, merge=True)
     return {"status": "ok"}
+
+@app.post("/update-tier")
+async def update_user_tier(payload: dict):
+    user_id = payload.get("user_id")
+    tier = payload.get("tier")
+    sub_id = payload.get("subscription_id")
+    
+    if not user_id or not tier:
+        return {"status": "error", "message": "Missing user_id or tier"}
+        
+    db = get_db()
+    # 1. Update Profile
+    db.collection("users").document(user_id).set({
+        "tier": tier.lower(),
+        "subscription_id": sub_id,
+        "updated_at": firestore.SERVER_TIMESTAMP
+    }, merge=True)
+    
+    # 2. Fetch profile for email/name
+    from services.database import get_user_profile
+    profile = await get_user_profile(user_id)
+    email = profile.get("email")
+    name = profile.get("name", "Hunter")
+    
+    # 3. Send Welcome Email & Invoice
+    if email:
+        from services.notifications import ResendEmailClient
+        email_client = ResendEmailClient()
+        
+        # Welcome Template
+        welcome_html = get_subscription_template(tier, name)
+        asyncio.create_task(email_client.send_email(email, f"🏹 Welcome to the {tier.title()} Elite", welcome_html))
+        
+        # Invoice Template
+        amounts = {"bronze": 149, "silver": 299, "gold": 499}
+        amount = amounts.get(tier.lower(), 0)
+        if amount > 0:
+            invoice_html = get_invoice_template(email, tier, amount)
+            asyncio.create_task(email_client.send_email(email, f"🧾 Receipt: Home-Seek {tier.title()} Subscription", invoice_html))
+            
+    return {"status": "ok"}
+
+@app.get("/unsubscribe/{user_id}")
+async def unsubscribe_user(user_id: str):
+    db = get_db()
+    db.collection("users").document(user_id).set({
+        "notify_email": False,
+        "updated_at": firestore.SERVER_TIMESTAMP
+    }, merge=True)
+    return {"status": "ok", "message": "You have been unsubscribed from property alerts."}
+@app.get("/geofence/suburbs")
+async def get_elite_suburbs():
+    """Exposes the PREMIUM_SUBURBS list for frontend autocomplete."""
+    from core.geofence import PREMIUM_SUBURBS
+    # Return as sorted title-case list for the UI
+    return sorted([s.title() for s in PREMIUM_SUBURBS])
+
+@app.post("/listings/manual")
+async def manual_post_listing(listing: dict):
+    """Allows users to manually submit a listing via the unified API."""
+    try:
+        from services.database import save_listing
+        # Standardize listing
+        listing["rental_type"] = listing.get("rental_type", "long-term")
+        listing["platform"] = "Manual Post"
+        listing["discovery_method"] = "manual_submission"
+        
+        # Save to Global Community Feed
+        await save_listing("community_manual", listing)
+        return {"status": "success", "message": "Intel shared with the community!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/trigger-re-match")
 async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
@@ -235,13 +347,6 @@ async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
     async def _match_task():
         match_count = 0
         for l_dict in global_intel:
-            # [NEGATIVE INTEL] 🛡️ Historical Noise Scrub
-            title_clean = (l_dict.get("title") or "").lower()
-            desc_clean = (l_dict.get("description") or "").lower()
-            noise_markers = ["wanted", "looking for", "iso ", "searching for", "i need a", "looking to rent"]
-            if any(m in title_clean for m in noise_markers) or any(m in desc_clean for m in noise_markers):
-                continue
-
             for alert in alerts:
                 # Check Price/Beds/Pets
                 l_price = l_dict.get("price") or 0
@@ -265,7 +370,7 @@ async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
                     # 📱 Channel Alpha: WhatsApp
                     if whatsapp and len(str(whatsapp)) > 5 and should_wa:
                         wa_client = EvolutionClient()
-                        wa_msg = f"🧠 *Home-Seek Intel Match (Archive)*\n\n*{l_dict.get('title')}*\n💰 R{l_dict.get('price'):,}\n📍 {l_dict.get('address')}\n\n🔗 {l_dict.get('source_url')}"
+                        wa_msg = f"🧠 *Home-Seek Intel Match (Archive)*\n\n*{l_dict.get('title')}*\n💰 R{(l_dict.get('price') or 0):,}\n📍 {l_dict.get('address')}\n\n🔗 {l_dict.get('source_url')}"
                         asyncio.create_task(wa_client.send_whatsapp(whatsapp, wa_msg))
                         print_safe(f"[SIGNAL] WhatsApp Archive Alert Dispatched to {whatsapp}")
 
@@ -279,16 +384,18 @@ async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
                                 <span style="color: #10b981; font-weight: 900; letter-spacing: 0.3em; font-size: 10px; text-transform: uppercase;">Home-Seek Intelligence (Retro)</span>
                             </div>
                             <h1 style="font-size: 24px; font-weight: 800; margin-bottom: 10px; tracking: -0.02em;">{l_dict.get('title')}</h1>
-                            <p style="color: #10b981; font-size: 20px; font-weight: 800; margin-bottom: 20px;">R{l_dict.get('price', 0):,}</p>
+                            <p style="color: #10b981; font-size: 20px; font-weight: 800; margin-bottom: 16px;">R{(l_dict.get('price') or 0):,}</p>
+                            
+                            <div style="text-align: center; margin-bottom: 30px;">
+                                <a href="{l_dict.get('source_url')}" style="background-color: #10b981; color: #000000; padding: 18px 40px; border-radius: 12px; font-weight: 900; text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; display: inline-block;">View Property</a>
+                            </div>
+
                             <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 20px; border-radius: 16px; margin-bottom: 30px;">
                                 <p style="color: rgba(255,255,255,0.4); font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 5px;">Neighborhood (Found in Archive)</p>
                                 <p style="margin: 0; font-size: 14px;">{l_dict.get('address', 'Cape Town')}</p>
                             </div>
-                            <div style="text-align: center; margin-bottom: 40px;">
-                                <a href="{l_dict.get('source_url')}" style="background-color: #10b981; color: #000000; padding: 18px 40px; border-radius: 12px; font-weight: 900; text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; display: inline-block;">View Property</a>
-                            </div>
                             <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 30px; text-align: center;">
-                                <p style="color: rgba(255,255,255,0.2); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3em;">Tactical Field Operations</p>
+                                <p style="color: rgba(255,255,255,0.2); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3em;">home-seek.vercel.app</p>
                                 <p style="color: rgba(255,255,255,0.2); font-size: 10px; margin-top: 10px;">
                                     This was discovered via a historical re-match pulse. To terminate mission, visit your 
                                     <a href="https://home-seek.vercel.app/discover" style="color: #10b981; text-decoration: none;">Discovery Dashboard</a>.
@@ -381,14 +488,6 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                 all_raw = deduped_raw
 
                 for l_dict in all_raw:
-                    # [NEGATIVE INTEL] 🛡️ Anti-Noise Protocol
-                    title_clean = (l_dict.get("title") or "").lower()
-                    desc_clean = (l_dict.get("description") or "").lower()
-                    noise_markers = ["wanted", "looking for", "iso ", "searching for", "i need a", "looking to rent"]
-                    if any(m in title_clean for m in noise_markers) or any(m in desc_clean for m in noise_markers):
-                        # print_safe(f"[FILTER] Noise detected (Wanted): {l_dict.get('title', 'Unknown')}")
-                        continue
-
                     # [GEOFENCE] 🛡️ Area Logic (v108.2)
                     from core.geofence import is_area_elite
                     is_elite = is_area_elite(l_dict.get("address", "") or l_dict.get("title", ""))
@@ -423,11 +522,16 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                                 if listing_beds < min_val: continue
                             
                             # Valid match!
+                            doc_id = create_listing_id(l_dict)
+                            user_seen = db.collection("users").document(user_id).collection("listings").document(doc_id).get().exists
                             await save_listing(user_id, l_dict)
                             
                             # [SIGNAL]
                             user_profile = await get_user_profile(user_id)
                             if not user_profile: continue
+                            
+                            # [FILTER] Skip "Looking For" posts for alerts to reduce noise (v115.0)
+                            if l_dict.get("is_looking_for"): continue
                             
                             is_initiator = sub.get("is_initiator", False)
                             tier = user_profile.get("tier", "free").lower()
@@ -435,18 +539,16 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                             
                             if not is_initiator and not can_multiplex: continue
 
-                            try:
-                                doc_id = hashlib.sha256(f"{l_dict.get('source_url')}-{l_dict.get('title')}".encode()).hexdigest()
-                                user_seen = db.collection("users").document(user_id).collection("listings").document(doc_id).get().exists
-                                
-                                if not user_seen:
+                            if not user_seen:
+                                try:
+                                    print_safe(f"[SIGNAL] Match is NEW ({doc_id[:8]}). Preparing dispatch...")
                                     whatsapp = user_profile.get("whatsapp")
                                     # [GATE] Check User Preference
                                     should_wa = user_profile.get("notify_whatsapp", True)
                                     
                                     if whatsapp and len(str(whatsapp)) > 5 and should_wa:
                                         wa_client = EvolutionClient()
-                                        wa_msg = f"🏠 *Home-Seek Sniper Match*\n\n*{l_dict.get('title')}*\n💰 R{l_dict.get('price'):,}\n📍 {l_dict.get('address', 'Cape Town')}\n🔗 {l_dict.get('source_url')}"
+                                        wa_msg = f"🏠 *Home-Seek Sniper Match*\n\n*{l_dict.get('title')}*\n💰 R{(l_dict.get('price') or 0):,}\n📍 {l_dict.get('address', 'Cape Town')}\n🔗 {l_dict.get('source_url')}"
                                         asyncio.create_task(wa_client.send_whatsapp(whatsapp, wa_msg))
                                         print_safe(f"[SIGNAL] WhatsApp Alert Dispatched to {whatsapp}")
                                     else:
@@ -458,42 +560,15 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                                     
                                     if user_email and should_email:
                                         email_client = ResendEmailClient()
-                                        subject = f"🏹 Mission Success: {l_dict.get('title')}"
-                                        
-                                        # [PREMIUM] Tactical Email Template
-                                        body = f"""
-                                        <div style="background-color: #050505; color: #ffffff; font-family: 'Inter', sans-serif; padding: 40px; border-radius: 24px; border: 1px solid #10b9811a;">
-                                            <div style="text-align: center; margin-bottom: 30px;">
-                                                <span style="color: #10b981; font-weight: 900; letter-spacing: 0.3em; font-size: 10px; text-transform: uppercase;">Home-Seek Intelligence</span>
-                                            </div>
-                                            
-                                            <h1 style="font-size: 24px; font-weight: 800; margin-bottom: 10px; tracking: -0.02em;">{l_dict.get('title')}</h1>
-                                            <p style="color: #10b981; font-size: 20px; font-weight: 800; margin-bottom: 20px;">R{l_dict.get('price', 0):,}</p>
-                                            
-                                            <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 20px; border-radius: 16px; margin-bottom: 30px;">
-                                                <p style="color: rgba(255,255,255,0.4); font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 5px;">Neighborhood</p>
-                                                <p style="margin: 0; font-size: 14px;">{l_dict.get('address', 'Cape Town')}</p>
-                                            </div>
-
-                                            <div style="text-align: center; margin-bottom: 40px;">
-                                                <a href="{l_dict.get('source_url')}" style="background-color: #10b981; color: #000000; padding: 18px 40px; border-radius: 12px; font-weight: 900; text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; display: inline-block;">View Property</a>
-                                            </div>
-
-                                            <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 30px; text-align: center;">
-                                                <p style="color: rgba(255,255,255,0.2); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3em;">Tactical Field Operations</p>
-                                                <p style="color: rgba(255,255,255,0.2); font-size: 10px; margin-top: 10px;">
-                                                    To terminate this mission or adjust pings, visit your 
-                                                    <a href="https://home-seek.vercel.app/discover" style="color: #10b981; text-decoration: none;">Discovery Dashboard</a>.
-                                                </p>
-                                            </div>
-                                        </div>
-                                        """
+                                        subject = f"🏹 Match: {l_dict.get('title')}"
+                                        body = get_match_template(l_dict)
                                         asyncio.create_task(email_client.send_email(user_email, subject, body))
+                                        print_safe(f"[SIGNAL] Branded Email Alert Dispatched to {user_email}")
                                         print_safe(f"[SIGNAL] Branded Email Dispatched to {user_email}")
                                     else:
                                         print_safe(f"[SIGNAL] Email skipped (Disabled or No Email) for {user_id}")
-                            except Exception as e:
-                                print_safe(f"[SIGNAL ERROR] {e}")
+                                except Exception as e:
+                                    print_safe(f"[SIGNAL ERROR] {e}")
         
         await update_task(task_id, "Complete", f"Scan finished for {query}.", completed=True)
 
@@ -509,7 +584,7 @@ async def autonomous_pulse_heartbeat():
             
             # [TIME GATE] Check South African Time (SA is UTC+2)
             # Default to local machine time for simplicity in Local Sniper mode
-            current_hour = datetime.datetime.now().hour 
+            current_hour = dt.datetime.now().hour 
             is_night_silence = (current_hour >= 23 or current_hour < 5)
             
             users = [{"id": u.id, **u.to_dict()} for u in db.collection("users").stream()]

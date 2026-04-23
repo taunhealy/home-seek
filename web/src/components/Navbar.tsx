@@ -79,6 +79,25 @@ export const Navbar: React.FC<NavbarProps> = ({ user, profile, handleLogout, onU
                   </div>
 
                   <div className="p-2 space-y-1">
+                    <div className="px-4 py-2 space-y-2 border-b border-white/5 mb-2">
+                       <label className="text-[9px] font-black text-white/20 uppercase tracking-widest">Signal Routing</label>
+                       <div className="flex gap-2">
+                          <input 
+                            type="text"
+                            placeholder="WhatsApp (e.g. 27...)"
+                            value={whatsappInput}
+                            onChange={(e) => setWhatsappInput(e.target.value)}
+                            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-emerald-500/50 transition-all"
+                          />
+                          <button 
+                            onClick={() => onUpdateProfile?.({ whatsapp: whatsappInput })}
+                            className="bg-emerald-500 text-black px-3 rounded-xl hover:bg-emerald-400 transition-all active:scale-95 text-[10px] font-black"
+                          >
+                             SAVE
+                          </button>
+                       </div>
+                    </div>
+
                     <p className="px-4 py-2 text-[9px] font-black text-white/20 uppercase tracking-widest">Signal Preferences</p>
                     
                     {/* WhatsApp Toggle */}

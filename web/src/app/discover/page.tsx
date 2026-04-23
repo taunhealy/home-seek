@@ -30,6 +30,7 @@ import { INTELLIGENCE_SOURCES, TIER_LIMITS, type IntelligenceSource } from '@/li
 export default function DiscoverPage() {
   const [activeTab, setActiveTab] = useState<'listings' | 'alerts'>('listings');
   const [aiPrompt, setAiPrompt] = useState('');
+  const [targetArea, setTargetArea] = useState('');
   const [maxPrice, setMaxPrice] = useState(25000);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [selectedBedrooms, setSelectedBedrooms] = useState<number[]>([]);
@@ -48,6 +49,8 @@ export default function DiscoverPage() {
   const [allSuburbs, setAllSuburbs] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [petPolicy, setPetPolicy] = useState<'all' | 'yes' | 'no'>('all');
+  const [missionFilter, setMissionFilter] = useState<'all' | 'long-term' | 'short-term' | 'pet-sitting'>('all');
+  const [listingsPage, setListingsPage] = useState(1);
 
   useEffect(() => {
     setMounted(true);
@@ -87,11 +90,15 @@ export default function DiscoverPage() {
       }
 
       // 🔵 Part B: Fetch Historical Listings (Past Matches)
-      const listingsRes = await fetchWithAuth(`/listings/${userProfile.id}`);
+      const listingsRes = await fetchWithAuth(`/listings/${userProfile.id}?page=${listingsPage}`);
       if (listingsRes && listingsRes.ok) {
         const listingsData = await listingsRes.json();
         const sanitized = listingsData.map((l: any) => ListingSchema.parse(l));
-        setListings(sanitized);
+        if (listingsPage > 1) {
+          setListings(prev => [...prev, ...sanitized]);
+        } else {
+          setListings(sanitized);
+        }
       }
     } catch (e) {
       console.error("Failed to sync terminal data:", e);
@@ -100,7 +107,7 @@ export default function DiscoverPage() {
 
   useEffect(() => {
     if (mounted && userProfile?.id) fetchMissions();
-  }, [mounted, userProfile?.id]);
+  }, [mounted, userProfile?.id, listingsPage]);
 
   // 🌍 GEOFENCE REGISTRY — Suburb autocomplete
   useEffect(() => {
@@ -117,7 +124,7 @@ export default function DiscoverPage() {
     
     // Filter suburbs based on the last part of the prompt
     const parts = aiPrompt.split(/[\s,]+/);
-    const lastPart = parts[parts.length - 1].toLowerCase();
+    const lastPart = parts[parts.length - 1].trim().toLowerCase();
     
     if (lastPart.length < 2) {
       setSuggestions([]);
@@ -194,6 +201,23 @@ export default function DiscoverPage() {
     } catch (e) { console.error("Delete failed:", e); }
   };
 
+  const updateAlert = async (searchId: string, updates: any) => {
+    try {
+      // Optimistic Update
+      setSavedAlerts(prev => prev.map(a => (a.id === searchId || (a as any).search_id === searchId) ? { ...a, ...updates } : a));
+      
+      const res = await fetchWithAuth(`${API_BASE_URL}/update-alert/${userProfile.id}/${searchId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (res && res.ok) {
+        // Refresh to ensure sync
+        fetchMissions();
+      }
+    } catch (e) { console.error("Update failed:", e); }
+  };
+
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const handleLogin = async () => {
@@ -242,11 +266,12 @@ export default function DiscoverPage() {
           // Always use the live Firebase UID — never trust derived state
           user_id: user?.uid,
           search_query: aiPrompt,
+          target_area: targetArea,
           alert_enabled: isAlertSave,
           max_price: maxPrice,
           min_bedrooms: selectedBedrooms,
           pet_friendly: petPolicy === 'yes',
-          pet_policy: petPolicy, // Passing both for compatibility
+          pet_policy: petPolicy, 
           rental_type: rentalType,
           property_sub_type: propertySubType,
           sources: selectedSources
@@ -515,50 +540,52 @@ export default function DiscoverPage() {
                     </div>
                   </div>
 
+                  {/* Dedicated Target Neighborhood (ENFORCED v120.0) */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Target Neighborhood</label>
+                    <div className="relative">
+                       <input 
+                          type="text"
+                          value={targetArea}
+                          onChange={(e) => setTargetArea(e.target.value)}
+                          placeholder="Where should the Sniper watch? (e.g. Muizenberg)"
+                          className="w-full bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-emerald-500 transition-all font-bold placeholder:text-white/20"
+                       />
+                       {suggestions.length > 0 && (
+                          <div className="absolute top-full left-0 right-0 z-50 mt-2 p-2 bg-black border border-white/10 rounded-2xl shadow-2xl flex flex-wrap gap-2">
+                             {suggestions.map(s => (
+                                <button 
+                                   key={s}
+                                   onClick={() => {
+                                      setTargetArea(s);
+                                      setSuggestions([]);
+                                   }}
+                                   className="px-3 py-1.5 bg-emerald-500 text-black rounded-xl text-[10px] font-black hover:scale-105 transition-all shadow-lg"
+                                >
+                                   {s}
+                                </button>
+                             ))}
+                          </div>
+                       )}
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <div className="flex justify-between items-end mb-1">
-                      <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Search Description</label>
+                      <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Mission Context (Optional)</label>
                     </div>
                     <textarea 
                       value={aiPrompt}
                       onChange={(e) => setAiPrompt(e.target.value)}
-                      placeholder="e.g. 2 bedroom Sea Point"
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-emerald-500 transition-all min-h-[120px]"
+                      placeholder="e.g. Water included, seaview..."
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-white/20 transition-all min-h-[80px]"
                     />
                   </div>
-                  
-                  {/* Neighborhood Spotlight (Autocomplete) */}
-                  <AnimatePresence>
-                    {suggestions.length > 0 && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: -5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -5 }}
-                        className="flex flex-wrap gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl"
-                      >
-                        <span className="w-full text-[8px] font-black text-emerald-500 uppercase tracking-[0.2em] mb-1">Neighborhood Spotlight</span>
-                        {suggestions.map(s => (
-                          <button 
-                            key={s}
-                            onClick={() => {
-                              const parts = aiPrompt.split(/[\s,]+/);
-                              parts[parts.length - 1] = s;
-                              setAiPrompt(parts.join(' ') + ', ');
-                              setSuggestions([]);
-                            }}
-                            className="px-3 py-1.5 bg-emerald-500 text-black rounded-xl text-[10px] font-bold hover:scale-105 transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]"
-                          >
-                            + {s}
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
                   
                   {/* Protocol Presets (Fallback/Helpers) */}
                   <div className="flex flex-wrap gap-2 pt-2">
                     {[
-                      "Sea Point", "Green Point", "Camps Bay", "Gardens", "Newlands", "Constantia", "Muizenberg", "Water Included", "Safe", "Garage"
+                      "Sea Point", "Green Point", "Camps Bay", "Gardens", "Newlands", "Constantia", "Muizenberg", "Kalk Bay", "Water Included", "Safe", "Garage"
                     ].map(tag => (
                       <button 
                         key={tag}
@@ -622,7 +649,7 @@ export default function DiscoverPage() {
           <div className="lg:col-span-6 space-y-8">
             <div className="flex gap-12 border-b border-white/10">
               <button onClick={() => setActiveTab('listings')} className={`pb-6 text-sm font-bold transition-all relative ${activeTab === 'listings' ? 'text-white' : 'text-white/20'}`}>
-                Past Listings
+                Past Alerts
                 {activeTab === 'listings' && <motion.div layoutId="tab-pill" className="absolute bottom-0 left-0 w-full h-0.5 bg-emerald-500" />}
               </button>
               <button onClick={() => setActiveTab('alerts')} className={`pb-6 text-sm font-bold transition-all relative ${activeTab === 'alerts' ? 'text-white' : 'text-white/20'}`}>
@@ -643,6 +670,28 @@ export default function DiscoverPage() {
                         className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${platformFilter === plat ? 'bg-emerald-500 text-black shadow-lg' : 'text-white/30 hover:text-white hover:bg-white/5'}`}
                       >
                         {plat || 'All Sources'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Mission Category Filter (v105.5) */}
+                  <div className="flex flex-wrap gap-2 mb-8 bg-white/[0.02] p-2 rounded-2xl border border-white/5">
+                    {[
+                      { id: 'all', label: 'All Missions' },
+                      { id: 'long-term', label: 'Long Term' },
+                      { id: 'short-term', label: 'Short Term' },
+                      { id: 'pet-sitting', label: 'Pet-Sitting' }
+                    ].map((mission) => (
+                      <button 
+                        key={mission.id}
+                        onClick={() => setMissionFilter(mission.id as any)}
+                        className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                          missionFilter === mission.id 
+                            ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 shadow-[0_0_20px_rgba(249,115,22,0.15)]' 
+                            : 'text-white/20 border-transparent hover:text-white/40 hover:bg-white/5'
+                        }`}
+                      >
+                        {mission.label}
                       </button>
                     ))}
                   </div>
@@ -668,9 +717,9 @@ export default function DiscoverPage() {
                   )}
 
                   {listings
-                    .filter((l: any) => !platformFilter || l.platform === platformFilter).length > 0 ? (
+                    .filter((l: any) => (!platformFilter || l.platform === platformFilter) && (missionFilter === 'all' || l.rental_type === missionFilter)).length > 0 ? (
                     listings
-                      .filter((l: any) => !platformFilter || l.platform === platformFilter)
+                      .filter((l: any) => (!platformFilter || l.platform === platformFilter) && (missionFilter === 'all' || l.rental_type === missionFilter))
                       .map((l: any, idx: number) => (
                         <ListingCard key={idx} listing={l} idx={idx} />
                       ))
@@ -679,13 +728,24 @@ export default function DiscoverPage() {
                       <p className="text-white/10 text-[10px] uppercase tracking-[0.5em] font-bold">No historical matches found</p>
                     </div>
                   )}
+
+                  {listings.length >= 50 * listingsPage && (
+                    <div className="pt-8 flex justify-center">
+                      <button 
+                        onClick={() => setListingsPage(prev => prev + 1)}
+                        className="bg-white/5 border border-white/10 px-12 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                      >
+                        Load More History
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-8">
                   <div className="space-y-4">
                     {savedAlerts.length > 0 ? (
                       savedAlerts.map((alert: any, idx: number) => (
-                        <AlertItem key={idx} alert={alert} deleteAlert={deleteAlert} />
+                        <AlertItem key={idx} alert={alert} deleteAlert={deleteAlert} updateAlert={updateAlert} />
                       ))
                     ) : (
                       <div className="bg-white/[0.02] border border-white/5 border-dashed rounded-3xl p-32 text-center">
@@ -767,9 +827,9 @@ export default function DiscoverPage() {
                       <h4 className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Silent Hunter</h4>
                       <p className="text-sm font-bold text-white">R149 / Month</p>
                       <div className="space-y-1 mt-2">
-                         <p className="text-[12px] text-white/40">• 1 Active Alert</p>
-                         <p className="text-[12px] text-white/40">• 24-Hour Scans</p>
-                         <p className="text-[12px] text-white/40">• P24 + RentUncle</p>
+                         <p className="text-[12px] text-white/40">• 8h Frequency</p>
+                         <p className="text-[12px] text-white/40">• WhatsApp Alerts</p>
+                         <p className="text-[12px] text-white/40">• Automated Search</p>
                       </div>
                     </div>
                     <PayPalButtons 
@@ -789,10 +849,9 @@ export default function DiscoverPage() {
                       <h4 className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Proactive Sniper</h4>
                       <p className="text-sm font-bold text-white">R299 / Month</p>
                       <div className="space-y-1 mt-2">
-                         <p className="text-[12px] text-white/40">• 10 Active Alerts</p>
-                         <p className="text-[12px] text-white/60">• 2.5-Hour Scans</p>
-                         <p className="text-[12px] text-white/30">• Night Silence: 11PM - 5AM</p>
-                         <p className="text-[12px] text-emerald-400/80 font-bold">• Pet-Friendly AI Semantic</p>
+                         <p className="text-[12px] text-white/40">• 4h Frequency</p>
+                         <p className="text-[12px] text-white/40">• Fast Alerts</p>
+                         <p className="text-[12px] text-white/40">• Priority Area Access</p>
                       </div>
                     </div>
                     <PayPalButtons 
@@ -806,16 +865,16 @@ export default function DiscoverPage() {
                   </div>
                 )}
 
-                {userProfile.tier !== 'gold' && (
+                {userProfile?.tier !== 'gold' && (
                   <div className="bg-emerald-500/5 border border-emerald-500/20 p-6 rounded-2xl space-y-4 hover:border-emerald-500/40 transition-all relative overflow-hidden">
                     <div className="absolute top-0 right-0 bg-emerald-500 text-black text-[8px] font-black px-3 py-1 uppercase tracking-widest">Speed</div>
                     <div>
                       <h4 className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Discovery Overlord</h4>
                       <p className="text-sm font-bold text-white">R499 / Month</p>
                       <div className="space-y-1 mt-2">
-                         <p className="text-[12px] text-white/40">• 100 Active Alerts</p>
-                         <p className="text-[12px] text-emerald-500 font-bold tracking-tight">• 1-Hour Scans (24/7)</p>
-                         <p className="text-[12px] text-white/40">• Full Facebook Integration</p>
+                         <p className="text-[12px] text-emerald-500 font-bold">• 1h Frequency (Fastest)</p>
+                         <p className="text-[12px] text-white/40">• Instant Alerts</p>
+                         <p className="text-[12px] text-white/40">• Unlimited Searches</p>
                       </div>
                     </div>
                     <PayPalButtons 

@@ -33,6 +33,8 @@ export const AlertSchema = z.object({
   max_price: z.number().nullable().optional().default(0),
   min_bedrooms: z.any().optional(),
   pet_friendly: z.boolean().nullable().optional().default(false),
+  rental_type: z.string().nullable().optional().default('all'),
+  property_sub_type: z.string().nullable().optional().default('all'),
   created_at: z.any().optional()
 });
 

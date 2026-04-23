@@ -1,6 +1,6 @@
 import asyncio
 from main_local import run_local_scan
-from database import get_db
+from services.database import get_db
 import os
 from datetime import datetime
 import traceback

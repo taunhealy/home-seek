@@ -79,7 +79,7 @@ class ResendEmailClient:
             "Content-Type": "application/json"
         }
         payload = {
-            "from": self.from_email,
+            "from": f"Home-Seek Intelligence <{self.from_email}>",
             "to": [to],
             "subject": subject,
             "html": body.replace('\n', '<br>')

@@ -12,6 +12,16 @@ from datetime import datetime
 from typing import Type, TypeVar, Optional, List
 import hashlib
 from services.database import record_hash, is_hash_scanned
+import sys
+
+def print_safe(msg):
+    try:
+        # Purge non-ASCII to prevent charmap crashes on Windows
+        safe_msg = str(msg).encode('ascii', 'ignore').decode('ascii')
+        print(safe_msg)
+        sys.stdout.flush()
+    except:
+        pass
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -80,9 +90,9 @@ class GeminiExtractor:
             return self._model_cache[target_model_id]
 
         if not self.api_key:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}]  FATAL: AI API KEY NOT FOUND IN ENVIRONMENT!")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}]  FATAL: AI API KEY NOT FOUND IN ENVIRONMENT!")
 
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [BRAIN] Activating model {target_model_id} (Key check: {'FOUND' if self.api_key else 'MISSING'})")
+        print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] [BRAIN] Activating model {target_model_id} (Key check: {'FOUND' if self.api_key else 'MISSING'})")
         
         # 🛡️ Dual-key injection for legacy/modern compatibility
         llm = ChatGoogleGenerativeAI(
@@ -105,7 +115,7 @@ class GeminiExtractor:
             r"Facebook(?:\s+Facebook)+", # Remove repeated "Facebook Facebook..."
             r"Facebook", r"Like", r"Reply", r"Share", r"Follow", r"Comment", r"Meer weergeven", 
             r"See more", r"See Translation", r"View \d+ more comments",
-            r"\d+\s+(weeks?|months?|days?|h|m|s)\s+ago", r"Sponsored", r"Suggested for you",
+            r"Sponsored", r"Suggested for you",
             r"React", r"Write a comment", r"Search Results", r"Filters",
             r"Join Group", r"About this group", r"Public group", r"Members", r"Activity",
             r"Joined", r"Invite", r"Discussion", r"Featured", r"Media", r"Files",
@@ -167,7 +177,7 @@ class GeminiExtractor:
                 chunk_text = header + "\n" + "\n".join([f"### START_SNIPER_LISTING{item['text']}" for item in batch])
                 chunks.append({"text": chunk_text, "hashes": [item["hash"] for item in batch]})
             
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] [BRAIN] Extracting {len(pitiable_blocks)} NEW blocks in {len(chunks)} parallel chunks...")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] [BRAIN] Extracting {len(pitiable_blocks)} NEW blocks in {len(chunks)} parallel chunks...")
             
             # 🚀 Frugal Token Filter: Ensure we are not passing massive blocks if they look non-relevant
             for chunk in chunks:
@@ -182,7 +192,7 @@ class GeminiExtractor:
                     for h in chunks[idx]["hashes"]:
                         await record_hash(h, {"query": search_query})
                 else:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] [CACHE] Guard: Skipping hash recording for failed chunk {idx}.")
+                    print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] [CACHE] Guard: Skipping hash recording for failed chunk {idx}.")
             
             # Merge results
             final_listings = []
@@ -200,7 +210,7 @@ class GeminiExtractor:
         # 🔵 STRATEGY B: Unstructured Splitting (Portal style like Property24/Facebook Raw)
         # 📉 EFFICIENCY LIMIT: Only process the first 15k chars for portals
         if len(text) > 15000:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧬 Portal Efficiency: Clipping text to 15k chars to save credits.")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧬 Portal Efficiency: Clipping text to 15k chars to save credits.")
             text = text[:15000]
             
         # Standard Single Call (already clipped)
@@ -219,7 +229,11 @@ class GeminiExtractor:
         if time_constraint and "SOURCE IS PRE-FILTERED FOR PETS" in time_constraint:
             pet_rule = "2. Pets Allowed: SOURCE IS PRE-FILTERED FOR PETS. If text is silent/unknown, set is_pet_friendly=TRUE. ONLY set False if it explicitly says 'No Pets'."
 
+        now = datetime.now()
+        current_date_str = now.strftime("%B %Y")
+        
         prompt_text = (
+            f"Current Date: {current_date_str}\n\n"
             "You are a professional property data extractor. The text contains unique listing blocks separated by '### START_SNIPER_LISTING'.\n"
             "MANDATORY RULE 1: YOU MUST EXTRACT EVERY SINGLE RESIDENTIAL LISTING FOUND.\n"
             "MANDATORY RULE 2: NEVER extract Commercial, Office, Retail, Industrial, Parking, Garages, or Business spaces. If you include a shop or office, you FAIL.\n"
@@ -229,21 +243,25 @@ class GeminiExtractor:
             "1. Property Sub-Type: Strictly identify if the listing is for a 'Whole' property (entire apartment/house) or 'Shared' (a room in a house, flatshare, digs, or room-only).\n"
             "2. Pet Policy: Set is_pet_friendly=TRUE ONLY if the listing explicitly states pets are welcome.\n"
             "3. Identify Category (rental_type/property_type): \n"
-            "   - 'long-term': Standard 12 month+ leases.\n"
-            "   - 'short-term': Flexible, daily/weekly/monthly stays (not sitting).\n"
+            "   - 'long-term': Standard 12 month+ leases or if it doesn't mention any short-term/flexible duration.\n"
+            "   - 'short-term': Flexible, daily/weekly/monthly stays (not sitting). Includes 'Short-Mid Term', '3-6 months', 'Month-to-month', 'Winter rental', 'Remote stay', or any duration less than 12 months.\n"
             "   - 'pet-sitting': UNIQUE CATEGORY for stay > 1 month where homeowner needs a pet/house-sitter.\n"
             "   - Set 'property_type' to 'Apartment', 'House', 'Studio', 'Cottage', or 'Townhouse' based on description.\n"
             "4. Availability & Contact: \n"
             "   - Set 'available_date' (e.g., 'Immediate', '1st June').\n"
             "   - Set 'contact_info' (Phone number or email address found in the text).\n"
             "5. Identify Availability: If a tenant is 'looking for' a place, 'ISO', or posting a 'wanted' ad, you MUST set is_looking_for: TRUE. Only set FALSE if the property is actually available for rent.\n"
-            "6. Price: Extract the monthly rental price as an integer. If '25k', set to 25000.\n"
+            "6. Price: Extract the monthly rental price as an integer. In the South African context, '[number]k' always means thousands of Rands (e.g., '34k' -> 34000, '25k' -> 25000). Extract ONLY the numeric value.\n"
             "7. Address: Extract the specific SUBURB clearly (e.g., 'Sea Point', 'Gardens').\n"
             "8. View Category: Based on text, set to 'Sea' (if mentions ocean/beach), 'Mountain' (if mentions table mountain/peaks), or 'Other'.\n"
             "9. Furnished: Set is_furnished=TRUE if text mentions 'furnished', 'fully equipped'. Set FALSE if 'unfurnished'.\n"
             "10. Amenities: Extract a list of perks like ['Pool', 'Security', 'Fibre', 'Garage', 'Gym', 'Balcony', 'Parking'].\n"
             "11. SQM: Extract the square meterage/footage as an integer if available (e.g. '80sqm' -> 80).\n"
-            "12. Published Date: Look for '2 hours ago', 'Yesterday', or specific dates and set published_at.\n\n"
+            "12. Published Date: Look for '2 hours ago', 'Yesterday', or specific dates and set published_at. \n"
+            "MANDATORY RECENCY RULE: If a listing is from 2022, 2023, or more than 3 months old based on the current date, YOU MUST EXCLUDE IT. Only extract fresh, active listings.\n\n"
+            "NEIGHBORHOOD PRECISION RULES:\n"
+            "- Be extremely specific about suburbs. Do NOT just say 'Cape Town' if a specific neighborhood is mentioned.\n"
+            "- Landmark Mapping: Use local knowledge. For example, 'Empire', 'Surfer's Corner', or 'York Road' means the neighborhood is 'Muizenberg'. 'Beach Road' or 'Main Road' near the ocean in the Atlantic Seaboard usually means 'Sea Point'.\n\n"
             "10. DO NOT output null fields. If a field like 'bedrooms' or 'bathrooms' is unknown, OMIT the key entirely.\n"
             "IMPORTANT CONSTRAINT: {time_instruction}\n\n"
             "{instructions}\n\n"
@@ -267,13 +285,13 @@ class GeminiExtractor:
             for attempt in range(max_retries):
                 try:
                     start_time = time.time()
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] [HEARTBEAT] Calling Gemini API (Payload: {len(formatted_prompt)} chars)...")
+                    print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] [HEARTBEAT] Calling Gemini API (Payload: {len(formatted_prompt)} chars)...")
                     response = await llm.ainvoke(
                         formatted_prompt,
                         config={"timeout": 120}
                     )
                     duration = time.time() - start_time
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] [INTELLIGENCE] Response received in {duration:.1f}s.")
+                    print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] [INTELLIGENCE] Response received in {duration:.1f}s.")
                     
                     # 🛡️ Handle list-type content (Gemini 3.0)
                     if isinstance(response.content, list):
@@ -285,7 +303,7 @@ class GeminiExtractor:
                     err_str = str(e)
                     if ("504" in err_str or "Deadline" in err_str or "503" in err_str) and attempt < max_retries - 1:
                         wait_time = (attempt + 1) * 3
-                        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ AI Congestion (Attempt {attempt+1}): {err_str[:80]}... Retrying in {wait_time}s")
+                        print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ AI Congestion (Attempt {attempt+1}): {err_str[:80]}... Retrying in {wait_time}s")
                         await asyncio.sleep(wait_time)
                         continue
                     raise e
@@ -316,17 +334,17 @@ class GeminiExtractor:
                 raw_data["listings"] = unique_listings
 
             # Forensic Logging: Show exactly what AI found
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] [BRAIN] AI Raw Data Captured:")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] [BRAIN] AI Raw Data Captured:")
             try:
-                print(json.dumps(raw_data, indent=2))
+                print_safe(json.dumps(raw_data, indent=2))
             except:
-                print(raw_data)
+                print_safe(raw_data)
 
             try:
                 # Attempt standard parse
                 return parser.parse(json.dumps(raw_data))
             except Exception as pe:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ Pydantic Repairing Partial Results: {str(pe)}")
+                print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ Pydantic Repairing Partial Results: {str(pe)}")
                 # Manual fallback for cut-off JSON (Recover valid items)
                 valid_items = []
                 for item in raw_data.get("listings", []):
@@ -335,7 +353,7 @@ class GeminiExtractor:
                     except: continue
                 return schema(listings=valid_items, confidence_score=0.8, raw_summary="Partial results recovered")
         except Exception as e:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction Error: {str(e)}")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] Extraction Error: {str(e)}")
             # Return an empty result object instead of crashing
             return schema(listings=[], confidence_score=0.0, raw_summary="Error during extraction")
 
@@ -365,16 +383,16 @@ class GeminiExtractor:
         
         listings_json = json.dumps([l.model_dump() for l in listings], indent=2)
         try:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] [INTELLIGENCE] Ranking {len(listings)} listings against query: '{query}'")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] [INTELLIGENCE] Ranking {len(listings)} listings against query: '{query}'")
             response = await llm.ainvoke(prompt.format(query=query, listings_json=listings_json))
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] [INTELLIGENCE] Ranking complete.")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] [INTELLIGENCE] Ranking complete.")
             
             # 🛡️ Handle list-type content (Gemini sometimes returns multiple parts)
             if isinstance(response.content, list):
                 content = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in response.content]).strip()
             else:
                 content = response.content.strip()
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] AI Raw Response: {content}")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] AI Raw Response: {content}")
             # Clean up markdown formatting if present
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
@@ -401,25 +419,25 @@ class GeminiExtractor:
                     # 🏢 Filter 1: Junk words in title
                     title_low = listing.title.lower()
                     if any(jw in title_low for jw in junk_words_title):
-                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Rejected Title match: {listing.title}")
+                        print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Rejected Title match: {listing.title}")
                         continue
                     
                     # 🐕 Filter 2: Smart Pet-Trust (Source-Aware)
                     is_pre_filtered = "ptf=True" in (listing.source_url or "") or "pet-friendly" in (listing.source_url or "").lower()
                     
                     if user_wants_pets and not is_pre_filtered and listing.is_pet_friendly is not True:
-                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Rejected Non-Confirmed Pet match (No source filter): {listing.title}")
+                        print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Rejected Non-Confirmed Pet match (No source filter): {listing.title}")
                         continue
                         
                     if listing.is_looking_for is True:
-                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Rejected 'Wanted/Request' ad: {listing.title}")
+                        print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Rejected 'Wanted/Request' ad: {listing.title}")
                         continue
 
                     # 🏥 Nuclear Residential Filtering (Remove Commercial/Industrial/Garages)
                     content_lower = (listing.title + " " + (listing.description or "")).lower()
                     triggered_word = next((p for p in junk_words_broad if p in content_lower), None)
                     if triggered_word:
-                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Rejected Commercial/Industrial match ('{triggered_word}'): {listing.title}")
+                        print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Rejected Commercial/Industrial match ('{triggered_word}'): {listing.title}")
                         continue
 
                     # 🌍 Filter 3: Geography Hallucination Guard (The 'Muizenberg vs Sea Point' Wall)
@@ -428,14 +446,14 @@ class GeminiExtractor:
                     
                     if "any" not in target_area:
                         # Detect blatant mismatches (e.g. Sea Point vs Muizenberg)
-                        known_suburbs = ["sea point", "greenpoint", "green point", "muizenberg", "lakeside", "marina da gama", "st james", "kalk bay", "fish hoek", "noordhoek", "kommetjie", "wynberg", "pinelands", "newlands", "kenilworth", "observatory", "woodstock"]
+                        known_suburbs = ["sea point", "seapoint", "greenpoint", "green point", "muizenberg", "lakeside", "marina da gama", "st james", "kalk bay", "fish hoek", "noordhoek", "kommetjie", "wynberg", "pinelands", "newlands", "kenilworth", "observatory", "woodstock"]
                         detected_target = next((s for s in known_suburbs if s in target_area), None)
                         detected_listing = next((s for s in known_suburbs if s in listing_area), None)
                         
                         if detected_target and detected_listing and detected_target != detected_listing:
                             # EXCEPTIONS: Greenpoint vs Green Point
                             if not (detected_target.replace(" ", "") == detected_listing.replace(" ", "")):
-                                print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Blocked Geo-Mismatch Hallucination: {listing.title} ({detected_listing}) for query '{query}'")
+                                print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Blocked Geo-Mismatch Hallucination: {listing.title} ({detected_listing}) for query '{query}'")
                                 continue
                         
                     # 🏠 Filter 4: Score floor check
@@ -446,12 +464,12 @@ class GeminiExtractor:
                     listing.match_reason = match.get("reason", "Relevant residential match.")
                     results.append(listing)
                 else:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Invalid match index/rejected by AI ranking.")
+                    print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Invalid match index/rejected by AI ranking.")
             
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] [INTELLIGENCE] Final accepted count: {len(results)}/{len(listings)}")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] [INTELLIGENCE] Final accepted count: {len(results)}/{len(listings)}")
             return results
         except Exception as e:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] AI Filtering Error: {str(e)}")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] AI Filtering Error: {str(e)}")
             return []
 
     def _frugal_scrub(self, text: str) -> str:
@@ -487,17 +505,19 @@ class GeminiExtractor:
             "kalkbay": "Kalk Bay",
             "kalk": "Kalk Bay",
             "gp": "Green Point",
+            "greenpoint": "Green Point",
             "sp": "Sea Point",
+            "seapoint": "Sea Point",
             "cbd": "Cape Town City Centre",
         }
         
         # 1. Immediate Intercept (If the user just typed the keyword)
         query_clean = query.lower().strip().replace(",", "").replace(".", "")
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Debug: Normalizing '{query}' (cleaned: '{query_clean}')")
+        print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Debug: Normalizing '{query}' (cleaned: '{query_clean}')")
         
         if query_clean in abrv_map:
             normalized = abrv_map[query_clean]
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] [LOCATION] Match Found! -> {normalized}")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] [LOCATION] Match Found! -> {normalized}")
             return normalized
 
         llm = self.get_llm(model_name)
@@ -521,7 +541,7 @@ class GeminiExtractor:
                 config={"timeout": 120}
             )
         except asyncio.TimeoutError:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏰ Normalization Timeout: Defaulting to Any")
+            print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] ⏰ Normalization Timeout: Defaulting to Any")
             return "Any"
         
         # 🛡️ Handle list-type content

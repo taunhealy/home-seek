@@ -4,7 +4,7 @@ import os
 import time
 import json
 import hashlib
-from datetime import datetime
+import datetime as dt
 from typing import Optional, List
 
 import sys
@@ -189,7 +189,7 @@ async def update_task(task_id: str, stage: str, message: str, progress: int = 0,
         data = {
             "status": f"{stage}: {message}", 
             "updated_at": firestore.SERVER_TIMESTAMP,
-            "logs": firestore.ArrayUnion([f"[{datetime.now().strftime('%H:%M:%S')}] {stage}: {message}"])
+            "logs": firestore.ArrayUnion([f"[{dt.datetime.now().strftime('%H:%M:%S')}] {stage}: {message}"])
         }
         if progress > 0: data["progress"] = progress
         if completed: data["completed"] = True
@@ -298,7 +298,13 @@ async def get_known_listings(urls: list[str], hashes: list[str]) -> set[str]:
     try:
         # 1. Batch Check by URL (Limited by Firestore's 'in' operator to 30 items)
         if urls:
-            clean_urls = [u for u in urls if u and "facebook.com" not in u and "missing" not in u][:30]
+            def clean_fb(u):
+                if "facebook.com" in u:
+                    # Strip tracking tokens but keep the core post/user ID
+                    return u.split('?')[0].split('&')[0].strip()
+                return u.strip()
+
+            clean_urls = [clean_fb(u) for u in urls if u and "missing" not in u][:30]
             if clean_urls:
                 docs = db.collection("listings").where(filter=FieldFilter("source_url", "in", clean_urls)).stream()
                 for d in docs:

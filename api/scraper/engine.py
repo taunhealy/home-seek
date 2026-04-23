@@ -8,22 +8,21 @@ except:
 import os
 import json
 import re
-from datetime import datetime
+import datetime as dt
 from typing import Optional, List
 from intelligence.extractor import GeminiExtractor
 from models.listing import ExtractionResult
 from services.database import get_db, record_hash
 
-def print_flush(*args, **kwargs):
+def print_flush(msg):
     import sys
     try:
-        msg = " ".join(map(str, args))
-        # [STABILITY] Purge non-ASCII for Windows terminal stability
-        safe_msg = msg.encode('ascii', 'ignore').decode('ascii')
-        print(safe_msg, **kwargs, flush=True)
+        # Purge non-ASCII to prevent charmap crashes on Windows terminals
+        safe_msg = str(msg).encode('ascii', 'ignore').decode('ascii')
+        print(safe_msg)
         sys.stdout.flush()
     except:
-        print(*args, **kwargs, flush=True)
+        pass
 
 try:
     from crawl4ai import AsyncWebCrawler
@@ -39,12 +38,12 @@ class SniperEngine:
         custom_ua = os.environ.get("USER_AGENT")
         self.identities = [
             {
-                "ua": custom_ua or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", 
+                "ua": custom_ua or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36", 
                 "viewport": {"width": 1920, "height": 1080}, 
                 "name": "Desktop-PC"
             },
             {
-                "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1", 
+                "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1", 
                 "viewport": {"width": 393, "height": 852}, 
                 "name": "Mobile-iOS"
             }
@@ -75,13 +74,30 @@ class SniperEngine:
             # [STABILITY] Visible minimized browser is highest trust
             is_headless = str(os.environ.get("HEADLESS", "false")).lower() == "true"
             
-            self.p_context = await self.p_manager.chromium.launch_persistent_context(
-                user_data_dir=user_data_path,
-                headless=is_headless,
-                user_agent=desktop_id["ua"],
-                viewport=desktop_id["viewport"],
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
+            # [NETWORK] Inject Proxy if available
+            proxy_url = os.environ.get("HTTP_PROXY")
+            ctx_args = {
+                "user_data_dir": user_data_path,
+                "headless": is_headless,
+                "user_agent": desktop_id["ua"],
+                "viewport": desktop_id["viewport"],
+                "args": ["--no-sandbox", "--disable-setuid-sandbox"]
+            }
+            
+            if proxy_url:
+                import urllib.parse
+                try:
+                    parsed = urllib.parse.urlparse(proxy_url)
+                    ctx_args["proxy"] = {
+                        "server": f"{parsed.hostname}:{parsed.port}",
+                        "username": parsed.username,
+                        "password": parsed.password
+                    }
+                    print_flush(f"[SINGLETON] Routing through Proxy: {parsed.hostname}")
+                except Exception as e:
+                    print_flush(f"[SINGLETON] Proxy Parse Error: {e}")
+
+            self.p_context = await self.p_manager.chromium.launch_persistent_context(**ctx_args)
             
             # Apply Stealth
             if playwright_stealth_func:
@@ -220,7 +236,7 @@ class SniperEngine:
     async def scrape_url(self, url: str, use_cookies: bool = True, task_id: Optional[str] = None, search_area: Optional[str] = None, model_name: Optional[str] = None, min_bedrooms: Optional[List[int]] = None, max_price: Optional[int] = None, is_pulse: bool = False) -> ExtractionResult:
         """The 'Sniper' extraction stage - Obsidian-Stable v1.0.9."""
         from services.database import update_task
-        print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] --- SCAN START (Pulse: {is_pulse}) ---")
+        print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] --- SCAN START (Pulse: {is_pulse}) ---")
         
         # 🟢 HYBRID MODE
         is_portal = "property24.com" in url or "rentuncle.co.za" in url
@@ -278,7 +294,7 @@ class SniperEngine:
 
             # Start of extraction
             page = await context.new_page()
-            if is_portal:
+            if is_portal and not re.search(r"/\d{8,}", url):
                 sep = "&" if "?" in url else "?"
                 if min_bedrooms: url += f"{sep}bedrooms={min_bedrooms}"; sep="&"
                 if max_price: url += f"{sep}maxPrice={max_price}"
@@ -288,27 +304,32 @@ class SniperEngine:
                 import urllib.parse
                 url_base = url.rstrip('/')
                 url = f"{url_base}/search/?q={urllib.parse.quote(search_area)}"
-                print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MISSION] Teleporting to Direct Search: {search_area}")
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Teleporting to Direct Search: {search_area}")
 
             # [NAV] Fast-Track Navigation (v17.3)
             try:
                 # 'domcontentloaded' is much faster than 'networkidle' on proxies
-                await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                response = await page.goto(url, wait_until="domcontentloaded", timeout=45000)
                 
+                if response and response.status >= 400:
+                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Blocked! Server returned {response.status}")
+                    if task_id: await update_task(task_id, "Blocked", f"Portal rejected request ({response.status})")
+                    return ExtractionResult(listings=[], confidence_score=0, raw_summary=f"Server Unavailable ({response.status})")
+
                 # [VITAL] Wait for Search Hydration (FB specific)
-                print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MISSION] Waiting for Search Results to hydrate...")
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Waiting for Search Results to hydrate...")
                 try:
                     # Look for common FB Feed markers
                     await page.wait_for_selector('[role="feed"], div[class*="feed"], div[aria-label*="Search"]', timeout=15000)
-                    print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MISSION] Results detected. Commencing harvest.")
+                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Results detected. Commencing harvest.")
                 except:
-                    print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MISSION] Warning: Results feed not detected, continuing with broad sweep.")
+                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Warning: Results feed not detected, continuing with broad sweep.")
             except Exception as e:
                 print_flush(f"[SYSTEM] Primary Navigation Timeout (continuing anyway): {str(e)[:40]}")
 
             # [MISSION] JANITOR: Close Login/Join Popups (v87.0: THE GHOST PROTECTOR)
             # We surgically remove annoying overlays WITHOUT touching engagement buttons.
-            print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [JANITOR] Scanning for interstitials...")
+            print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [JANITOR] Scanning for interstitials...")
             try:
                 # 1. Standard Clicks (Strict Selectors ONLY - No broad 'div i' allowed)
                 closers = ['[aria-label="Close"]', '[aria-label="Sluiten"]', '[aria-label="Dismiss"]']
@@ -328,7 +349,7 @@ class SniperEngine:
                             decapitated_count += 1
                 
                 if decapitated_count > 0:
-                     print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [JANITOR] Success: {decapitated_count} popups standard-clicked.")
+                     print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [JANITOR] Success: {decapitated_count} popups standard-clicked.")
                 
                 # 2. Escape Key (The Hammer)
                 await page.keyboard.press("Escape")
@@ -347,7 +368,7 @@ class SniperEngine:
                     document.body.style.overflow = 'auto'; // Re-enable scrolling
                     document.documentElement.style.overflow = 'auto';
                 }""")
-                print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [JANITOR] Decapitation loop complete.")
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [JANITOR] Decapitation loop complete.")
             except: pass
 
             # Proactive Forensics: Landing Screenshot
@@ -370,7 +391,7 @@ class SniperEngine:
             # Interaction Lifecycle (Mimicry v3: Behavioral Cycling)
             behavioral_patterns = ["Distracted", "Deep", "Quick"]
             current_pattern = random.choice(behavioral_patterns)
-            print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MISSION] Behavior Mode: {current_pattern} (mimicry v3)")
+            print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Behavior Mode: {current_pattern} (mimicry v3)")
             
             # [DEEP HARVEST] Increased cycle count for massive discovery depth
             # [FLASH SCAN] pulses only need the top shelf (v1.2)
@@ -444,6 +465,15 @@ class SniperEngine:
                                 : window.location.origin;
                             link = base + link;
                         }
+
+                        // 🚑 [v105.8] P24 PROVINCE HEALER: Ensure western-cape is in the URL to prevent 500 errors
+                        if (link.includes('property24.com') && !link.includes('western-cape') && link.includes('/to-rent/')) {
+                            if (link.includes('/cape-town/')) {
+                                link = link.replace('/cape-town/', '/cape-town/western-cape/');
+                            } else {
+                                link = link.replace(/\/to-rent\/([^\/]+)\//, "/to-rent/$1/cape-town/western-cape/");
+                            }
+                        }
                         
                         const text = f.innerText.replace(/\\s+/g, ' ').trim();
                         if (text.length < 50) return ""; 
@@ -452,7 +482,15 @@ class SniperEngine:
                 }
                 
                 // Fallback to plain text if no cards found
-                return document.body.innerText;
+                const bodyText = document.body.innerText.replace(/\s+/g, ' ').trim();
+                const isDirectP24 = window.location.href.includes('property24.com/to-rent/') && /\/\d{8,}/.test(window.location.href);
+                const isDirectFB = window.location.href.includes('facebook.com') && (window.location.href.includes('/posts/') || window.location.href.includes('/permalink/'));
+                
+                if (isDirectP24 || isDirectFB) {
+                    return `### START_SNIPER_LISTING [DIRECT_LINK: ${window.location.href}] ###\n${bodyText}\n`;
+                }
+                
+                return bodyText;
             }"""
 
             for i in range(scroll_count): 
@@ -469,7 +507,7 @@ class SniperEngine:
                 cycle_text = await page.evaluate(harvest_script)
                 cumulative_buffer += f"\n--- CYCLE {i+1} SNAPSHOT ---\n{cycle_text}"
                 curr_size = len(cumulative_buffer)
-                print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MISSION] Cycle {i+1}: Total Buffer {curr_size} chars.")
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Cycle {i+1}: Total Buffer {curr_size} chars.")
                 
                 limit = 8000 if is_pulse else 15000
                 if curr_size > limit: break
@@ -494,15 +532,18 @@ class SniperEngine:
                 if j+1 < len(snippets):
                     merged_snippets.append(snippets[j] + snippets[j+1])
             
-            print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MEMORY] Analyzing {len(merged_snippets)} atomic snippets...")
+            print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MEMORY] Analyzing {len(merged_snippets)} atomic snippets...")
                 
             # 2. Extract Keys (Links + Content Hashes)
             snippet_map = [] # List of {text, link, hash}
             for s in merged_snippets:
                 link_match = re.search(r"\[DIRECT_LINK:\s*(.*?)\]", s)
                 link = link_match.group(1).strip() if link_match else ""
-                # Content hash as fallback for transient URLs
-                c_hash = hashlib.sha256(s.encode('utf-8')).hexdigest()
+                # [v116.0] Temporal Scrubbing: Strip relative time to ensure stable hashes
+                scrubbed_s = re.sub(r"\d+\s*(minutes|hours|days|s|m|h|d|min|hr)\s*ago", "[TIME]", s, flags=re.IGNORECASE)
+                scrubbed_s = re.sub(r"Just now|Active now", "[TIME]", scrubbed_s, flags=re.IGNORECASE)
+                
+                c_hash = hashlib.sha256(scrubbed_s.encode('utf-8')).hexdigest()
                 snippet_map.append({"text": s, "link": link, "hash": c_hash})
             
             # 3. Batch Verification
@@ -529,12 +570,12 @@ class SniperEngine:
                     cached_hashes.append(sm['hash'])
             
             if not unknown_snippets:
-                print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MEMORY] [ZERO-BURN] All {len(merged_snippets)} items cached. Triggering recall loop.")
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MEMORY] [ZERO-BURN] All {len(merged_snippets)} items cached. Triggering recall loop.")
                 return ExtractionResult(listings=[], confidence_score=100, raw_summary="All items cached", cached_hashes=cached_hashes)
 
             # 5. Rebuild purified body text
             body_text = "\n".join([us['text'] for us in unknown_snippets])
-            print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MEMORY] Surgical Filter: {len(unknown_snippets)}/{len(merged_snippets)} items are NEW. Sending to Gemini...")
+            print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MEMORY] Surgical Filter: {len(unknown_snippets)}/{len(merged_snippets)} items are NEW. Sending to Gemini...")
 
             # Capture Crime Scene for forensics if we suspect failure
             screenshot_data = None
@@ -549,25 +590,25 @@ class SniperEngine:
                     })
             except: pass
 
-            print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MISSION] AI Brain: Analyzing dataset with Gemini ({len(body_text)} chars)...")
+            print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] AI Brain: Analyzing dataset with Gemini ({len(body_text)} chars)...")
             snippet = body_text[:150].replace('\n', ' ')
-            print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Data Snippet: {snippet}...")
+            print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [DEBUG] Data Snippet: {snippet}...")
                 
             try:
                 result = await self.extractor.extract(body_text, ExtractionResult, model_name=model_name, search_query=search_area)
                 if result:
                     result.cached_hashes = cached_hashes
             except Exception as ai_err:
-                print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [CRITICAL] Gemini AI Error: {str(ai_err)}")
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [CRITICAL] Gemini AI Error: {str(ai_err)}")
                 result = None
             
             if result and result.listings:
-                print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MISSION] Success! Found {len(result.listings)} potential matches.")
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Success! Found {len(result.listings)} potential matches.")
             else:
                 if not result:
-                    print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MISSION] AI Failure: Extraction returned Null.")
+                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] AI Failure: Extraction returned Null.")
                 else:
-                    print_flush(f"[{datetime.now().strftime('%H:%M:%S')}] [MISSION] Complete. 0 matches found (AI checked the data and saw nothing relevant).")
+                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Complete. 0 matches found (AI checked the data and saw nothing relevant).")
                 
             # Persistence
             user_found = await page.evaluate("() => document.cookie.includes('c_user')")
@@ -646,8 +687,13 @@ class SniperEngine:
                     relative_url = matched_item.get("Url") or matched_item.get("url")
                     suburb_name_slug = (matched_item.get("Name") or suburb).lower().replace(" ", "-")
                     suburb_id = matched_item.get("Id") or matched_item.get("id") or matched_item.get("value")
-                    if relative_url: discovered_url = f"https://www.property24.com{relative_url}"
-                    elif suburb_id: discovered_url = f"https://www.property24.com/to-rent/{suburb_name_slug}/{suburb_id}"
+                    if relative_url: 
+                        discovered_url = f"https://www.property24.com{relative_url}"
+                        # [HEAL] If relative URL is missing province/city, Property24 often 500s on listing IDs.
+                        if "cape-town/western-cape" not in discovered_url.lower() and "/to-rent/" in discovered_url:
+                             discovered_url = discovered_url.replace("/to-rent/", "/to-rent/cape-town/western-cape/")
+                    elif suburb_id: 
+                        discovered_url = f"https://www.property24.com/to-rent/{suburb_name_slug}/cape-town/western-cape/{suburb_id}"
                 if "property24.com" in discovered_url and original_query:
                     if any(x in original_query.lower() for x in ["pet", "dog", "cat"]):
                         separator = "&" if "?" in discovered_url else "?"
