@@ -261,7 +261,8 @@ class GeminiExtractor:
             "MANDATORY RECENCY RULE: If a listing is from 2022, 2023, or more than 3 months old based on the current date, YOU MUST EXCLUDE IT. Only extract fresh, active listings.\n\n"
             "NEIGHBORHOOD PRECISION RULES:\n"
             "- Be extremely specific about suburbs. Do NOT just say 'Cape Town' if a specific neighborhood is mentioned.\n"
-            "- Landmark Mapping: Use local knowledge. For example, 'Empire', 'Surfer's Corner', or 'York Road' means the neighborhood is 'Muizenberg'. 'Beach Road' or 'Main Road' near the ocean in the Atlantic Seaboard usually means 'Sea Point'.\n\n"
+            "- Landmark Mapping: Use local knowledge. For example, 'Empire', 'Surfer's Corner', or 'York Road' means the neighborhood is 'Muizenberg'. 'Beach Road' or 'Main Road' near the ocean in the Atlantic Seaboard usually means 'Sea Point'.\n"
+            "- CRITICAL ANTI-HALLUCINATION RULE: If the text says '20 minutes from Muizenberg' or 'near Muizenberg' but the property is in Wynberg, the address MUST be 'Wynberg'. NEVER use a proximity-based location as the primary address if the actual suburb is stated.\n\n"
             "10. DO NOT output null fields. If a field like 'bedrooms' or 'bathrooms' is unknown, OMIT the key entirely.\n"
             "IMPORTANT CONSTRAINT: {time_instruction}\n\n"
             "{instructions}\n\n"
@@ -375,7 +376,9 @@ class GeminiExtractor:
             "4. ELIMINATE WANTED ADS: If the post is a tenant 'Looking for' a place, 'ISO', 'Room wanted', or a 'Wanted' ad, the score MUST be 0. We only want available properties.\n"
             "5. RELOCATION REQUESTS: Exclude people 'moving to Cape Town' or 'relocating from Joburg' who are describing their search. These are NOT listings.\n"
             "6. PRICE SENSITIVITY: If the price is 0, 'Request', or not stated, penalize the score slightly (e.g. -10 points) unless it is an incredible match otherwise.\n"
-            "7. NEIGHBORHOOD KNOWLEDGE: Be smart. If someone lists 'Boyes Drive' or 'Surfer Corner', that is in Muizenberg. Do not reject familiar landmarks of the target area.\n\n"
+            "7. NEIGHBORHOOD KNOWLEDGE: Be smart. If someone lists 'Boyes Drive' or 'Surfer Corner', that is in Muizenberg. Do not reject familiar landmarks of the target area.\n"
+            "8. MARKET REALITY (SCAM GUARD): Evaluate the price against the area. For Cape Town, if a 2-bedroom in a premium area (e.g., Sea Point, Camps Bay) is listed for under R10,000, it is likely a scam or a mistake. PENALIZE heavily (Score 0-10) if the price is impossibly low for the location.\n"
+            "9. GHOST LISTING SCRUBBER: Exclude posts that are 'bait' or portfolios. If the text says 'We have many more' or 'Example of our work' without a specific address or unit details, Score 0.\n\n"
             "WARNING: Do not hallucinate matches. If the USER asked for 'Muizenberg' and you provide a listing for 'Sea Point', you are failing your core objective.\n"
             "Format: [{{ \"index\": 0, \"score\": 95, \"reason\": \"Verified residential home available to rent.\" }}, ...]\n"
             "Return ONLY the JSON array."
@@ -456,9 +459,25 @@ class GeminiExtractor:
                                 print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Blocked Geo-Mismatch Hallucination: {listing.title} ({detected_listing}) for query '{query}'")
                                 continue
                         
+                        # 🌍 Filter 3.5: Deep Text Scrubber (Check if Target Area is only mentioned as 'near' or 'close to')
+                        content_lower = (listing.title + " " + (listing.description or "")).lower()
+                        if detected_target and detected_target in content_lower and detected_target != detected_listing:
+                            # Check for 'minutes from', 'mins from', 'near', 'close to'
+                            proximity_triggers = [f"minutes to {detected_target}", f"mins to {detected_target}", f"minutes from {detected_target}", f"mins from {detected_target}", f"near {detected_target}", f"close to {detected_target}", f"not far from {detected_target}"]
+                            if any(trigger in content_lower for trigger in proximity_triggers):
+                                if detected_listing and detected_listing != detected_target:
+                                    print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Blocked Proximity-Only match: {listing.title} (Actual: {detected_listing}, Mentioned: {detected_target})")
+                                    continue
+                        
                     # 🏠 Filter 4: Score floor check
                     listing.match_score = match.get("score", 0)
                     if listing.match_score < 40:
+                        continue
+
+                    # 🛡️ Filter 5: Agency/Source Blacklist (v125.0)
+                    blacklist = (query or "").lower().split("|") # Using pipe as separator for future extensibility
+                    if any(b.strip() in (listing.description or "").lower() for b in blacklist if len(b.strip()) > 3):
+                        print_safe(f"[{datetime.now().strftime('%H:%M:%S')}] 🧪 Scrubber: Rejected Blacklisted source keywords.")
                         continue
 
                     listing.match_reason = match.get("reason", "Relevant residential match.")

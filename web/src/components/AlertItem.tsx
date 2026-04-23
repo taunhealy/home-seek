@@ -42,13 +42,26 @@ export const AlertItem: React.FC<AlertItemProps> = ({ alert, deleteAlert, update
           )}
         </div>
         
-        <button 
-          onClick={() => deleteAlert(alert.id || alert.search_id)}
-          className="text-white/10 hover:text-red-500 transition-all p-2 rounded-xl hover:bg-red-500/10"
-          title="Terminate Sniper"
-        >
-          <Trash size={18} weight="bold" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => updateAlert(alert.id || alert.search_id, { is_active: alert.is_active === false })}
+            className={`text-[8px] font-black uppercase px-3 py-1.5 rounded-full border transition-all ${
+              alert.is_active !== false 
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' 
+                : 'bg-red-500/10 border-red-500/30 text-red-500'
+            }`}
+          >
+            {alert.is_active !== false ? '● Active' : '○ Standby'}
+          </button>
+
+          <button 
+            onClick={() => deleteAlert(alert.id || alert.search_id)}
+            className="text-white/10 hover:text-red-500 transition-all p-2 rounded-xl hover:bg-red-500/10"
+            title="Terminate Sniper"
+          >
+            <Trash size={18} weight="bold" />
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-6 pt-4 border-t border-white/5">

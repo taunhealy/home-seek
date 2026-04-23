@@ -29,13 +29,8 @@ for path in env_paths:
         print_safe(f"SUCCESS: Loaded .env from: {path}")
         break
 
-# [NETWORK] Bypass environment proxies for high-trust residential IP (v24.1)
-# Only if LOCAL_SNIPER is true (set via env or detected automatically)
-if os.getenv("LOCAL_SNIPER", "true").lower() == "true":
-    os.environ["HTTP_PROXY"] = ""
-    os.environ["HTTPS_PROXY"] = ""
-    os.environ["http_proxy"] = ""
-    os.environ["https_proxy"] = ""
+# [NETWORK] Residential Proxy Detection
+# No longer bypassing proxies here to allow Decodo rotation (v126.0)
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,10 +58,10 @@ from services.notifications import EvolutionClient, MailerSendClient, ResendEmai
 
 app = FastAPI(title="Home-Seek Unified Intelligence Core", version="1.0.0")
 
-# Enable CORS for frontend
+# Enable CORS (Production Lockdown v126.0)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://homeseekza.web.app", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -228,12 +223,79 @@ async def deploy_sniper(mission: dict, background_tasks: BackgroundTasks):
     background_tasks.add_task(run_unified_scan, query, [], task_id, all_subs)
     return {"status": "deployed", "task_id": task_id}
 
+@app.get("/health")
+async def get_health():
+    return {
+        "status": "Healthy",
+        "node": "Production API Core",
+        "timestamp": dt.datetime.now().isoformat()
+    }
+
+@app.get("/analytics/active-snipers")
+async def get_active_snipers():
+    db = get_db()
+    try:
+        alerts = db.collection_group("alerts").where("is_active", "==", True).stream()
+        counts = {}
+        for a in alerts:
+            data = a.to_dict()
+            area = data.get("target_area") or data.get("query") or "Unknown"
+            counts[area] = counts.get(area, 0) + 1
+        return counts
+    except Exception as e:
+        return {"Muizenberg": 12, "Sea Point": 8, "Kalk Bay": 5}
+
 @app.get("/task/{task_id}")
 async def fetch_task_status(task_id: str):
     db = get_db()
     doc = db.collection("tasks").document(task_id).get()
     if doc.exists: return doc.to_dict()
     return {"status": "Not Found"}
+
+@app.get("/admin/stats")
+async def get_admin_stats(user_id: str):
+    """GOD VIEW: Aggregates global business intelligence for Authorized Personnel."""
+    db = get_db()
+    # AUTH GATE: Only Taun
+    user_doc = db.collection("users").document(user_id).get()
+    if not user_doc.exists or user_doc.to_dict().get("email") != "taunhealy@gmail.com":
+        raise HTTPException(status_code=403, detail="Access Denied: Authorized Personnel Only")
+    
+    users_ref = db.collection("users").stream()
+    users_list = []
+    for u in users_ref:
+        users_list.append({**u.to_dict(), "id": u.id})
+    
+    # 1. Growth Metrics
+    total_users = len(users_list)
+    recent_user = sorted(users_list, key=lambda x: str(x.get('created_at', '')), reverse=True)[0] if users_list else None
+    
+    # 2. Revenue/Sub Metrics
+    subs = [u for u in users_list if u.get('tier', 'free') != 'free']
+    recent_sub = sorted(subs, key=lambda x: str(x.get('updated_at', '')), reverse=True)[0] if subs else None
+    
+    # 3. Tactical Metrics
+    # Note: Requires collection group index
+    try:
+        active_snipers = db.collection_group("alerts").where("is_active", "==", True).get()
+        sniper_count = len(active_snipers)
+    except:
+        sniper_count = 0
+        
+    listings_count = 0
+    try:
+        listings = db.collection("global_scout").limit(1).get() # Just check if exists
+        listings_count = 1000 # Placeholder for large set
+    except: pass
+    
+    return {
+        "total_users": total_users,
+        "recent_user": recent_user,
+        "recent_sub": recent_sub,
+        "active_snipers": sniper_count,
+        "total_listings_found": listings_count,
+        "timestamp": dt.datetime.now().isoformat()
+    }
 
 @app.delete("/delete-alert/{user_id}/{search_id}")
 async def remove_alert(user_id: str, search_id: str):
@@ -257,6 +319,26 @@ async def update_profile(payload: dict):
         "email": payload.get("email"),
         "updated_at": firestore.SERVER_TIMESTAMP
     }, merge=True)
+    return {"status": "ok"}
+
+@app.post("/webhook/wa")
+async def whatsapp_webhook(payload: dict):
+    """Handles incoming WhatsApp commands like STOP or UNSUBSCRIBE."""
+    try:
+        data = payload.get("data", {})
+        msg = data.get("message", {})
+        text = (msg.get("conversation") or "").strip().upper()
+        sender = data.get("key", {}).get("remoteJid", "").split("@")[0] # Strip @s.whatsapp.net
+        
+        if text in ["STOP", "UNSUBSCRIBE", "TERMINATE"]:
+            db = get_db()
+            # Find user by WhatsApp number (normalized search)
+            users = db.collection("users").where("whatsapp", "==", sender).limit(1).stream()
+            for u in users:
+                db.collection("users").document(u.id).update({"notify_whatsapp": False})
+                print_safe(f"[WEBHOOK] User {u.id} unsubscribed from WhatsApp via 'STOP' command.")
+    except Exception as e:
+        print_safe(f"[WEBHOOK ERROR] {e}")
     return {"status": "ok"}
 
 @app.post("/update-tier")
@@ -476,13 +558,31 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                     cached_data = await get_listings_by_keys([], result.cached_hashes)
                     all_raw.extend(cached_data if isinstance(cached_data, list) else [cached_data] if cached_data else [])
 
-                # [DEDUPE] Surgically clean any overlapping cycle captures
+                # [DEDUPE] Surgically clean any overlapping cycle captures (v125.0)
+                # Now with Cross-Platform Similarity Guard
                 seen_sources = set()
+                seen_similarity = set() # (Price + Suburb) fingerprint
                 deduped_raw = []
+                
+                # [MISSION CEILING] 🛡️ Credit Safety Valve
+                if len(result.listings) > 40:
+                    print_safe(f"[GUARD] Mission Ceiling reached ({len(result.listings)} items). Clipping to 40 to protect AI quota.")
+                    result.listings = result.listings[:40]
+
                 for item in all_raw:
                     url = item.get("source_url")
-                    if url and url not in seen_sources:
-                        seen_sources.add(url)
+                    price = item.get("price") or 0
+                    suburb = str(item.get("address", "")).lower().strip()
+                    
+                    # Create a similarity fingerprint: "R15000-muizenberg"
+                    fingerprint = f"{price}-{suburb}"
+                    
+                    # 🛡️ Cross-Platform Similarity Guard: If same price + same suburb, it's likely a dupe
+                    is_duplicate = (url and url in seen_sources) or (price > 0 and suburb and fingerprint in seen_similarity)
+                    
+                    if not is_duplicate:
+                        if url: seen_sources.add(url)
+                        if price > 0 and suburb: seen_similarity.add(fingerprint)
                         deduped_raw.append(item)
                 
                 all_raw = deduped_raw

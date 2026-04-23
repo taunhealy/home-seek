@@ -212,8 +212,7 @@ export default function DiscoverPage() {
         body: JSON.stringify(updates)
       });
       if (res && res.ok) {
-        // Refresh to ensure sync
-        fetchMissions();
+        // Optimistic state is sufficient, avoid stale overwrite
       }
     } catch (e) { console.error("Update failed:", e); }
   };

@@ -30,6 +30,7 @@ export default function ExplorePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [activeSniperCounts, setActiveSniperCounts] = useState<Record<string, number>>({});
   
   // Filters State
   const [filters, setFilters] = useState({
@@ -107,12 +108,25 @@ export default function ExplorePage() {
     }
   };
 
+  const fetchAnalytics = async () => {
+    try {
+      const resp = await fetchWithAuth(`/analytics/active-snipers`);
+      if (resp && resp.ok) {
+        const data = await resp.json();
+        setActiveSniperCounts(data);
+      }
+    } catch (e) {
+      console.error("Error fetching analytics:", e);
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
         fetchExplore(activeTab);
         fetchSuburbs();
+        fetchAnalytics();
       } else {
         setIsLoading(false);
         setListings([]);
@@ -369,7 +383,14 @@ export default function ExplorePage() {
                         >
                           <div className="flex items-center gap-3">
                             <MapPin size={10} className={filters.area === suburb ? 'text-emerald-400' : 'text-white/20'} />
-                            {suburb}
+                            <div className="flex flex-col">
+                               <span>{suburb}</span>
+                               {activeSniperCounts[suburb] && (
+                                 <span className="text-[7px] font-black text-red-500/60 uppercase tracking-tighter">
+                                   🎯 {activeSniperCounts[suburb]} Active Snipers
+                                 </span>
+                               )}
+                            </div>
                           </div>
                           {filters.area === suburb && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]" />}
                         </button>
