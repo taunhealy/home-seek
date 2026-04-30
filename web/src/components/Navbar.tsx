@@ -4,13 +4,20 @@ import { Bell, DeviceMobile, Envelope, SignOut, CaretDown, Check } from '@phosph
 interface NavbarProps {
   user: any;
   profile: any;
+  loading?: boolean;
   handleLogout: () => void;
+  handleLogin?: () => void;
   onUpdateProfile?: (updates: any) => Promise<void>;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ user, profile, handleLogout, onUpdateProfile }) => {
+export const Navbar: React.FC<NavbarProps> = ({ user, profile, loading, handleLogout, handleLogin, onUpdateProfile }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [whatsappInput, setWhatsappInput] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (profile?.whatsapp) setWhatsappInput(profile.whatsapp);
+  }, [profile?.whatsapp]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -30,14 +37,14 @@ export const Navbar: React.FC<NavbarProps> = ({ user, profile, handleLogout, onU
   };
 
   return (
-    <nav className="sticky top-0 z-50 backdrop-blur-xl bg-black/60 border-b border-white/5 px-6 md:px-12 py-4">
+    <nav className="fixed top-0 left-0 right-0 z-[100] backdrop-blur-xl bg-black/60 border-b border-white/5 px-6 md:px-12 py-4">
       <div className="max-w-[1400px] mx-auto flex justify-between items-center">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
             <span className="text-black font-black text-xl">H</span>
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Home-Seek</h1>
+            <h1 className="text-xl font-bold tracking-tight">HomeSeek</h1>
             <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest leading-none">Intelligence Engine</p>
           </div>
         </div>
@@ -46,7 +53,8 @@ export const Navbar: React.FC<NavbarProps> = ({ user, profile, handleLogout, onU
           <div className="hidden md:flex items-center gap-6 mr-4 border-r border-white/10 pr-8">
             <a href="/" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-white transition-all">Home</a>
             <a href="/explore" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-white transition-all">Explore</a>
-            <a href="/discover" className="text-[10px] font-bold text-white uppercase tracking-widest border-b-2 border-emerald-500 pb-1">Alerts</a>
+            <a href="/dashboard" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-white transition-all">Dashboard</a>
+            <a href="/#pricing" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-white transition-all">Pricing</a>
           </div>
 
           <div className="text-right hidden lg:block">
@@ -54,10 +62,13 @@ export const Navbar: React.FC<NavbarProps> = ({ user, profile, handleLogout, onU
             <p className="text-white/20 text-[9px] uppercase tracking-widest font-bold">ZAF Nodes Connected</p>
           </div>
 
-          {user && (
+          {loading ? (
+            <div className="w-10 h-10 rounded-full bg-white/5 animate-pulse border border-white/10" />
+          ) : user ? (
             <div className="relative" ref={dropdownRef}>
               <button 
                 onClick={() => setIsOpen(!isOpen)}
+                suppressHydrationWarning
                 className="flex items-center gap-3 bg-white/5 border border-white/10 pl-2 pr-4 py-1.5 rounded-2xl hover:bg-white/10 transition-all outline-none"
               >
                 {user.photoURL ? (
@@ -141,6 +152,14 @@ export const Navbar: React.FC<NavbarProps> = ({ user, profile, handleLogout, onU
                 </div>
               )}
             </div>
+          ) : (
+            <button 
+              onClick={handleLogin}
+              suppressHydrationWarning
+              className="bg-emerald-500 text-black px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all active:scale-95 shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+            >
+              Sign In
+            </button>
           )}
         </div>
       </div>

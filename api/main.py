@@ -62,12 +62,18 @@ from services.database import (
 )
 from services.notifications import EvolutionClient, MailerSendClient, ResendEmailClient
 
-app = FastAPI(title="Home-Seek Unified Intelligence Core", version="1.0.0")
+app = FastAPI(title="HomeSeek Unified Intelligence Core", version="1.0.0")
 
 # Enable CORS (Production Lockdown v126.0)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://homeseekza.web.app", "http://localhost:3000"],
+    allow_origins=[
+        "https://homeseekza.web.app", 
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -83,6 +89,36 @@ def get_effective_user_id(requested_id: str, uid: str = "R4R2k7z2XAQGgRjB57ctZcO
     if uid == "R4R2k7z2XAQGgRjB57ctZcOkEbp2" or requested_id in ["taunhealy", "taun_test_user"]:
         return "taun_test_user"
     return requested_id
+
+def is_mission_match(listing: dict, alert: dict) -> bool:
+    """Checks if a listing matches the area requested in the alert (v127.0)."""
+    # 1. Gather all requested areas from the alert configuration
+    raw_areas = []
+    if alert.get("target_area"): raw_areas.append(alert.get("target_area"))
+    if alert.get("search_query"): raw_areas.append(alert.get("search_query"))
+    
+    # 2. Flatten and clean requested areas (handle commas and whitespace)
+    interest_areas = []
+    for raw in raw_areas:
+        # Strip common AI markers and clean separators
+        clean_raw = raw.replace("(MUST BE PET FRIENDLY)", "").replace("PET FRIENDLY", "")
+        parts = [p.strip().lower() for p in clean_raw.split(",") if p.strip()]
+        interest_areas.extend(parts)
+    
+    if not interest_areas:
+        return True # Default to match if no specific area filter exists
+        
+    # 3. Check Listing Content
+    l_address = str(listing.get("address", "")).lower()
+    l_title = str(listing.get("title", "")).lower()
+    l_content = f"{l_address} {l_title}"
+    
+    # 4. Strict Suburb Matching
+    for area in interest_areas:
+        if area in l_content:
+            return True
+            
+    return False
 
 @app.get("/user-profile/{user_id}")
 async def fetch_user_profile(user_id: str):
@@ -150,7 +186,10 @@ async def fetch_explore_listings(
         price = h.get("price") or 0
         if min_price and price < min_price: continue
         if max_price and price > max_price: continue
-        if platform and platform.lower() not in str(h.get("platform", "")).lower(): continue
+        if platform:
+            p_val = str(h.get("platform", "")).lower()
+            s_val = str(h.get("source_name", "")).lower()
+            if platform.lower() not in p_val and platform.lower() not in s_val: continue
         
         area_hit = False
         if not area: area_hit = True
@@ -197,7 +236,7 @@ async def deploy_sniper(mission: dict, background_tasks: BackgroundTasks):
         tier = profile.get("tier", "free").lower()
         
         # Canonical Tier Limits (Backend Mirror)
-        BACKEND_LIMITS = {"free": 0, "bronze": 1, "silver": 10, "gold": 100}
+        BACKEND_LIMITS = {"free": 0, "bronze": 5, "silver": 5, "gold": 30}
         tier_limit = BACKEND_LIMITS.get(tier, 0)
         
         from services.database import get_user_alerts, save_search
@@ -380,11 +419,11 @@ async def update_user_tier(payload: dict):
         asyncio.create_task(email_client.send_email(email, f"🏹 Welcome to the {tier.title()} Elite", welcome_html))
         
         # Invoice Template
-        amounts = {"bronze": 149, "silver": 299, "gold": 499}
+        amounts = {"bronze": 149, "gold": 299}
         amount = amounts.get(tier.lower(), 0)
         if amount > 0:
             invoice_html = get_invoice_template(email, tier, amount)
-            asyncio.create_task(email_client.send_email(email, f"🧾 Receipt: Home-Seek {tier.title()} Subscription", invoice_html))
+            asyncio.create_task(email_client.send_email(email, f"🧾 Receipt: HomeSeek {tier.title()} Subscription", invoice_html))
             
     return {"status": "ok"}
 
@@ -410,7 +449,7 @@ async def manual_post_listing(listing: dict):
         from services.database import save_listing
         # Standardize listing
         listing["rental_type"] = listing.get("rental_type", "long-term")
-        listing["platform"] = "Manual Post"
+        listing["platform"] = "HomeSeek"
         listing["discovery_method"] = "manual_submission"
         
         # Save to Global Community Feed
@@ -441,6 +480,9 @@ async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
                 if alert.get("max_price") and l_price > alert.get("max_price"): continue
                 if alert.get("pet_friendly") and not l_dict.get("is_pet_friendly"): continue
                 
+                # [AREA GUARD] 🛡️ Ensure historical re-match respects neighborhood boundaries
+                if not is_mission_match(l_dict, alert): continue
+                
                 doc_id = hashlib.sha256(f"{l_dict.get('source_url')}-{l_dict.get('title')}".encode()).hexdigest()
                 user_seen = db.collection("users").document(effective_id).collection("listings").document(doc_id).get().exists
                 
@@ -458,7 +500,7 @@ async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
                     # 📱 Channel Alpha: WhatsApp
                     if whatsapp and len(str(whatsapp)) > 5 and should_wa:
                         wa_client = EvolutionClient()
-                        wa_msg = f"🧠 *Home-Seek Intel Match (Archive)*\n\n*{l_dict.get('title')}*\n💰 R{(l_dict.get('price') or 0):,}\n📍 {l_dict.get('address')}\n\n🔗 {l_dict.get('source_url')}"
+                        wa_msg = f"🧠 *HomeSeek Intel Match (Archive)*\n\n*{l_dict.get('title')}*\n💰 R{(l_dict.get('price') or 0):,}\n📍 {l_dict.get('address')}\n🏷️ {l_dict.get('property_type', 'Property')} ({l_dict.get('rental_type', 'long-term')})\n\n🔗 {l_dict.get('source_url')}"
                         asyncio.create_task(wa_client.send_whatsapp(whatsapp, wa_msg))
                         print_safe(f"[SIGNAL] WhatsApp Archive Alert Dispatched to {whatsapp}")
 
@@ -469,7 +511,7 @@ async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
                         body = f"""
                         <div style="background-color: #050505; color: #ffffff; font-family: 'Inter', sans-serif; padding: 40px; border-radius: 24px; border: 1px solid #10b9811a;">
                             <div style="text-align: center; margin-bottom: 30px;">
-                                <span style="color: #10b981; font-weight: 900; letter-spacing: 0.3em; font-size: 10px; text-transform: uppercase;">Home-Seek Intelligence (Retro)</span>
+                                <span style="color: #10b981; font-weight: 900; letter-spacing: 0.3em; font-size: 10px; text-transform: uppercase;">HomeSeek Intelligence (Retro)</span>
                             </div>
                             <h1 style="font-size: 24px; font-weight: 800; margin-bottom: 10px; tracking: -0.02em;">{l_dict.get('title')}</h1>
                             <p style="color: #10b981; font-size: 20px; font-weight: 800; margin-bottom: 16px;">R{(l_dict.get('price') or 0):,}</p>
@@ -478,12 +520,18 @@ async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
                                 <a href="{l_dict.get('source_url')}" style="background-color: #10b981; color: #000000; padding: 18px 40px; border-radius: 12px; font-weight: 900; text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; display: inline-block;">View Property</a>
                             </div>
 
-                            <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 20px; border-radius: 16px; margin-bottom: 30px;">
-                                <p style="color: rgba(255,255,255,0.4); font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 5px;">Neighborhood (Found in Archive)</p>
-                                <p style="margin: 0; font-size: 14px;">{l_dict.get('address', 'Cape Town')}</p>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px;">
+                                <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 15px; border-radius: 12px;">
+                                    <p style="color: rgba(255,255,255,0.4); font-size: 9px; font-weight: 700; text-transform: uppercase; margin-bottom: 5px;">Neighborhood</p>
+                                    <p style="margin: 0; font-size: 13px;">{l_dict.get('address', 'Cape Town')}</p>
+                                </div>
+                                <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 15px; border-radius: 12px;">
+                                    <p style="color: rgba(255,255,255,0.4); font-size: 9px; font-weight: 700; text-transform: uppercase; margin-bottom: 5px;">Category</p>
+                                    <p style="margin: 0; font-size: 13px;">{l_dict.get('property_type', 'Residential')} ({l_dict.get('rental_type', 'long-term')})</p>
+                                </div>
                             </div>
                             <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 30px; text-align: center;">
-                                <p style="color: rgba(255,255,255,0.2); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3em;">home-seek.vercel.app</p>
+                                <p style="color: rgba(255,255,255,0.2); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3em;">homeseekza.web.app</p>
                                 <p style="color: rgba(255,255,255,0.2); font-size: 10px; margin-top: 10px;">
                                     This was discovered via a historical re-match pulse. To terminate mission, visit your 
                                     <a href="https://home-seek.vercel.app/discover" style="color: #10b981; text-decoration: none;">Discovery Dashboard</a>.
@@ -627,6 +675,9 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                                 min_val = min(min_b) if isinstance(min_b, list) else min_b
                                 if listing_beds < min_val: continue
                             
+                            # [AREA GUARD] 🛡️ Precision Multiplexing: Ensure listing matches requested neighborhood
+                            if not is_mission_match(l_dict, config): continue
+
                             # Valid match!
                             doc_id = create_listing_id(l_dict)
                             user_seen = db.collection("users").document(user_id).collection("listings").document(doc_id).get().exists
@@ -641,7 +692,7 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                             
                             is_initiator = sub.get("is_initiator", False)
                             tier = user_profile.get("tier", "free").lower()
-                            can_multiplex = tier in ['gold', 'silver']
+                            can_multiplex = tier in ['gold', 'bronze']
                             
                             if not is_initiator and not can_multiplex: continue
 
@@ -654,7 +705,7 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                                     
                                     if whatsapp and len(str(whatsapp)) > 5 and should_wa:
                                         wa_client = EvolutionClient()
-                                        wa_msg = f"🏠 *Home-Seek Sniper Match*\n\n*{l_dict.get('title')}*\n💰 R{(l_dict.get('price') or 0):,}\n📍 {l_dict.get('address', 'Cape Town')}\n🔗 {l_dict.get('source_url')}"
+                                        wa_msg = f"🏠 *HomeSeek Sniper Match*\n\n*{l_dict.get('title')}*\n💰 R{(l_dict.get('price') or 0):,}\n📍 {l_dict.get('address', 'Cape Town')}\n🏷️ {l_dict.get('property_type', 'Property')} ({l_dict.get('rental_type', 'long-term')})\n🔗 {l_dict.get('source_url')}"
                                         asyncio.create_task(wa_client.send_whatsapp(whatsapp, wa_msg))
                                         print_safe(f"[SIGNAL] WhatsApp Alert Dispatched to {whatsapp}")
                                     else:
@@ -699,19 +750,15 @@ async def autonomous_pulse_heartbeat():
                 tier = user.get("tier", "free").lower()
                 user_id = get_effective_user_id(user["id"])
                 
-                # Dynamic Tier Logic (30-min Ticks)
+                # Dynamic Tier Logic (30-min Pulse)
                 is_due = False
                 if tier == "gold":
-                    # Every 1h (2 x 30m)
-                    if PULSE_COUNT % 2 == 0:
-                        is_due = True
+                    is_due = True # Every 30m
                 elif tier == "silver":
-                    # Every 2.5h (5 x 30m) AND skip night silence
-                    if PULSE_COUNT % 5 == 0 and not is_night_silence:
+                    if PULSE_COUNT % 8 == 0: # Every 4h (8 * 30m)
                         is_due = True
                 elif tier == "bronze":
-                    # Every 24h (48 x 30m)
-                    if PULSE_COUNT % 48 == 0:
+                    if PULSE_COUNT % 48 == 0: # Every 24h
                         is_due = True
                 elif PULSE_COUNT == 1: # Initial boot catch-all
                     is_due = True

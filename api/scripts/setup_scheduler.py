@@ -9,8 +9,8 @@ def setup_gcp_scheduler(project_id, service_url):
     
     # Tier Schedule Config
     schedules = [
-        {"tier": "gold", "frequency": "0 * * * *", "label": "Gold Pulse (1h)"},      # Every hour
-        {"tier": "silver", "frequency": "0 */12 * * *", "label": "Silver Pulse (12h)"}, # Every 12 hours
+        {"tier": "gold", "frequency": "*/10 * * * *", "label": "Gold Pulse (10m)"},      # Every 10 minutes
+        {"tier": "silver", "frequency": "*/30 * * * *", "label": "Silver Pulse (30m)"}, # Every 30 minutes
         {"tier": "bronze", "frequency": "0 0 * * *", "label": "Bronze Pulse (24h)"}   # Every day at midnight
     ]
     

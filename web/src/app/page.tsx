@@ -17,27 +17,22 @@ import {
   Cpu
 } from 'lucide-react';
 
+import { useAuth } from '@/lib/auth-context';
+import { Navbar } from '@/components/Navbar';
+
 export default function Home() {
+  const { user, profile, loading, login, logout } = useAuth();
+
   return (
-    <div className="min-h-screen bg-black text-white font-outfit overflow-x-hidden">
+    <div className="min-h-screen bg-black text-white font-outfit">
       {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-md bg-black/50 border-b border-white/5">
-        <div className="flex items-center gap-2">
-          <Target className="w-8 h-8 text-emerald-primary" />
-          <span className="text-2xl font-black tracking-tighter">HOME<span className="text-emerald-primary">SEEK</span></span>
-        </div>
-        <div className="hidden md:flex gap-8 text-sm font-bold uppercase tracking-widest text-white/60">
-          <a href="#how-it-works" className="hover:text-emerald-primary transition-colors">Alerts</a>
-          <a href="#features" className="hover:text-emerald-primary transition-colors">Explore</a>
-          <a href="#pricing" className="hover:text-emerald-primary transition-colors">Pricing</a>
-        </div>
-        <Link 
-          href="/discover" 
-          className="bg-emerald-primary hover:bg-emerald-secondary text-black px-6 py-2 rounded-full text-sm font-black transition-all active:scale-95 shadow-[0_0_20px_rgba(16,185,129,0.3)]"
-        >
-          LAUNCH SNIPER
-        </Link>
-      </nav>
+      <Navbar 
+        user={user} 
+        profile={profile} 
+        loading={loading}
+        handleLogin={login} 
+        handleLogout={logout} 
+      />
 
       {/* Hero Section */}
       <section className="relative pt-40 pb-20 px-8 max-w-7xl mx-auto overflow-hidden">
@@ -58,9 +53,9 @@ export default function Home() {
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-primary via-emerald-300 to-emerald-primary bg-[length:200%_auto] animate-gradient-slow">PERFECT HOME.</span>
             </h1>
             <p className="max-w-2xl mx-auto text-white/50 text-xl font-medium leading-relaxed">
-              The first autonomous rental sniper designed for the South African market. 
-              We monitor 10+ platforms 24/7 so you don't have to. 
-              Get alerts before anyone else.
+              An autonomous rental sniper designed for the South African market. 
+              We monitor multiple platforms 24/7 so you don't have to. 
+              Get notified as soon as your desired property is discovered.
             </p>
           </motion.div>
 
@@ -71,17 +66,17 @@ export default function Home() {
             className="flex flex-col sm:flex-row gap-4 justify-center items-center"
           >
             <Link 
-              href="/discover"
+              href="/dashboard"
               className="w-full sm:w-auto bg-white text-black px-10 py-5 rounded-2xl text-lg font-black flex items-center justify-center gap-3 hover:bg-emerald-primary hover:text-white transition-all group active:scale-95 shadow-xl"
             >
               START SNIPING <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
-            <a 
-              href="#how-it-works"
-              className="w-full sm:w-auto bg-white/5 border border-white/10 px-10 py-5 rounded-2xl text-lg font-black flex items-center justify-center gap-3 hover:bg-white/10 transition-all active:scale-95"
+            <Link 
+              href="/explore"
+              className="w-full sm:w-auto bg-white/5 border border-white/10 px-10 py-5 rounded-2xl text-lg font-black flex items-center justify-center gap-3 hover:bg-white/10 transition-all active:scale-95 shadow-xl"
             >
-              SEE INTEL <Zap className="w-5 h-5 fill-emerald-primary text-emerald-primary" />
-            </a>
+              EXPLORE LISTINGS <Zap className="w-5 h-5 fill-emerald-primary text-emerald-primary" />
+            </Link>
           </motion.div>
         </div>
 
@@ -134,12 +129,12 @@ export default function Home() {
             { 
               icon: Cpu, 
               title: "AI ANALYSIS", 
-              desc: "Gemini 1.5 Flash instantly filters noise, extracts requirements, and validates listing quality in real-time." 
+              desc: "Gemini AI instantly filters noise, extracts requirements, and validates listing quality to filter appropriate listings." 
             },
             { 
               icon: Bell, 
               title: "INSTANT DEPLOYMENT", 
-              desc: "When a match is found, we blast notifications via WhatsApp or Email before the link even goes viral." 
+              desc: "When a match is found, we blast notifications via WhatsApp or Email so you can beat the queue." 
             }
           ].map((item, i) => (
             <div key={i} className="space-y-6 group">
@@ -159,14 +154,14 @@ export default function Home() {
            <div className="space-y-12">
               <div className="space-y-4">
                  <h2 className="text-xs font-black uppercase tracking-[0.4em] text-emerald-primary">Intelligence</h2>
-                 <p className="text-4xl md:text-6xl font-black tracking-tight leading-[1.1]">WHY HOME SEEK IS <br />OVERPOWERED.</p>
+                 <p className="text-4xl md:text-6xl font-black tracking-tight leading-[1.1]">THE HOMESEEK <br />DIFFERENCE.</p>
               </div>
               
               <div className="space-y-8">
                  {[
-                   { icon: Smartphone, t: "WhatsApp Integration", d: "Paid users get direct messages with listing details and direct links." },
-                   { icon: Mail, t: "Email Digests", d: "Free users receive high-frequency email summaries of new findings." },
-                   { icon: ShieldCheck, t: "Scam Detection", d: "AI automatically flags suspicious listings based on historical data patterns." }
+                   { icon: Globe, t: "Facebook Groups Scanning", d: "We patrol private and public rental groups 24/7, catching listings before they ever hit major property portals." },
+                   { icon: Cpu, t: "AI Intelligence", d: "Our engine deciphers complex descriptions to extract exact locations, prices, and requirements—filtering the noise for you." },
+                   { icon: Zap, t: "Instant Alerts", d: "Receive high-priority signals via WhatsApp or Email the moment a match is found. Beat the queue every time." }
                  ].map((feat, i) => (
                    <div key={i} className="flex gap-6 items-start">
                       <div className="p-3 bg-emerald-primary/10 rounded-2xl text-emerald-primary mt-1">
@@ -218,11 +213,11 @@ export default function Home() {
       {/* Pricing Section */}
       <section id="pricing" className="py-32 px-8 max-w-7xl mx-auto space-y-16">
         <div className="text-center space-y-4">
-          <h2 className="text-xs font-black uppercase tracking-[0.4em] text-emerald-primary">Access Protocols</h2>
-          <p className="text-4xl md:text-5xl font-black">CHOOSE YOUR INTEL TANK</p>
+          <h2 className="text-xs font-black uppercase tracking-[0.4em] text-emerald-primary">Simple Pricing</h2>
+          <p className="text-4xl md:text-5xl font-black">CHOOSE THE RIGHT PLAN FOR YOU</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {/* FREE */}
           <div className="bg-white/5 border border-white/5 p-8 rounded-[2.5rem] flex flex-col justify-between hover:border-white/10 transition-all group">
             <div className="space-y-6">
@@ -233,7 +228,7 @@ export default function Home() {
               <ul className="space-y-4 text-sm font-medium text-white/60">
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
-                   24h Check-in Frequency
+                   Manual Scan Only
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
@@ -245,24 +240,28 @@ export default function Home() {
                 </li>
               </ul>
             </div>
-            <Link href="/discover" className="mt-12 block text-center py-4 rounded-2xl bg-white/5 border border-white/10 font-black text-sm uppercase tracking-widest hover:bg-white/10 transition-all">Select Protocol</Link>
+            <Link href="/dashboard" className="mt-12 block text-center py-4 rounded-2xl bg-white/5 border border-white/10 font-black text-sm uppercase tracking-widest hover:bg-white/10 transition-all">Select Protocol</Link>
           </div>
 
           {/* BRONZE */}
           <div className="bg-white/5 border border-white/5 p-8 rounded-[2.5rem] flex flex-col justify-between hover:border-white/10 transition-all">
             <div className="space-y-6">
               <div>
-                <h3 className="text-sm font-bold text-emerald-primary uppercase tracking-widest mb-2">Silent Hunter</h3>
+                <h3 className="text-sm font-bold text-white/60 uppercase tracking-widest mb-2">Silver Hunter</h3>
                 <p className="text-4xl font-black">R149<span className="text-sm opacity-40">/mo</span></p>
               </div>
               <ul className="space-y-4 text-sm font-medium text-white/80">
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   8h Check-in Frequency
+                   5 Active Snipers
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   WhatsApp Notifications
+                   Scanning Every 4 Hours
+                </li>
+                <li className="flex items-center gap-3">
+                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
+                   WhatsApp & Email Notifications
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
@@ -270,58 +269,32 @@ export default function Home() {
                 </li>
               </ul>
             </div>
-            <Link href="/discover" className="mt-12 block text-center py-4 rounded-2xl bg-emerald-primary/10 border border-emerald-primary/20 text-emerald-primary font-black text-sm uppercase tracking-widest hover:bg-emerald-primary/20 transition-all">Upgrade to Bronze</Link>
+            <Link href="/dashboard" className="mt-12 block text-center py-4 rounded-2xl bg-white/5 border border-white/10 font-black text-sm uppercase tracking-widest hover:bg-white/10 transition-all">Upgrade to Silver</Link>
           </div>
 
-          {/* SILVER */}
+          {/* GOLD */}
           <div className="bg-white/5 border-2 border-emerald-primary/30 p-8 rounded-[2.5rem] flex flex-col justify-between relative overflow-hidden shadow-[0_0_40px_rgba(16,185,129,0.1)]">
-            <div className="absolute top-0 right-0 bg-emerald-primary text-black px-4 py-1 text-[10px] font-black uppercase tracking-tighter rounded-bl-xl">POPULAR</div>
             <div className="space-y-6">
               <div>
-                <h3 className="text-sm font-bold text-blue-400 uppercase tracking-widest mb-2">Proactive Sniper</h3>
+                <h3 className="text-sm font-bold text-yellow-500 uppercase tracking-widest mb-2">Gold Hunter</h3>
                 <p className="text-4xl font-black">R299<span className="text-sm opacity-40">/mo</span></p>
               </div>
               <ul className="space-y-4 text-sm font-medium text-white/90">
                 <li className="flex items-center gap-3 text-emerald-primary">
                    <Zap className="w-4 h-4 text-emerald-primary fill-emerald-primary" />
-                   4h Check-in Frequency
+                   30 Active Snipers Authorized
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   Priority Support
+                    Scanning Every 30 Minutes
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   Advanced Area Filters
+                   WhatsApp & Email Notifications
                 </li>
               </ul>
             </div>
-            <Link href="/discover" className="mt-12 block text-center py-4 rounded-2xl bg-emerald-primary text-black font-black text-sm uppercase tracking-widest hover:shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all">Upgrade to Silver</Link>
-          </div>
-
-          {/* GOLD */}
-          <div className="bg-gradient-to-br from-emerald-950/50 to-black border-2 border-emerald-primary/50 p-8 rounded-[2.5rem] flex flex-col justify-between shadow-[0_0_50px_rgba(16,185,129,0.2)]">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-sm font-bold text-yellow-500 uppercase tracking-widest mb-2">Discovery Overlord</h3>
-                <p className="text-4xl font-black">R499<span className="text-sm opacity-40">/mo</span></p>
-              </div>
-              <ul className="space-y-4 text-sm font-medium text-white">
-                <li className="flex items-center gap-3 text-emerald-primary font-bold">
-                   <Zap className="w-4 h-4 text-emerald-primary fill-emerald-primary" />
-                   1h Check-in Frequency
-                </li>
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   Instant Smart Alerts
-                </li>
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   Unlimited Alert Tasks
-                </li>
-              </ul>
-            </div>
-            <Link href="/discover" className="mt-12 block text-center py-4 rounded-2xl bg-white text-black font-black text-sm uppercase tracking-widest hover:bg-emerald-primary hover:text-white transition-all shadow-xl">Activate Overlord</Link>
+            <Link href="/dashboard" className="mt-12 block text-center py-4 rounded-2xl bg-emerald-primary text-black font-black text-sm uppercase tracking-widest hover:shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all">Upgrade to Gold</Link>
           </div>
         </div>
         
@@ -330,27 +303,7 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Footer */}
-      <footer className="py-20 px-8 border-t border-white/5">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
-          <div className="flex items-center gap-2">
-            <Target className="w-8 h-8 text-emerald-primary" />
-            <span className="text-2xl font-black tracking-tighter">HOME<span className="text-emerald-primary">SEEK</span></span>
-          </div>
-          <div className="text-white/20 text-sm font-medium">
-            &copy; 2026 Home Seek Protocol. All systems nominal.
-          </div>
-          <div className="flex gap-6">
-            <a href="#" className="p-3 bg-white/5 rounded-full hover:bg-emerald-primary transition-all group">
-              <Mail className="w-5 h-5 text-white/50 group-hover:text-black transition-colors" />
-            </a>
-            <a href="#" className="p-3 bg-white/5 rounded-full hover:bg-emerald-primary transition-all group">
-              <Smartphone className="w-5 h-5 text-white/50 group-hover:text-black transition-colors" />
-            </a>
-          </div>
-        </div>
-      </footer>
-    </div>
+      </div>
   );
 }
 

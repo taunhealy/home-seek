@@ -1,25 +1,38 @@
 import { auth } from './firebase';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_CLOUD_API || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = (process.env.NEXT_PUBLIC_CLOUD_API || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 
 export async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
   const user = auth.currentUser;
-  
-  // If no user is logged in, we still might want to allow some public calls 
-  // (like geofence/suburbs) but most will fail at the backend level.
   const token = user ? await user.getIdToken() : null;
 
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+  // Normalize endpoint and construct URL
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${cleanEndpoint}`;
 
-  const headers = {
-    ...options.headers,
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-  } as Record<string, string>;
+  // Robust Header Merging (v128.1)
+  const headers = new Headers(options.headers);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
 
-  return fetch(url, {
-    ...options,
-    headers,
-  });
+  try {
+    console.log(`[DEBUG] Fetching: ${url}`);
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => 'No error body');
+      throw new Error(`[API ERROR] ${response.status} ${response.statusText}: ${errorBody}`);
+    }
+
+    return response;
+  } catch (error) {
+    console.error(`[API ERROR] Failed to fetch from ${url}:`, error);
+    throw error;
+  }
 }
 
 /**
@@ -27,11 +40,11 @@ export async function fetchWithAuth(endpoint: string, options: RequestInit = {})
  */
 export async function fetchSuburbs(): Promise<string[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/geofence/suburbs`);
-    if (!res.ok) return [];
+    const res = await fetchWithAuth(`/geofence/suburbs`);
     const data = await res.json();
     return Array.isArray(data) ? data : [];
-  } catch {
+  } catch (error) {
+    console.error('[API ERROR] Failed to fetch suburbs:', error);
     return [];
   }
 }

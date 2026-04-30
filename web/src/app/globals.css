@@ -9,13 +9,17 @@
   --color-emerald-muted: rgba(16, 185, 129, 0.1);
   
   --font-sans: var(--font-sans), "Outfit", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-serif), "Cormorant Garamond", Georgia, serif;
+  --font-serif: var(--font-sans), "Outfit", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
   --background: #050505;
   --foreground: #fafafa;
   --emerald: #10b981;
+}
+
+html {
+  overflow-y: scroll;
 }
 
 body {

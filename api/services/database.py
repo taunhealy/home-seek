@@ -222,7 +222,7 @@ async def get_users_by_tier(tier: str) -> list:
     """Get all user profiles belonging to a specific tier."""
     db = get_db()
     if not db: return []
-    docs = db.collection("users").where("tier", "==", tier.lower()).stream()
+    docs = db.collection("users").where(filter=FieldFilter("tier", "==", tier.lower())).stream()
     return [{"id": d.id, **d.to_dict()} for d in docs]
 
 async def get_user_alerts(user_id: str) -> list:
@@ -268,14 +268,14 @@ async def get_listings_by_keys(urls: list[str], hashes: list[str]) -> list[dict]
         if hashes:
             for i in range(0, len(hashes), 30):
                 batch = hashes[i:i+30]
-                docs = db.collection("listings").where("content_hash", "in", batch).stream()
+                docs = db.collection("listings").where(filter=FieldFilter("content_hash", "in", batch)).stream()
                 results.extend([d.to_dict() for d in docs])
         
         # Check by URL (fallback)
         if urls and len(results) < len(urls):
             batch = [u for u in urls if u and "facebook" not in u][:30]
             if batch:
-                docs = db.collection("listings").where("source_url", "in", batch).stream()
+                docs = db.collection("listings").where(filter=FieldFilter("source_url", "in", batch)).stream()
                 # Dedup by title
                 seen = {r.get('title') for r in results}
                 for d in docs:

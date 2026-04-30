@@ -37,6 +37,7 @@ class Listing(BaseModel):
     # Professional Metadata (v56.0)
     property_type: Optional[str] = Field(None, description="Apartment, House, Studio, etc.")
     property_sub_type: str = Field("Whole", description="Whole vs Shared")
+    rental_type: Optional[str] = Field("long-term", description="long-term, short-term, or pet-sitting")
     view_category: Optional[str] = Field(None, description="Categorization: 'Sea', 'Mountain', or 'Other'")
     is_furnished: Optional[bool] = Field(None, description="TRUE if furnished")
     amenities: list[str] = Field(default_factory=list, description="Features: e.g., ['Pool', 'Security', 'Fibre']")
@@ -503,7 +504,7 @@ class GeminiExtractor:
         for line in lines:
             line = line.strip()
             if len(line) < 5: continue
-            if any(x in line for x in ['Tracking', 'Cookie', 'Script', 'Function', 'var ', 'div ', 'p24_', 'Token']): continue
+            if any(x in line for x in ['Tracking', 'Cookie', 'Script', 'Function', 'var ', 'div ', 'Token']): continue
             # Keep lines that look like prices, areas, or titles
             is_numeric = any(char.isdigit() for char in line)
             is_capitalized = line[0].isupper() if line else False

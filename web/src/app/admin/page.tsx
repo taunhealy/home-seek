@@ -12,28 +12,23 @@ import {
   TrendUp,
   Activity
 } from "@phosphor-icons/react";
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
 import { fetchWithAuth } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function AdminDashboard() {
+  const { user, loading: authLoading } = useAuth();
   const [stats, setStats] = useState<any>(null);
-  const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (u && u.email === 'taunhealy@gmail.com') {
-        fetchStats(u.uid);
-      } else {
-        setIsLoading(false);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+    if (!authLoading && user && user.email === 'taunhealy@gmail.com') {
+      fetchStats(user.uid);
+    } else if (!authLoading) {
+      setIsLoading(false);
+    }
+  }, [user, authLoading]);
 
   const fetchStats = async (uid: string) => {
     try {
@@ -49,7 +44,7 @@ export default function AdminDashboard() {
     }
   };
 
-  if (isLoading) {
+  if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-[#050505] flex items-center justify-center">
         <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
@@ -62,7 +57,7 @@ export default function AdminDashboard() {
       <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center text-center p-12">
         <ShieldCheck size={64} className="text-red-500 mb-6" />
         <h1 className="text-4xl font-serif font-bold mb-4">Authorized Personnel Only</h1>
-        <p className="text-white/40 max-w-md">Your credentials do not grant access to the Home-Seek Command Center.</p>
+        <p className="text-white/40 max-w-md">Your credentials do not grant access to the HomeSeek Command Center.</p>
         <a href="/" className="mt-12 px-8 py-3 bg-white text-black rounded-full font-black uppercase text-[10px] tracking-widest">Return to Surface</a>
       </div>
     );

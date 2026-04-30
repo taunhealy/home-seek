@@ -12,16 +12,67 @@ import {
   Stack, 
   UsersThree, 
   Waves,
-  Mountains,
   PawPrint,
-  User
+  User,
+  CheckCircle,
+  Mountains as MountainsIcon,
+  Waves as WavesIcon
 } from "@phosphor-icons/react";
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
 import { fetchWithAuth } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { Navbar } from '@/components/Navbar';
+import { FilterBadge } from '@/components/FilterBadge';
+import { INTELLIGENCE_SOURCES } from '@/lib/constants';
 
+const RadarLoader = () => (
+  <div className="flex flex-col items-center justify-center min-h-[60vh] w-full relative">
+    <div className="relative flex items-center justify-center">
+      <motion.div 
+        animate={{ scale: [1, 1.5], opacity: [0.5, 0] }}
+        transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
+        className="absolute w-64 h-64 border-2 border-emerald-500/30 rounded-full"
+      />
+      <motion.div 
+        animate={{ scale: [1, 2], opacity: [0.3, 0] }}
+        transition={{ duration: 2, repeat: Infinity, ease: "easeOut", delay: 0.5 }}
+        className="absolute w-64 h-64 border border-emerald-500/20 rounded-full"
+      />
+      <div className="relative z-10 bg-emerald-500/10 p-8 rounded-full border border-emerald-500/20 backdrop-blur-xl">
+        <Globe size={48} className="text-emerald-500 animate-pulse" weight="fill" />
+      </div>
+      
+      {/* Scanning Beam */}
+      <motion.div 
+        animate={{ rotate: 360 }}
+        transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+        className="absolute w-80 h-80 rounded-full border-t-2 border-emerald-500/40 opacity-40"
+        style={{ background: 'conic-gradient(from 0deg at 50% 50%, rgba(16, 185, 129, 0.1) 0%, transparent 25%)' }}
+      />
+    </div>
+    <div className="mt-12 text-center">
+      <p className="text-emerald-500 text-xs font-black uppercase tracking-[0.6em] animate-pulse">Scoping Discovery Zone</p>
+      <p className="text-white/20 text-[10px] mt-2 font-bold uppercase tracking-widest">Awaiting Tactical Confirmation...</p>
+    </div>
+  </div>
+);
+
+const ExploreSkeleton = () => (
+  <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 animate-pulse">
+    <aside className="lg:col-span-3 space-y-12">
+      <div className="bg-white/[0.03] border border-white/10 rounded-[2.5rem] h-[600px]" />
+    </aside>
+    <div className="lg:col-span-9 space-y-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {[1, 2, 3, 4, 5, 6].map(i => (
+          <div key={i} className="h-80 rounded-[2rem] bg-white/[0.02] border border-white/5" />
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 export default function ExplorePage() {
+  const { user, profile, loading, logout, login, refreshProfile } = useAuth();
   const [activeTab, setActiveTab] = useState('long-term');
   const [listings, setListings] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,23 +80,25 @@ export default function ExplorePage() {
   const [eliteSuburbs, setEliteSuburbs] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [user, setUser] = useState<any>(null);
   const [activeSniperCounts, setActiveSniperCounts] = useState<Record<string, number>>({});
+  const [showAdvancedModal, setShowAdvancedModal] = useState(false);
   
-  // Filters State
   const [filters, setFilters] = useState({
+    intent: 'listings',
+    pets: false,
     minPrice: '',
     maxPrice: '',
-    platform: '',
-    area: '',
-    view: '',
-    layout: '',
-    pets: false,
-    page: 1,
-    intent: 'listings' // Default to viewing listings
+    bedrooms: 'any',
+    bathrooms: 'any',
+    furnished: 'any',
+    layout: 'any',
+    view: 'any',
+    horizon: 'any',
+    area: 'any',
+    platform: 'any',
+    page: 1
   });
 
-  // Post Form State
   const [postForm, setPostForm] = useState({
     title: '',
     price: '',
@@ -53,7 +106,7 @@ export default function ExplorePage() {
     bedrooms: '',
     description: '',
     source_url: '',
-    platform: 'Manual Post',
+    platform: 'HomeSeek',
     property_type: 'Apartment',
     property_sub_type: 'Whole',
     view_category: 'Other',
@@ -61,24 +114,29 @@ export default function ExplorePage() {
     is_furnished: false,
     is_pet_friendly: false
   });
+  const [postAreaSuggestions, setPostAreaSuggestions] = useState<string[]>([]);
 
   const fetchExplore = async (type: string) => {
-    if (!auth.currentUser) return;
     setIsLoading(true);
     try {
-      // [HYBRID] Always fetch the Market Grid from the Cloud
-      let endpoint = `/explore-listings?rental_type=${type}`;
-      if (filters.minPrice) endpoint += `&min_price=${filters.minPrice}`;
-      if (filters.maxPrice) endpoint += `&max_price=${filters.maxPrice}`;
-      if (filters.platform) endpoint += `&platform=${filters.platform}`;
-      if (filters.area) endpoint += `&area=${filters.area}`;
-      if (filters.view) endpoint += `&view=${filters.view}`;
-      if (filters.layout) endpoint += `&layout=${filters.layout}`;
-      if (filters.pets) endpoint += `&pets=true`;
-      if (filters.page) endpoint += `&page=${filters.page}`;
-      if (filters.intent) endpoint += `&intent=${filters.intent}`;
+      const query = new URLSearchParams({
+        rental_type: type,
+        intent: filters.intent,
+        page: filters.page.toString(),
+        ...(filters.pets && { pets: 'true' }),
+        ...(filters.minPrice && { min_price: filters.minPrice }),
+        ...(filters.maxPrice && { max_price: filters.maxPrice }),
+        ...(filters.bedrooms !== 'any' && { bedrooms: filters.bedrooms }),
+        ...(filters.bathrooms !== 'any' && { bathrooms: filters.bathrooms }),
+        ...(filters.furnished !== 'any' && { furnished: filters.furnished }),
+        ...(filters.layout !== 'any' && { layout: filters.layout }),
+        ...(filters.view !== 'any' && { view: filters.view }),
+        ...(filters.horizon !== 'any' && { horizon: filters.horizon }),
+        ...(filters.area !== 'any' && { area: filters.area }),
+        ...(filters.platform !== 'any' && { platform: filters.platform }),
+      }).toString();
       
-      const resp = await fetchWithAuth(endpoint);
+      const resp = await fetchWithAuth(`/explore-listings?${query}`);
       if (resp && resp.ok) {
         const data = await resp.json();
         const newItems = Array.isArray(data) ? data : [];
@@ -103,9 +161,7 @@ export default function ExplorePage() {
         const data = await resp.json();
         setEliteSuburbs(Array.isArray(data) ? data : []);
       }
-    } catch (e) {
-      console.error("Error fetching suburbs:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const fetchAnalytics = async () => {
@@ -115,39 +171,48 @@ export default function ExplorePage() {
         const data = await resp.json();
         setActiveSniperCounts(data);
       }
-    } catch (e) {
-      console.error("Error fetching analytics:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (u) {
-        fetchExplore(activeTab);
-        fetchSuburbs();
-        fetchAnalytics();
-      } else {
-        setIsLoading(false);
-        setListings([]);
-      }
-    });
-    return () => unsubscribe();
+    fetchExplore(activeTab);
+    fetchSuburbs();
+    fetchAnalytics();
   }, [
     activeTab, 
     filters.area, 
     filters.view, 
     filters.layout, 
     filters.pets, 
-    filters.platform, 
     filters.minPrice, 
     filters.maxPrice,
     filters.intent,
-    filters.page
+    filters.page,
+    filters.bedrooms,
+    filters.bathrooms,
+    filters.furnished,
+    filters.horizon,
+    filters.platform
   ]);
+
+  useEffect(() => {
+    if (postForm.address && postForm.address.length > 1) {
+      const matches = eliteSuburbs.filter(s => 
+        s.toLowerCase().includes(postForm.address.toLowerCase()) && 
+        s.toLowerCase() !== postForm.address.toLowerCase()
+      ).slice(0, 5);
+      setPostAreaSuggestions(matches);
+    } else {
+      setPostAreaSuggestions([]);
+    }
+  }, [postForm.address, eliteSuburbs]);
 
   const handleManualPost = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+        login();
+        return;
+    }
     try {
       const payload = {
         ...postForm,
@@ -166,10 +231,22 @@ export default function ExplorePage() {
       if (resp.ok) {
         setShowPostModal(false);
         fetchExplore(activeTab);
-        setPostForm({ title: '', price: '', address: '', bedrooms: '', description: '', source_url: '', platform: 'Manual Post', property_type: 'Apartment', property_sub_type: 'Whole', view_category: 'Other', available_date: '', is_furnished: false, is_pet_friendly: false });
+        setPostForm({ title: '', price: '', address: '', bedrooms: '', description: '', source_url: '', platform: 'HomeSeek', property_type: 'Apartment', property_sub_type: 'Whole', view_category: 'Other', available_date: '', is_furnished: false, is_pet_friendly: false });
       }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleUpdateProfile = async (updates: any) => {
+    if (!user) return;
+    try {
+      await fetchWithAuth(`/update-profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.uid, ...updates })
+      });
+      await refreshProfile();
     } catch (e) {
-      console.error("Manual post error:", e);
+      console.error("Failed to update profile telemetry:", e);
     }
   };
 
@@ -179,639 +256,548 @@ export default function ExplorePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-emerald-500/30">
-      
-      {/* Dynamic Navbar */}
-      <nav className="fixed top-0 left-0 w-full z-50 bg-[#050505]/80 backdrop-blur-2xl border-b border-white/5 px-12 py-6 flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:rotate-12 transition-all">
-            <Search size={20} className="text-black" strokeWidth={3} />
-          </div>
-          <div>
-            <h1 className="text-xl font-serif font-bold tracking-tight">Explore</h1>
-            <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest leading-none">Global Discovery Feed</p>
-          </div>
-        </div>
+    <div className="min-h-screen bg-black text-white font-sans">
+      <Navbar 
+        user={user} 
+        profile={profile} 
+        loading={loading}
+        handleLogout={logout} 
+        handleLogin={login}
+        onUpdateProfile={handleUpdateProfile}
+      />
+      <div className="h-32 w-full" />
 
-        <div className="flex items-center gap-8">
-          <a href="/" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-white transition-all">Home</a>
-          <a href="/explore" className="text-[10px] font-bold text-white uppercase tracking-widest border-b-2 border-emerald-500 pb-1">Explore</a>
-          <a href="/discover" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-white transition-all">Alerts</a>
-          <button 
-            onClick={() => setShowPostModal(true)}
-            className="flex items-center gap-3 bg-white text-black px-6 py-2.5 rounded-full text-xs font-black uppercase hover:bg-emerald-400 transition-all shadow-[0_10px_30px_rgba(255,255,255,0.1)] hover:scale-105 active:scale-95"
-          >
-            <Plus size={14} strokeWidth={4} /> Post Property
-          </button>
-        </div>
-      </nav>
+      <main className="max-w-[1600px] mx-auto p-6 md:p-12 space-y-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+          {/* Advanced Filters Sidebar */}
+          <aside className="lg:col-span-3 space-y-12">
+            <div className="bg-white/3 border border-white/10 rounded-[2.5rem] p-10 space-y-10">
+              <div>
+                <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Feed Intelligence</h2>
+                <div className="grid grid-cols-2 bg-white/5 p-1 rounded-2xl border border-white/5">
+                  {[
+                    { id: 'listings', label: 'Listings', icon: House },
+                    { id: 'seekers', label: 'Seekers', icon: User }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setFilters({ ...filters, intent: tab.id, page: 1 })}
+                      suppressHydrationWarning
+                      className={`flex items-center justify-center gap-3 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                        filters.intent === tab.id 
+                          ? 'bg-emerald-500 text-black shadow-[0_0_20px_rgba(16,185,129,0.3)]' 
+                          : 'text-white/40 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <tab.icon size={14} weight={filters.intent === tab.id ? 'fill' : 'regular'} />
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-      <main className="pt-32 pb-24 px-12 max-w-[1600px] mx-auto">
-        {!user ? (
-          <div className="py-32 flex flex-col items-center justify-center text-center animate-in fade-in slide-in-from-bottom-4 duration-1000">
-            <div className="w-24 h-24 bg-emerald-500/10 rounded-[2.5rem] flex items-center justify-center mb-10 shadow-[0_0_50px_rgba(16,185,129,0.1)] border border-emerald-500/20">
-               <Globe size={48} className="text-emerald-500" weight="duotone" />
-            </div>
-            <h2 className="text-5xl font-serif font-medium mb-6 tracking-tight">Market Intel Restricted</h2>
-            <p className="text-white/30 max-w-xl mx-auto mb-12 text-lg leading-relaxed font-medium">
-               A verified session is required to access the Cape Town collective feed and shared residential intelligence.
-            </p>
-            <div className="flex flex-col items-center gap-6">
-              <button 
-                onClick={() => window.location.href = '/discover'}
-                className="bg-white text-black px-16 py-6 rounded-3xl font-black uppercase text-sm tracking-[0.3em] shadow-[0_30px_60px_rgba(255,255,255,0.1)] hover:bg-emerald-500 transition-all hover:scale-105 active:scale-95"
-              >
-                Go to Terminal
-              </button>
-              <p className="text-[10px] text-white/10 uppercase tracking-[0.4em] font-black">Authorized Personnel Only</p>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-12 gap-12">
-            {/* Advanced Filters Sidebar */}
-        <aside className="col-span-3 space-y-12">
-          <div className="bg-white/3 border border-white/10 rounded-[2.5rem] p-10 space-y-10">
-            <div>
-              <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Feed Intelligence</h2>
-              <div className="grid grid-cols-2 bg-white/5 p-1 rounded-2xl border border-white/5">
-                {[
-                  { id: 'listings', label: 'Listings', icon: House },
-                  { id: 'seekers', label: 'Seekers', icon: User }
-                ].map((tab) => (
+              <div>
+                <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Precision Filters</h2>
+                <div className="space-y-4">
                   <button
-                    key={tab.id}
-                    onClick={() => setFilters({ ...filters, intent: tab.id, page: 1 })}
-                    className={`flex items-center justify-center gap-3 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                      filters.intent === tab.id 
-                        ? 'bg-emerald-500 text-black shadow-[0_0_20px_rgba(16,185,129,0.3)]' 
-                        : 'text-white/40 hover:text-white hover:bg-white/5'
+                    onClick={() => setFilters({ ...filters, pets: !filters.pets, page: 1 })}
+                    suppressHydrationWarning
+                    className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                      filters.pets 
+                        ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 
+                        : 'bg-white/5 border-white/5 text-white/40 hover:border-white/10'
                     }`}
                   >
-                    <tab.icon size={14} weight={filters.intent === tab.id ? 'fill' : 'regular'} />
-                    {tab.label}
+                    <div className="flex items-center gap-3">
+                      <PawPrint size={18} weight={filters.pets ? "fill" : "bold"} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Pet Friendly Only</span>
+                    </div>
+                    <div className={`w-8 h-4 rounded-full relative transition-all ${filters.pets ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                      <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${filters.pets ? 'left-4.5' : 'left-0.5'}`} />
+                    </div>
                   </button>
-                ))}
-              </div>
-            </div>
 
-            <div>
-              <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Rental Horizon</h2>
-              <div className="grid grid-cols-3 bg-white/5 p-1 rounded-2xl border border-white/5">
-                {[
-                  { id: 'long-term', label: 'Annual', icon: House },
-                  { id: 'short-term', label: 'Short', icon: SunHorizon },
-                  { id: 'pet-sitting', label: 'Pet-Sit', icon: Dog }
-                ].map((tab) => (
                   <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex flex-col items-center gap-1.5 py-3 rounded-xl text-[9px] font-black uppercase transition-all ${activeTab === tab.id ? 'bg-white text-black shadow-2xl' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+                    onClick={() => setShowAdvancedModal(true)}
+                    suppressHydrationWarning
+                    className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl bg-white/5 border border-white/5 text-white/60 hover:text-white hover:border-white/10 transition-all group"
                   >
-                    <tab.icon size={16} weight={activeTab === tab.id ? "fill" : "bold"} />
-                    {tab.label}
+                    <Filter size={18} className="group-hover:rotate-180 transition-transform duration-500" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Advanced Filters</span>
                   </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Layout Vision (NEW) */}
-            <div>
-              <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Layout Vision</h2>
-              <div className="bg-black/40 p-1.5 rounded-2xl flex gap-1 border border-white/5">
-                {[
-                  { id: '', label: 'All', icon: Layout },
-                  { id: 'Whole', label: 'Whole', icon: Stack },
-                  { id: 'Shared', label: 'Shared', icon: UsersThree }
-                ].map((v) => (
-                  <button 
-                    key={v.id}
-                    onClick={() => setFilters({...filters, layout: v.id})}
-                    className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-2 ${filters.layout === v.id ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.1)]' : 'text-white/40 hover:text-white'}`}
-                  >
-                    <v.icon size={14} weight={filters.layout === v.id ? "fill" : "bold"} />
-                    {v.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Vista Mode (v54.0) */}
-            <div>
-              <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Vista Mode</h2>
-              <div className="bg-black/40 p-1.5 rounded-2xl flex gap-1 border border-white/5">
-                {[
-                  { id: '', label: 'All', icon: Globe },
-                  { id: 'seaview', label: 'Sea', icon: Waves },
-                  { id: 'mountain', label: 'Mountain', icon: Mountains }
-                ].map((v) => (
-                  <button 
-                    key={v.id}
-                    onClick={() => setFilters({...filters, view: v.id})}
-                    className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-2 ${filters.view === v.id ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.1)]' : 'text-white/40 hover:text-white'}`}
-                  >
-                    <v.icon size={14} weight={filters.view === v.id ? "fill" : "bold"} />
-                    {v.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Pet Friendly Toggle (v56.0) */}
-            <div className="pt-2">
-               <button 
-                 onClick={() => setFilters({...filters, pets: !filters.pets})}
-                 className={`w-full flex items-center justify-between p-5 rounded-2xl border transition-all ${filters.pets ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-white/5 border-white/5 text-white/40 hover:border-white/20 hover:text-white'}`}
-               >
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${filters.pets ? 'bg-emerald-500 text-black' : 'bg-white/5 text-white/20'}`}>
-                      <Plus size={12} strokeWidth={4} />
-                    </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest">Pet Friendly Only</span>
-                  </div>
-                  <div className={`w-3 h-3 rounded-full border-2 transition-all ${filters.pets ? 'bg-emerald-500 border-emerald-400 scale-125' : 'border-white/10'}`}></div>
-               </button>
-            </div>
-
-            <div>
-              <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Neighborhood Spotlight</h2>
-              
-              {/* Predictive Search Input (v52.1) */}
-              <div className="relative mb-6">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20">
-                  <Search size={14} />
                 </div>
-                <input 
-                  type="text"
-                  placeholder={filters.area || "Find area..."}
-                  value={searchTerm}
-                  onFocus={() => setIsSearchFocused(true)}
-                  onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className={`w-full bg-white/5 border rounded-xl pl-10 pr-10 py-3 text-[10px] font-bold focus:outline-none transition-all ${filters.area ? 'border-emerald-500/50 text-emerald-400' : 'border-white/10'}`}
-                />
-                
-                {(searchTerm || filters.area) && (
-                  <button 
-                    onClick={() => {
-                      setFilters({...filters, area: ''});
-                      setSearchTerm('');
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/5 flex items-center justify-center text-white/20 hover:text-white hover:bg-white/10 transition-all"
-                  >
-                    <X size={10} />
-                  </button>
-                )}
-                
-                {/* Suggestions Dropdown (v52.2: Proactive Focus) */}
-                {(searchTerm || isSearchFocused) && (
-                  <div className="absolute left-0 right-0 top-full mt-2 bg-[#0A0A0B] border border-white/10 rounded-2xl shadow-2xl z-50 max-h-64 overflow-y-auto no-scrollbar animate-in fade-in zoom-in-95 duration-200">
-                    <div className="p-2 border-b border-white/[0.02]">
-                       <p className="px-3 py-1 text-[8px] font-black text-white/20 uppercase tracking-[0.2em]">Elite Suburbs</p>
-                    </div>
-                    {eliteSuburbs
-                      .filter(s => s.toLowerCase().includes(searchTerm.toLowerCase()))
-                      .slice(0, 15) // Limit for performance/UI
-                      .map(suburb => (
+              </div>
+
+              <div>
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Discovery Channels</h2>
+                  <div className="flex flex-wrap gap-2 mb-12">
+                    {INTELLIGENCE_SOURCES.filter(s => !s.id.includes('Pet Friendly')).map((source) => {
+                      const isActive = filters.platform === source.id;
+                      return (
+                        <button
+                          key={source.id}
+                          onClick={() => setFilters({ ...filters, platform: source.id, page: 1 })}
+                          className={`px-3 py-1.5 rounded-lg border transition-all text-[9px] font-black uppercase flex items-center gap-1.5 ${
+                            isActive 
+                              ? `bg-${source.color}-500/20 text-${source.color}-400 border-${source.color}-500/40 shadow-[0_0_10px_rgba(16,185,129,0.1)]` 
+                              : 'bg-white/5 text-white/20 border-white/5 opacity-50 grayscale hover:grayscale-0 hover:opacity-100'
+                          }`}
+                        >
+                          <div className={`w-1 h-1 rounded-full ${isActive ? 'bg-current animate-pulse' : 'bg-white/20'}`} />
+                          {source.label}
+                        </button>
+                      );
+                    })}
+                    <button
+                        onClick={() => setFilters({ ...filters, platform: 'any', page: 1 })}
+                        className={`px-3 py-1.5 rounded-lg border transition-all text-[9px] font-black uppercase flex items-center gap-1.5 ${
+                          filters.platform === 'any' 
+                            ? 'bg-white/20 text-white border-white/40' 
+                            : 'bg-white/5 text-white/20 border-white/5 opacity-50 hover:opacity-100'
+                        }`}
+                      >
+                         All Channels
+                      </button>
+                  </div>
+
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Rental Horizon</h2>
+                <div className="grid grid-cols-3 bg-white/5 p-1 rounded-2xl border border-white/5">
+                  {[
+                    { id: 'long-term', label: 'Annual', icon: House },
+                    { id: 'short-term', label: 'Short', icon: SunHorizon },
+                    { id: 'pet-sitting', label: 'Pet-Sit', icon: Dog }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      suppressHydrationWarning
+                      className={`flex flex-col items-center gap-1.5 py-3 rounded-xl text-[9px] font-black uppercase transition-all ${activeTab === tab.id ? 'bg-white text-black shadow-2xl' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+                    >
+                      <tab.icon size={16} weight={activeTab === tab.id ? "fill" : "bold"} />
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-6 text-center">Neighborhood Spotlight</h2>
+                <div className="relative mb-6">
+                  <input 
+                    type="text"
+                    placeholder={filters.area || "Find area..."}
+                    value={searchTerm}
+                    onFocus={() => setIsSearchFocused(true)}
+                    onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    suppressHydrationWarning
+                    className={`w-full bg-white/5 border rounded-xl pl-4 pr-10 py-3 text-[10px] font-bold focus:outline-none transition-all ${filters.area ? 'border-emerald-500/50 text-emerald-400' : 'border-white/10'}`}
+                  />
+                  {isSearchFocused && (
+                    <div className="absolute left-0 right-0 top-full mt-2 bg-[#0A0A0B] border border-white/10 rounded-2xl shadow-2xl z-50 max-h-64 overflow-y-auto no-scrollbar">
+                      {eliteSuburbs.filter(s => s.toLowerCase().includes(searchTerm.toLowerCase())).map(suburb => (
                         <button
                           key={suburb}
-                          onClick={() => {
-                            setFilters({...filters, area: suburb});
-                            setSearchTerm('');
-                            setIsSearchFocused(false);
-                          }}
-                          className={`w-full text-left px-5 py-3 text-[10px] font-bold transition-all flex items-center justify-between border-b border-white/[0.02] last:border-0 hover:bg-emerald-500/10 ${filters.area === suburb ? 'text-emerald-400 bg-emerald-500/5' : 'text-white/60 hover:text-white'}`}
+                          onClick={() => { setFilters({...filters, area: suburb}); setSearchTerm(''); }}
+                          className="w-full text-left px-5 py-3 text-[10px] font-bold text-white/60 hover:text-white hover:bg-white/5"
                         >
-                          <div className="flex items-center gap-3">
-                            <MapPin size={10} className={filters.area === suburb ? 'text-emerald-400' : 'text-white/20'} />
-                            <div className="flex flex-col">
-                               <span>{suburb}</span>
-                               {activeSniperCounts[suburb] && (
-                                 <span className="text-[7px] font-black text-red-500/60 uppercase tracking-tighter">
-                                   🎯 {activeSniperCounts[suburb]} Active Snipers
-                                 </span>
-                               )}
-                            </div>
-                          </div>
-                          {filters.area === suburb && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]" />}
+                          {suburb}
                         </button>
                       ))}
-                    {eliteSuburbs.filter(s => s.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
-                       <div className="px-5 py-4 text-[9px] font-bold text-white/20 uppercase tracking-widest text-center">No neighborhood matches</div>
-                    )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          {/* Community Grid */}
+          <div className="lg:col-span-9 space-y-8">
+            <header className="flex justify-between items-end">
+                <div>
+                  <h2 className="text-[36px] leading-[40px] font-bold text-[#FAFAFA] tracking-normal font-sans mb-2 flex items-center gap-4">
+                    Global Discovery Feed
+                    {!isLoading && <span className="text-xs font-sans font-bold bg-white/10 px-4 py-1.5 rounded-full text-white/40 uppercase tracking-widest">{listings.length} Results</span>}
+                  </h2>
+                  <p className="text-white/40 text-sm font-medium italic">Cape Town's shared intelligence feed. Anonymized & Verified.</p>
+                </div>
+                <button 
+                  onClick={() => user ? setShowPostModal(true) : alert("Login to post")}
+                  suppressHydrationWarning
+                  className="bg-white text-black px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all"
+                >
+                  + Post Property
+                </button>
+            </header>
+
+            {/* Active Filter Tags */}
+            <div className="flex flex-wrap gap-2 mb-6 min-h-[36px]">
+              {filters.pets && (
+                <FilterBadge 
+                  label="Pet Friendly" 
+                  icon={PawPrint} 
+                  active 
+                  onRemove={() => setFilters({ ...filters, pets: false, page: 1 })} 
+                />
+              )}
+              {(filters.minPrice || filters.maxPrice) && (
+                <FilterBadge 
+                  label={`R${filters.minPrice || '0'} - R${filters.maxPrice || '∞'}`} 
+                  onRemove={() => setFilters({ ...filters, minPrice: '', maxPrice: '', page: 1 })} 
+                />
+              )}
+              {filters.bedrooms !== 'any' && (
+                <FilterBadge 
+                  label={`${filters.bedrooms} BR`} 
+                  onRemove={() => setFilters({ ...filters, bedrooms: 'any', page: 1 })} 
+                />
+              )}
+              {filters.bathrooms !== 'any' && (
+                <FilterBadge 
+                  label={`${filters.bathrooms} Bath`} 
+                  onRemove={() => setFilters({ ...filters, bathrooms: 'any', page: 1 })} 
+                />
+              )}
+              {filters.horizon !== 'any' && (
+                <FilterBadge 
+                  label={filters.horizon} 
+                  onRemove={() => setFilters({ ...filters, horizon: 'any', page: 1 })} 
+                />
+              )}
+              {filters.layout !== 'any' && (
+                <FilterBadge 
+                  label={filters.layout} 
+                  onRemove={() => setFilters({ ...filters, layout: 'any', page: 1 })} 
+                />
+              )}
+              {filters.view !== 'any' && (
+                <FilterBadge 
+                  label={`${filters.view} View`} 
+                  onRemove={() => setFilters({ ...filters, view: 'any', page: 1 })} 
+                />
+              )}
+              {filters.furnished !== 'any' && (
+                <FilterBadge 
+                  label={filters.furnished} 
+                  onRemove={() => setFilters({ ...filters, furnished: 'any', page: 1 })} 
+                />
+              )}
+              {filters.area !== 'any' && (
+                <FilterBadge 
+                  label={filters.area} 
+                  onRemove={() => setFilters({ ...filters, area: 'any', page: 1 })} 
+                />
+              )}
+            </div>
+
+            {isLoading && listings.length === 0 ? (
+              <RadarLoader />
+            ) : (
+              <div className="space-y-12">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {listings.map((l: any, idx: number) => (
+                    <motion.div 
+                      key={idx}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="group bg-[#070707] border border-white/5 rounded-[2rem] p-6 hover:bg-white/[0.03] transition-all cursor-pointer relative overflow-hidden"
+                      onClick={() => window.open(l.source_url, '_blank')}
+                    >
+                      {/* Source Badge */}
+                      <div className="absolute top-4 right-4 z-10">
+                        <span className="bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full text-[8px] font-black text-emerald-400 uppercase tracking-widest backdrop-blur-md">
+                          {l.source_name || l.platform || 'INTEL'}
+                        </span>
+                      </div>
+
+                      <div className="h-48 bg-white/[0.02] rounded-xl mb-4 flex items-center justify-center opacity-20 group-hover:opacity-40 transition-all overflow-hidden relative">
+                         {l.image_url ? (
+                            <img src={l.image_url} className="w-full h-full object-cover" alt="" />
+                         ) : (
+                            <Home size={48} />
+                         )}
+                         <div className="absolute inset-0 bg-gradient-to-t from-[#070707] to-transparent opacity-60" />
+                      </div>
+                      
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="text-sm font-bold tracking-tight line-clamp-1 flex-1">{l.title}</h3>
+                      </div>
+                      
+                      <p className="text-2xl font-black text-emerald-500">{formatCurrency(l.price)}</p>
+                      
+                      <div className="flex items-center gap-2 mt-4">
+                        <MapPin size={12} className="text-white/20" />
+                        <span className="text-[11px] font-medium text-white/40 tracking-tight">{l.address}</span>
+                      </div>
+
+                      <div className="flex items-center gap-4 mt-6 pt-6 border-t border-white/5">
+                        <div className="flex items-center gap-1.5">
+                          <Layout size={14} className="text-white/20" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-white/40">{l.bedrooms || '0'} BR</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Tag size={14} className="text-white/20" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-white/40">{l.property_type || 'APT'}</span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                {/* Pagination / Load More */}
+                {listings.length >= 20 && (
+                  <div className="flex justify-center pt-12">
+                    <button 
+                      onClick={() => setFilters({ ...filters, page: filters.page + 1 })}
+                      disabled={isLoading}
+                      className="bg-white/5 border border-white/10 px-12 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] text-white/40 hover:bg-emerald-500 hover:text-black hover:border-emerald-500 transition-all disabled:opacity-50"
+                    >
+                      {isLoading ? 'Scanning Next Sector...' : 'Initialize Next Page Protocol'}
+                    </button>
                   </div>
                 )}
               </div>
+            )}
 
-              <div className="flex flex-wrap gap-2 justify-center">
-                {[
-                  'Sea Point', 'Green Point', 'Camps Bay', 'Bantry Bay', 
-                  'Gardens', 'Oranjezicht', 'Higgovale', 
-                  'Constantia', 'Newlands', 'Meadowridge',
-                  'Muizenberg', 'Kalk Bay'
-                ].map(area => (
-                  <button
-                    key={area}
-                    onClick={() => {
-                      const newArea = filters.area === area ? '' : area;
-                      setFilters({...filters, area: newArea});
-                    }}
-                    className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all border ${
-                      filters.area === area 
-                        ? 'bg-white text-black border-white shadow-[0_0_15px_rgba(255,255,255,0.2)]' 
-                        : 'bg-white/5 text-white/40 border-white/5 hover:border-white/20 hover:text-white'
-                    }`}
-                  >
-                    {area}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em]">Price Range (ZAR)</h2>
-              <div className="grid grid-cols-2 gap-4">
-                 <input 
-                   type="number"
-                   placeholder="Min"
-                   value={filters.minPrice}
-                   onChange={(e) => setFilters({...filters, minPrice: e.target.value})}
-                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-[10px] font-bold focus:outline-none focus:border-emerald-500/50"
-                 />
-                 <input 
-                   type="number"
-                   placeholder="Max"
-                   value={filters.maxPrice}
-                   onChange={(e) => setFilters({...filters, maxPrice: e.target.value})}
-                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-[10px] font-bold focus:outline-none focus:border-emerald-500/50"
-                 />
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em]">Discovery Source</h2>
-              <div className="space-y-2">
-                 {['', 'Facebook', 'Property24', 'RentUncle'].map((src) => (
-                   <button 
-                     key={src}
-                     onClick={() => setFilters({...filters, platform: src})}
-                     className={`w-full text-left px-5 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${filters.platform === src ? 'bg-white/10 text-emerald-400 border border-emerald-500/20' : 'text-white/30 hover:text-white hover:bg-white/5'}`}
-                   >
-                     {src || 'All Platforms'}
-                   </button>
-                 ))}
-              </div>
-            </div>
-
-            <div className="pt-6 border-t border-white/5 space-y-4">
-               <div className="flex justify-between items-center bg-white/5 p-5 rounded-2xl group cursor-pointer hover:bg-white/10 transition-all">
-                  <div className="flex items-center gap-4">
-                    <Filter size={14} className="text-white/20" />
-                    <span className="text-xs font-bold text-white/60">Advanced Search</span>
-                  </div>
-                  <Plus size={12} className="text-white/20 group-hover:text-white" />
-               </div>
-            </div>
-          </div>
-        </aside>
-
-        {/* Community Grid */}
-        <div className="col-span-9 space-y-8">
-          <header className="flex justify-between items-end">
-              <div>
-                <h2 className="text-4xl font-serif font-medium mb-2 flex items-center gap-4">
-                  {activeTab === 'long-term' && 'Annual Residential Feed'}
-                  {activeTab === 'short-term' && 'Flexible Mid-Term Stays'}
-                  {activeTab === 'pet-sitting' && 'Elite Pet-Sitting Missions'}
-                  <span className="text-xs font-sans font-bold bg-white/10 px-4 py-1.5 rounded-full text-white/40 uppercase tracking-widest">{listings.length} Results</span>
-                </h2>
-                <p className="text-white/40 text-sm font-medium italic">
-                  {activeTab === 'pet-sitting' ? 'Discounted high-trust opportunities for animal lovers.' : "Cape Town's shared intelligence feed. Anonymized & Verified."}
-                </p>
-              </div>
-          </header>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {isLoading ? (
-              [1, 2, 3, 4, 5, 6].map(i => (
-                <div key={i} className="h-80 rounded-[2rem] bg-white/[0.02] border border-white/5 animate-pulse" />
-              ))
-            ) : listings.map((l: any, idx: number) => (
-              <motion.div 
-                key={idx}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03 }}
-                onClick={() => window.open(l.source_url, '_blank')}
-                className="group relative bg-[#070707] border border-white/5 rounded-[2rem] overflow-hidden hover:bg-white/[0.03] transition-all cursor-pointer"
-              >
-                <div className="h-48 bg-white/[0.02] relative overflow-hidden">
-                   {/* Placeholder Image Effect */}
-                   <div className="absolute inset-0 bg-gradient-to-t from-[#070707] to-transparent z-10" />
-                   <div className="absolute inset-0 flex items-center justify-center opacity-5 transition-transform duration-700">
-                      <Home size={80} />
-                   </div>
-                   
-                   <div className="absolute top-4 left-4 z-20 flex flex-wrap gap-2">
-                     {l.rental_type === 'pet-sitting' ? (
-                        <span className="bg-amber-500/20 backdrop-blur-xl border border-amber-500/40 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest text-amber-400">
-                           🐾 PET SITTING (1m+)
-                        </span>
-                     ) : (
-                        <span className="bg-black/60 backdrop-blur-xl border border-white/10 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest text-emerald-400">
-                           {l.rental_type === 'short-term' ? '⏳ FLEX' : '🏗️ ANNUAL'}
-                        </span>
-                     )}
-                     {l.property_type && (
-                        <span className="bg-black/60 backdrop-blur-xl border border-white/10 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest text-blue-400">
-                           {l.property_type}
-                        </span>
-                     )}
-                     {l.is_pet_friendly && (
-                        <span className="bg-black/60 backdrop-blur-xl border border-white/10 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest text-emerald-400">
-                           🐕 PETS OK
-                        </span>
-                     )}
-                   </div>
-
-                   {/* 🕒 TEMPORAL WATERMARK (v62.0) */}
-                   <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-2">
-                     {l.published_at && (
-                       <span 
-                         title="Market Freshness: Time since original listing publication."
-                         className="text-[8px] font-bold text-white/30 uppercase tracking-[0.2em] bg-black/40 px-3 py-1 rounded-full border border-white/5 cursor-help"
-                       >
-                          {l.published_at}
-                       </span>
-                     )}
-                     {l.is_pet_friendly && (
-                       <div 
-                         title="Pet Verified: This property explicitly welcomes feline or canine companions."
-                         className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-sm shadow-[0_0_20px_rgba(16,185,129,0.5)] border border-emerald-400/50 scale-90 cursor-help"
-                       >
-                         🐈
-                       </div>
-                     )}
-                     {l.view_category === 'Sea' && (
-                       <div 
-                         title="Atlantic Vision: High-confidence seaview or coastal proximity detected."
-                         className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-sm shadow-[0_0_20_rgba(59,130,246,0.5)] border border-blue-400/50 scale-90 cursor-help"
-                       >
-                         🌊
-                       </div>
-                     )}
-                   </div>
-
-                   <div className="absolute bottom-4 left-4 right-4 z-20 flex justify-between items-end text-white">
-                      <div className="flex flex-col">
-                         {l.available_date && (
-                            <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-1 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-md w-fit border border-emerald-500/20">
-                               {l.available_date}
-                            </span>
-                         )}
-                         <p className="text-2xl font-black tracking-tighter drop-shadow-2xl">{formatCurrency(l.price)}<span className="text-[10px] text-white/40 font-bold tracking-normal ml-1">{l.rental_type === 'short-term' ? '/night' : '/mo'}</span></p>
-                      </div>
-                      <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center backdrop-blur-xl bg-white/5 hover:bg-emerald-500 hover:text-black transition-all">
-                         <Send size={14} />
-                      </div>
-                   </div>
+            {!isLoading && listings.length === 0 && (
+                <div className="bg-white/[0.02] border border-white/5 border-dashed rounded-[3rem] p-48 text-center w-full">
+                    <p className="text-white/20 text-xs font-bold uppercase tracking-[0.5em]">No active listings found</p>
                 </div>
-
-                <div className="p-6 space-y-4">
-                   <div>
-                      <h3 className="text-sm font-bold mb-1 group-hover:text-emerald-400 transition-colors uppercase tracking-tight line-clamp-1">{l.title}</h3>
-                      <div className="flex items-center gap-2 text-white/30 text-[9px] font-bold uppercase tracking-widest leading-none">
-                         <MapPin size={10} className="text-emerald-500" /> {l.address || "Cape Town"}
-                      </div>
-                   </div>
-
-                   <div className="flex flex-wrap gap-4 text-[9px] font-black uppercase tracking-widest text-white/40">
-                      <div className="flex items-center gap-2">
-                         <div className="w-1 h-1 rounded-full bg-emerald-500" />
-                         {l.bedrooms && l.bedrooms > 0 ? `${l.bedrooms} Bed` : 'Any Beds'}
-                      </div>
-                      <div className="flex items-center gap-2">
-                         <div className="w-1 h-1 rounded-full bg-blue-500" />
-                         {l.bathrooms || 1} Bath
-                      </div>
-                      {l.is_furnished && (
-                         <div className="flex items-center gap-2">
-                            <div className="w-1 h-1 rounded-full bg-orange-400" />
-                            Furnished
-                         </div>
-                      )}
-                      {l.property_sub_type === 'Shared' && (
-                         <div className="flex items-center gap-2 text-orange-400">
-                            <div className="w-1 h-1 rounded-full bg-orange-500" />
-                            Shared Room
-                         </div>
-                      )}
-                   </div>
-
-                   <div className="pt-4 border-t border-white/5 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                         <div className="w-5 h-5 rounded bg-emerald-500/10 flex items-center justify-center text-emerald-500 text-[7px] font-black">ST</div>
-                         <span className="text-[9px] font-bold text-white/10 uppercase tracking-widest leading-none line-clamp-1">via {l.platform || 'Home-Seek'}</span>
-                      </div>
-                      <a href={l.source_url} target="_blank" onClick={(e) => e.stopPropagation()} className="text-[9px] font-black uppercase text-white/20 hover:text-emerald-500 transition-all tracking-[0.2em]">Source</a>
-                   </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-
-          {!isLoading && listings.length >= 100 && (
-             <div className="pt-12 flex justify-center">
-                <button 
-                  onClick={() => setFilters({ ...filters, page: (filters.page || 1) + 1 })}
-                  className="bg-white/5 border border-white/10 px-12 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-white/40 hover:text-white hover:bg-white/10 transition-all"
-                >
-                  Load More Intelligence
-                </button>
-             </div>
-          )}
-
-          {!isLoading && listings.length === 0 && (
-             <div className="bg-white/[0.02] border border-white/5 border-dashed rounded-[3rem] p-48 text-center">
-                <p className="text-white/20 text-xs font-bold uppercase tracking-[0.5em]">No active listings found in this category</p>
-             </div>
-          )}
+            )}
           </div>
         </div>
-      )}
-    </main>
+      </main>
 
-      {/* Post Mission Modal */}
+      {/* Post Modal */}
       <AnimatePresence>
         {showPostModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-12">
+            <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setShowPostModal(false)} />
             <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }}
-              onClick={() => setShowPostModal(false)}
-              className="absolute inset-0 bg-black/90 backdrop-blur-3xl"
-            />
-            
-            <motion.div 
-              initial={{ scale: 0.9, y: 20, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.9, y: 20, opacity: 0 }}
-              className="relative w-full max-w-2xl bg-[#0f0f0f] border border-white/10 rounded-[3rem] overflow-y-auto max-h-[90vh] shadow-[0_50px_100px_rgba(0,0,0,0.8)] custom-scrollbar"
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="relative w-full max-w-lg bg-[#0f0f0f] border border-white/10 rounded-[3rem] p-12"
             >
-              <div className="p-12 space-y-10">
-                <div className="flex justify-between items-start text-white">
-                  <div>
-                    <h2 className="text-3xl font-black mb-2 tracking-tighter">Publish Intel</h2>
-                    <p className="text-white/40 text-sm font-medium">Contribute to the global Cape Town collective.</p>
+               <h2 className="text-2xl font-black mb-8 uppercase tracking-tighter">Publish Property</h2>
+               <form onSubmit={handleManualPost} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Title</label>
+                    <input value={postForm.title} onChange={e => setPostForm({...postForm, title: e.target.value})} className="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-sm focus:outline-none focus:border-emerald-500" />
                   </div>
-                  <button onClick={() => setShowPostModal(false)} className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all">
-                    <X size={20} />
-                  </button>
-                </div>
-
-                <form onSubmit={handleManualPost} className="grid grid-cols-2 gap-6">
-                   <div className="col-span-2 space-y-4">
-                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Property Title</label>
-                      <input 
-                        required
-                        value={postForm.title}
-                        onChange={(e) => setPostForm({ ...postForm, title: e.target.value })}
-                        placeholder="e.g. Modern Studio with Ocean Views"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition-all text-white"
-                      />
-                   </div>
-
-                   <div className="space-y-4">
-                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Price (ZAR)</label>
-                      <input 
-                        required
-                        type="number"
-                        value={postForm.price}
-                        onChange={(e) => setPostForm({ ...postForm, price: e.target.value })}
-                        placeholder="e.g. 15000"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition-all text-white"
-                      />
-                   </div>
-
-                   <div className="space-y-4">
-                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Bedrooms</label>
-                      <input 
-                        required
-                        type="number"
-                        value={postForm.bedrooms}
-                        onChange={(e) => setPostForm({ ...postForm, bedrooms: e.target.value })}
-                        placeholder="e.g. 1"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition-all text-white"
-                      />
-                   </div>
-
-                   <div className="col-span-2 space-y-4">
-                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Area / Suburb</label>
-                      <input 
-                        required
-                        value={postForm.address}
-                        onChange={(e) => setPostForm({ ...postForm, address: e.target.value })}
-                        placeholder="e.g. Sea Point"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition-all text-white"
-                      />
-                   </div>
-
-                   <div className="space-y-4">
-                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Asset Class</label>
-                      <select 
-                        value={postForm.property_type}
-                        onChange={(e) => setPostForm({ ...postForm, property_type: e.target.value })}
-                        className="w-full bg-[#151515] border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 transition-all text-white appearance-none"
-                      >
-                         <option value="Apartment">Apartment</option>
-                         <option value="House">House</option>
-                         <option value="Studio">Studio</option>
-                         <option value="Cottage">Cottage</option>
-                         <option value="Townhouse">Townhouse</option>
-                      </select>
-                   </div>
-
-                   <div className="space-y-4">
-                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Vista</label>
-                      <select 
-                        value={postForm.view_category}
-                        onChange={(e) => setPostForm({ ...postForm, view_category: e.target.value })}
-                        className="w-full bg-[#151515] border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 transition-all text-white appearance-none"
-                      >
-                         <option value="Other">Standard / Other</option>
-                         <option value="Sea">Atlantic / Sea View</option>
-                         <option value="Mountain">Mountain View</option>
-                      </select>
-                   </div>
-
-                   <div className="space-y-4">
-                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Occupancy</label>
-                      <select 
-                        value={postForm.property_sub_type}
-                        onChange={(e) => setPostForm({ ...postForm, property_sub_type: e.target.value })}
-                        className="w-full bg-[#151515] border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 transition-all text-white appearance-none"
-                      >
-                         <option value="Whole">Whole Unit</option>
-                         <option value="Shared">Shared Room</option>
-                      </select>
-                   </div>
-
-                   <div className="space-y-4">
-                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Availability</label>
-                      <input 
-                        value={postForm.available_date}
-                        onChange={(e) => setPostForm({ ...postForm, available_date: e.target.value })}
-                        placeholder="e.g. 1st June"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition-all text-white"
-                      />
-                   </div>
-
-                   <div className="flex items-center space-x-8 pt-6">
-                      <label className="flex items-center gap-3 cursor-pointer group">
-                        <div 
-                          onClick={() => setPostForm({...postForm, is_furnished: !postForm.is_furnished})}
-                          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${postForm.is_furnished ? 'bg-emerald-500 border-emerald-500' : 'border-white/10'}`}
-                        >
-                           {postForm.is_furnished && <Plus size={14} className="text-black" strokeWidth={4} />}
-                        </div>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 group-hover:text-white transition-all">Furnished</span>
-                      </label>
-
-                      <label className="flex items-center gap-3 cursor-pointer group">
-                        <div 
-                          onClick={() => setPostForm({...postForm, is_pet_friendly: !postForm.is_pet_friendly})}
-                          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${postForm.is_pet_friendly ? 'bg-blue-500 border-blue-500' : 'border-white/10'}`}
-                        >
-                           {postForm.is_pet_friendly && <Plus size={14} className="text-black" strokeWidth={4} />}
-                        </div>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 group-hover:text-white transition-all">Pet Friendly</span>
-                      </label>
-                   </div>
-
-                   <div className="col-span-2 space-y-4">
-                      <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-1">Description</label>
-                      <textarea 
-                        required
-                        rows={3}
-                        value={postForm.description}
-                        onChange={(e) => setPostForm({ ...postForm, description: e.target.value })}
-                        placeholder="Tell the community about the space..."
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-6 text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition-all resize-none text-white"
-                      />
-                   </div>
-
-                   <div className="col-span-2 pt-6">
-                      <button type="submit" className="w-full bg-emerald-500 text-black py-5 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-[0_20px_50px_rgba(16,185,129,0.3)] hover:scale-[1.02] active:scale-95 transition-all">
-                        Inject Listing into Hive
-                      </button>
-                   </div>
-                </form>
-              </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Price</label>
+                        <input type="number" value={postForm.price} onChange={e => setPostForm({...postForm, price: e.target.value})} className="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-sm focus:outline-none focus:border-emerald-500" />
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Bedrooms</label>
+                        <input type="number" value={postForm.bedrooms} onChange={e => setPostForm({...postForm, bedrooms: e.target.value})} className="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-sm focus:outline-none focus:border-emerald-500" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Address</label>
+                    <input value={postForm.address} onChange={e => setPostForm({...postForm, address: e.target.value})} className="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-sm focus:outline-none focus:border-emerald-500" />
+                  </div>
+                  <button className="w-full bg-emerald-500 text-black font-black py-5 rounded-2xl uppercase text-[10px] tracking-widest mt-6 shadow-[0_0_30px_rgba(16,185,129,0.2)] hover:scale-105 transition-all">Post to Feed</button>
+               </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
+      {/* Advanced Filters Modal */}
+      <AnimatePresence>
+        {showAdvancedModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-12">
+            <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setShowAdvancedModal(false)} />
+            <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="relative w-full max-w-4xl bg-[#0f0f0f] border border-white/10 rounded-[3rem] p-12 overflow-hidden"
+            >
+               <div className="absolute top-0 right-0 p-8">
+                  <button onClick={() => setShowAdvancedModal(false)} className="p-2 hover:bg-white/5 rounded-full transition-all">
+                    <X size={24} className="text-white/20" />
+                  </button>
+               </div>
+               <h2 className="text-[36px] leading-[40px] font-bold text-[#FAFAFA] tracking-normal font-sans mb-12">Tactical Filters</h2>
+               
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                  <div className="space-y-8">
+                    {/* Price Range */}
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Price Range (ZAR)</label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <input 
+                          placeholder="Min" 
+                          value={filters.minPrice}
+                          onChange={e => setFilters({...filters, minPrice: e.target.value, page: 1})}
+                          className="bg-white/5 border border-white/10 p-4 rounded-2xl text-sm focus:outline-none focus:border-emerald-500 transition-all" 
+                        />
+                        <input 
+                          placeholder="Max" 
+                          value={filters.maxPrice}
+                          onChange={e => setFilters({...filters, maxPrice: e.target.value, page: 1})}
+                          className="bg-white/5 border border-white/10 p-4 rounded-2xl text-sm focus:outline-none focus:border-emerald-500 transition-all" 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Bedrooms */}
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Bedrooms</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {['any', '1', '2', '3+'].map(val => (
+                          <button
+                            key={val}
+                            onClick={() => setFilters({...filters, bedrooms: val, page: 1})}
+                            className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                              filters.bedrooms === val 
+                                ? 'bg-emerald-500 border-emerald-500 text-black' 
+                                : 'bg-white/5 border-white/10 text-white/40 hover:text-white'
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Bathrooms */}
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Bathrooms</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {['any', '1', '2+'].map(val => (
+                          <button
+                            key={val}
+                            onClick={() => setFilters({...filters, bathrooms: val, page: 1})}
+                            className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                              filters.bathrooms === val 
+                                ? 'bg-emerald-500 border-emerald-500 text-black' 
+                                : 'bg-white/5 border-white/10 text-white/40 hover:text-white'
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-8">
+                    {/* Unit Layout */}
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Unit Layout</label>
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { id: 'any', label: 'Any Layout' },
+                          { id: 'Whole Property', label: 'Whole Property' },
+                          { id: 'Shared Room', label: 'Shared Room' }
+                        ].map(opt => (
+                          <button
+                            key={opt.id}
+                            onClick={() => setFilters({...filters, layout: opt.id, page: 1})}
+                            className={`p-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border flex justify-between items-center ${
+                              filters.layout === opt.id 
+                                ? 'bg-emerald-500 border-emerald-500 text-black' 
+                                : 'bg-white/5 border-white/10 text-white/40 hover:text-white'
+                            }`}
+                          >
+                            {opt.label}
+                            {filters.layout === opt.id && <CheckCircle size={16} weight="bold" />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Furnishing */}
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Furnishing Status</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { id: 'any', label: 'Any' },
+                          { id: 'Furnished', label: 'Furnished' },
+                          { id: 'Unfurnished', label: 'Unfurnished' }
+                        ].map(opt => (
+                          <button
+                            key={opt.id}
+                            onClick={() => setFilters({...filters, furnished: opt.id, page: 1})}
+                            className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                              filters.furnished === opt.id 
+                                ? 'bg-emerald-500 border-emerald-500 text-black' 
+                                : 'bg-white/5 border-white/10 text-white/40 hover:text-white'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Vista Priority */}
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Vista Priority</label>
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { id: 'any', label: 'No Preference', icon: Globe },
+                          { id: 'Ocean', label: 'Ocean View', icon: WavesIcon },
+                          { id: 'Mountain', label: 'Mountain View', icon: MountainsIcon }
+                        ].map(opt => (
+                          <button
+                            key={opt.id}
+                            onClick={() => setFilters({...filters, view: opt.id, page: 1})}
+                            className={`p-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border flex items-center gap-4 ${
+                              filters.view === opt.id 
+                                ? 'bg-emerald-500 border-emerald-500 text-black' 
+                                : 'bg-white/5 border-white/10 text-white/40 hover:text-white'
+                            }`}
+                          >
+                            <opt.icon size={18} weight={filters.view === opt.id ? "fill" : "bold"} />
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+               </div>
+
+               <div className="mt-12 pt-8 border-t border-white/5 flex justify-end gap-4">
+                  <button 
+                    onClick={() => {
+                      setFilters({
+                        intent: 'listings',
+                        pets: false,
+                        minPrice: '',
+                        maxPrice: '',
+                        bedrooms: 'any',
+                        bathrooms: 'any',
+                        furnished: 'any',
+                        layout: 'any',
+                        view: 'any',
+                        horizon: 'any',
+                        area: 'any',
+                        platform: 'any',
+                        page: 1
+                      });
+                      setShowAdvancedModal(false);
+                    }}
+                    className="px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white/20 hover:text-white transition-all"
+                  >
+                    Reset All
+                  </button>
+                  <button 
+                    onClick={() => setShowAdvancedModal(false)}
+                    className="bg-white text-black px-12 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-[0_0_30px_rgba(255,255,255,0.1)] hover:scale-105 transition-all"
+                  >
+                    Apply Intel
+                  </button>
+               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

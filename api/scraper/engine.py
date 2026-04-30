@@ -57,6 +57,61 @@ class SniperEngine:
         self.heartbeat_task = None
         self.anchor_page = None # [SINGLETON] Keeps the window alive
 
+    async def check_liveness(self, url: str) -> bool:
+        """
+        [TRUST] Verifies if a listing is still active by performing a surgical liveness ping. (v170.0)
+        Detects 'Sold', 'Expired', or 'Listing not found' messages.
+        """
+        if not url or any(bad in url for bad in ["missing", "example.com", "missing_url", "GHOST_LINK"]):
+            return False
+            
+        try:
+            # If we are local, use the singleton context to avoid cold starts
+            is_local = str(os.environ.get("LOCAL_SNIPER", "")).lower() == "true"
+            if is_local:
+                if not self.p_context: await self.start()
+                context = self.p_context
+            else:
+                # Cloud fallback: we don't do liveness checks in ephemeral cloud mode to save credits
+                return True 
+                
+            print_flush(f"[LIVENESS] Checking {url}...")
+            
+            # Use a fresh page for the check to avoid session pollution
+            page = await context.new_page()
+            try:
+                # 15s timeout for the check
+                response = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                
+                if not response or response.status >= 400:
+                    print_flush(f"[LIVENESS] Dead Link (Status {response.status if response else 'NONE'})")
+                    return False
+                    
+                # Platform-specific Kill-Switch Markers
+                content = await page.content()
+                kill_markers = [
+                    "Listing not found", "this listing has been removed",
+                    "this content is no longer available", "listing has been sold",
+                    "no longer available", "unavailable", "404 - Page Not Found",
+                    "already been rented", "no longer active"
+                ]
+                
+                # Check for "Sold" or "Rented" banners
+                low_content = content.lower()
+                for marker in kill_markers:
+                    if marker.lower() in low_content:
+                        print_flush(f"[LIVENESS] Suppressed: Marker '{marker}' found.")
+                        return False
+                
+                # Success: Listing is active
+                return True
+            finally:
+                await page.close()
+                
+        except Exception as e:
+            print_flush(f"[LIVENESS] Check failed (Timeout/Block) - Assuming LIVE to avoid false suppression: {e}")
+            return True 
+
     async def start(self):
         """Initializes the Singleton Browser for high-trust residential operation."""
         if str(os.environ.get("LOCAL_SNIPER", "")).lower() != "true":
@@ -89,11 +144,17 @@ class SniperEngine:
                 import urllib.parse
                 try:
                     parsed = urllib.parse.urlparse(proxy_url)
-                    ctx_args["proxy"] = {
-                        "server": f"{parsed.hostname}:{parsed.port}",
-                        "username": parsed.username,
-                        "password": parsed.password
-                    }
+                    server = f"{parsed.hostname}"
+                    if parsed.port:
+                        server = f"{server}:{parsed.port}"
+                    
+                    proxy_config = {"server": server}
+                    if parsed.username:
+                        proxy_config["username"] = parsed.username
+                    if parsed.password:
+                        proxy_config["password"] = parsed.password
+                        
+                    ctx_args["proxy"] = proxy_config
                     print_flush(f"[SINGLETON] Routing through Proxy: {parsed.hostname}")
                 except Exception as e:
                     print_flush(f"[SINGLETON] Proxy Parse Error: {e}")
@@ -117,7 +178,11 @@ class SniperEngine:
 
             # Start Heartbeat & Anchor
             self.anchor_page = await self.p_context.new_page()
-            await self.anchor_page.goto("https://www.facebook.com", wait_until="domcontentloaded")
+            try:
+                await self.anchor_page.goto("https://www.facebook.com", wait_until="domcontentloaded", timeout=45000)
+                print_flush("[SINGLETON] Anchor Page locked (Facebook).")
+            except Exception as e:
+                print_flush(f"[SINGLETON] Warning: Anchor Page failed to load ({e}). Engine starting anyway.")
             
             self.heartbeat_task = asyncio.create_task(self._session_heartbeat())
             print_flush("[SINGLETON] Persistent Engine READY. Anchor Page locked. Heartbeat active.")
@@ -279,7 +344,17 @@ class SniperEngine:
                     if proxy_url:
                         import urllib.parse
                         parsed = urllib.parse.urlparse(proxy_url)
-                        context_args["proxy"] = {"server": f"{parsed.hostname}:{parsed.port}", "username": parsed.username, "password": parsed.password}
+                        server = f"{parsed.hostname}"
+                        if parsed.port:
+                            server = f"{server}:{parsed.port}"
+                            
+                        proxy_config = {"server": server}
+                        if parsed.username:
+                            proxy_config["username"] = parsed.username
+                        if parsed.password:
+                            proxy_config["password"] = parsed.password
+                            
+                        context_args["proxy"] = proxy_config
                     
                     context = await browser.new_context(**context_args)
                     if playwright_stealth_func:
@@ -295,6 +370,8 @@ class SniperEngine:
 
             # Start of extraction
             page = await context.new_page()
+            page.on("console", lambda msg: print_flush(f"[BROWSER] {msg.text}"))
+            
             if is_portal and not re.search(r"/\d{8,}", url):
                 sep = "&" if "?" in url else "?"
                 if min_bedrooms: url += f"{sep}bedrooms={min_bedrooms}"; sep="&"
@@ -409,6 +486,8 @@ class SniperEngine:
                 // 1. Detect Cards based on Platform
                 const selectors = [
                     '.p24_regularTile', '.p24_promotedTile', '.p24_featuredTile', // Property24
+                    '.list_item', '.ad_box', '.listing-card', '.listing-result', '.search-result', // RentUncle Cards
+                    '.thumb_box', '.tricky_link', '.box_ad', // Fallbacks
                     'div[role="article"]', 'div[data-testid="fbfeed_story"]', // Facebook Core
                     'div[role="feed"] > div', 'div[class*="feed"] > div', 
                     'article', 'div[class*="listing"]' 
@@ -417,7 +496,11 @@ class SniperEngine:
                 let foundItems = [];
                 for (const s of selectors) {
                     const items = document.querySelectorAll(s);
-                    if (items.length > 0) { foundItems = Array.from(items); break; }
+                    if (items.length > 0) { 
+                        foundItems = Array.from(items); 
+                        console.log(`[HARVEST] Found ${foundItems.length} items with selector: ${s}`);
+                        break; 
+                    }
                 }
 
                 if (foundItems.length > 0) {
@@ -444,18 +527,32 @@ class SniperEngine:
                         }
                         
                         // 2. Property24 / Generic fallback
-                        // [v94.0] 9-DIGIT LOCKDOWN: P24 property IDs are always 9 digits. Suburb IDs (like /432) are short.
-                        // We MUST find a link with at least 8-9 digits at the end or it's a ghost.
-                        if (link === window.location.href || link.includes('/search/?q=') || !/\\/\\d{8,}/.test(link)) {
-                            let allLinks = Array.from(f.querySelectorAll('a[href*="/to-rent/"]'));
-                            // Filter for actual listing links (usually long)
-                            let bestLink = allLinks.find(a => /\\/\\d{8,}/.test(a.href));
-                            let candidate = bestLink?.getAttribute('href') || "";
+                        // [v94.0] PORTAL-AWARE LINKING: P24 requires 8-9 digits. Generic portals (RentUncle) use slug-based links.
+                        const isP24 = window.location.hostname.includes('property24.com');
+                        const linkReg = isP24 ? /\\/\\d{8,}/ : /\\/.+/;
+                        if (link === window.location.href || link.includes('/search/?q=') || !linkReg.test(link)) {
+                            // 🛰️ [v117.0] RentUncle Direct Capture - Target specific slug-based URLs
+                            const ruLink = f.classList.contains('tricky_link') ? f : f.querySelector('.tricky_link');
+                            let candidate = ruLink?.getAttribute('href') || "";
                             
-                            if (candidate && /\\/\\d{8,}/.test(candidate)) {
+                            if (candidate && !candidate.includes('javascript:void(0)')) {
                                 link = candidate;
                             } else {
-                                link = "GHOST_LINK"; 
+                                // Fallback: Search for any link that looks like a property listing
+                                let allLinks = Array.from(f.querySelectorAll('a[href*="/to-rent/"], a[href*="/rent/"], a[href*="/property/"], a[href*="/flats-for-rent/"]'));
+                                // Filter out the current page or search pages
+                                let bestLink = allLinks.find(a => {
+                                    const h = a.getAttribute('href') || "";
+                                    return h.length > 10 && !h.includes('/flats-for-rent/') && !h.includes('/houses-for-rent/');
+                                });
+                                
+                                if (bestLink) {
+                                    link = bestLink.getAttribute('href');
+                                } else if (candidate) {
+                                    link = candidate; // Last resort
+                                } else {
+                                    link = "GHOST_LINK"; 
+                                }
                             }
                         }
                         
@@ -506,6 +603,7 @@ class SniperEngine:
                 
                 # [VITAL] Enhanced Harvest: Capture deep-links for listings (v47.0)
                 cycle_text = await page.evaluate(harvest_script)
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [DEBUG] Cycle {i+1} raw text: {repr(cycle_text)[:100]}...")
                 cumulative_buffer += f"\n--- CYCLE {i+1} SNAPSHOT ---\n{cycle_text}"
                 curr_size = len(cumulative_buffer)
                 print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Cycle {i+1}: Total Buffer {curr_size} chars.")
@@ -582,6 +680,11 @@ class SniperEngine:
             screenshot_data = None
             try:
                 shot_buf = await page.screenshot(type="jpeg", quality=60)
+                if is_local:
+                    with open("last_harvest.png", "wb") as f:
+                        f.write(shot_buf)
+                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [DEBUG] Saved harvest screenshot to last_harvest.png")
+                
                 import base64
                 screenshot_data = base64.b64encode(shot_buf).decode("utf-8")
                 if task_id:
@@ -589,7 +692,8 @@ class SniperEngine:
                     db.collection("tasks").document(task_id).update({
                         "last_screenshot": f"data:image/jpeg;base64,{screenshot_data}"
                     })
-            except: pass
+            except Exception as e:
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [DEBUG] Screenshot failed: {e}")
 
             print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] AI Brain: Analyzing dataset with Gemini ({len(body_text)} chars)...")
             snippet = body_text[:150].replace('\n', ' ')

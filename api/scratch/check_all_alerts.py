@@ -20,20 +20,21 @@ def get_db():
             firebase_admin.initialize_app()
     return firestore.client()
 
-def check_recent_listings():
+def check_all_alerts():
     db = get_db()
-    user_id = "taun_test_user"
     
-    print(f"Checking listings for user: {user_id}")
-    listings_ref = db.collection("users").document(user_id).collection("listings").order_by("created_at", direction=firestore.Query.DESCENDING).limit(10).stream()
+    print("Checking all alerts in the system...")
+    users_ref = db.collection("users").stream()
     
-    for l in listings_ref:
-        data = l.to_dict()
-        print(f"ID: {l.id}")
-        print(f"Title: {data.get('title')}")
-        print(f"Is Looking For: {data.get('is_looking_for')}")
-        print(f"Match Reason: {data.get('match_reason')}")
-        print("-" * 20)
+    for u in users_ref:
+        print(f"User: {u.id}")
+        alerts_ref = db.collection("users").document(u.id).collection("alerts").stream()
+        for a in alerts_ref:
+            data = a.to_dict()
+            print(f"  Alert ID: {a.id}")
+            print(f"  Data: {data}")
+            print("  " + "-" * 10)
+        print("-" * 30)
 
 if __name__ == "__main__":
-    check_recent_listings()
+    check_all_alerts()

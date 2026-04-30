@@ -1,5 +1,4 @@
-import React from 'react';
-import { Dog, House, SunHorizon, Globe, Stack, UsersThree, Trash } from "@phosphor-icons/react";
+import { Dog, House, SunHorizon, Globe, Stack, UsersThree, Trash, MagnifyingGlass, Gear } from "@phosphor-icons/react";
 import { formatCurrency } from '@/lib/utils';
 
 interface AlertItemProps {
@@ -16,7 +15,8 @@ export const AlertItem: React.FC<AlertItemProps> = ({ alert, deleteAlert, update
     { id: 'all', icon: Globe, label: 'All' },
     { id: 'long-term', icon: House, label: 'Long' },
     { id: 'short-term', icon: SunHorizon, label: 'Short' },
-    { id: 'pet-sitting', icon: Dog, label: 'Pet-Sit' }
+    { id: 'pet-sitting', icon: Dog, label: 'Pet-Sit' },
+    { id: 'looking-for', icon: MagnifyingGlass, label: 'Wanted' }
   ];
 
   const layouts = [
@@ -30,7 +30,7 @@ export const AlertItem: React.FC<AlertItemProps> = ({ alert, deleteAlert, update
       <div className="flex justify-between items-start">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <h4 className="text-sm font-bold text-white group-hover:text-emerald-400 transition-colors uppercase tracking-tight">{displayTitle}</h4>
+            <h4 className="text-sm font-bold text-white group-hover:text-emerald-400 transition-colors tracking-tight">{displayTitle}</h4>
             {alert.pet_friendly && (
                <span className="bg-emerald-500/10 text-emerald-500 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter border border-emerald-500/20 flex items-center gap-1">
                  <Dog size={10} weight="fill" /> Pet-Friendly
@@ -47,11 +47,19 @@ export const AlertItem: React.FC<AlertItemProps> = ({ alert, deleteAlert, update
             onClick={() => updateAlert(alert.id || alert.search_id, { is_active: alert.is_active === false })}
             className={`text-[8px] font-black uppercase px-3 py-1.5 rounded-full border transition-all ${
               alert.is_active !== false 
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' 
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.1)]' 
                 : 'bg-red-500/10 border-red-500/30 text-red-500'
             }`}
           >
             {alert.is_active !== false ? '● Active' : '○ Standby'}
+          </button>
+
+          <button 
+             onClick={() => (window as any).openEditModal?.(alert)}
+             className="text-white/20 hover:text-white transition-all p-2 rounded-xl hover:bg-white/5"
+             title="Edit Parameters"
+          >
+            <Gear size={18} weight="bold" />
           </button>
 
           <button 

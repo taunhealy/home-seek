@@ -14,9 +14,10 @@ export const ListingSchema = z.object({
   is_pet_friendly: z.preprocess(v => v ?? false, z.boolean()),
   property_type: z.preprocess(v => v ?? 'Unit', z.string()),
   property_sub_type: z.preprocess(v => v ?? 'Whole', z.string()),
+  rental_type: z.preprocess(v => v ?? 'long-term', z.string()),
   available_date: z.preprocess(v => v ?? 'Immediate', z.string()),
   source_url: z.preprocess(v => v ?? '#', z.string()),
-  platform: z.preprocess(v => v ?? 'Home-Seek', z.string()),
+  platform: z.preprocess(v => v ?? 'HomeSeek', z.string()),
   created_at: z.any().optional(),
   match_reason: z.preprocess(v => v ?? '', z.string()),
 });

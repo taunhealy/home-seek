@@ -1,6 +1,7 @@
 "use client";
 
 import { PayPalScriptProvider } from "@paypal/react-paypal-js";
+import { AuthProvider } from "@/lib/auth-context";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const initialOptions = {
@@ -11,7 +12,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <PayPalScriptProvider options={initialOptions}>
-      {children}
+      <AuthProvider>
+        {children}
+      </AuthProvider>
     </PayPalScriptProvider>
   );
 }
