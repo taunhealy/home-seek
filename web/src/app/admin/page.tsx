@@ -10,7 +10,7 @@ import {
   Clock, 
   ShieldCheck,
   TrendUp,
-  Activity
+  Pulse as Activity
 } from "@phosphor-icons/react";
 import { fetchWithAuth } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';

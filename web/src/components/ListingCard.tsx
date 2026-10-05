@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatListingDate } from '@/lib/utils';
 import React from 'react';
-import { ArrowSquareOut } from '@phosphor-icons/react';
+import { ArrowSquareOut, CalendarBlank } from '@phosphor-icons/react';
 
 interface ListingCardProps {
   listing: any;
@@ -24,11 +24,17 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing: l, idx }) => 
             {l.view_category === 'Mountain' && <span title="Mountain View" className="text-lg">🏔️</span>}
           </div>
           <p className="text-xs text-white/40 font-bold uppercase tracking-[0.2em] mb-1">{l.address}</p>
-          {l.created_at && (
-            <p className="text-[10px] text-white/20 font-medium lowercase tracking-wide">
-              captured: {new Date(l.created_at).toLocaleDateString('en-ZA').replace(/-/g, '/')}
-            </p>
-          )}
+          <div className="flex items-center gap-2 mt-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
+              <CalendarBlank size={12} weight="bold" />
+              {formatListingDate(l.created_at || l.published_at)}
+            </span>
+            {l.available_date && (
+              <span className="text-[10px] font-medium text-white/40">
+                Avail: {l.available_date}
+              </span>
+            )}
+          </div>
         </div>
         <div className="text-right">
           <p className="text-2xl font-bold tracking-tighter">{formatCurrency(l.price)}</p>
@@ -53,6 +59,11 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing: l, idx }) => 
           <div className="px-3 py-1.5 border border-white/10 rounded-full text-[9px] font-black uppercase tracking-widest text-white/40 flex items-center gap-2">
             <span>🚿</span> {l.bathrooms || 1} Bath
           </div>
+          {l.sqm && l.sqm > 0 ? (
+            <div className="px-3 py-1.5 border border-white/10 rounded-full text-[9px] font-black uppercase tracking-widest text-white/40 flex items-center gap-2">
+              <span>📐</span> {l.sqm} m²
+            </div>
+          ) : null}
           {l.is_furnished && (
             <div className="px-3 py-1.5 border border-emerald-500/20 bg-emerald-500/5 rounded-full text-[9px] font-black uppercase tracking-widest text-emerald-500/80 flex items-center gap-2">
               <span>🏠</span> Furnished

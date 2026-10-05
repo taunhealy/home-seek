@@ -131,6 +131,14 @@ export const AlertItem: React.FC<AlertItemProps> = ({ alert, deleteAlert, update
                       'Any'}
                   </p>
                </div>
+               {alert.min_sqm ? (
+                 <div className="text-right">
+                    <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em] block mb-0.5">Min Size</span>
+                    <p className="text-[10px] font-bold text-white/60 uppercase">
+                      {alert.min_sqm} m²
+                    </p>
+                 </div>
+               ) : null}
                <div className="text-right">
                   <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em] block mb-0.5">Pet Policy</span>
                   <p className={`text-[10px] font-bold uppercase ${alert.pet_friendly ? 'text-emerald-500' : 'text-white/20'}`}>

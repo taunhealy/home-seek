@@ -16,6 +16,8 @@ class RentalListing(BaseModel):
     property_type: Optional[str] = Field(None, description="Apartment, House, Studio, etc.")
     property_sub_type: str = Field("Whole", description="Whole vs Shared")
     rental_type: Optional[str] = Field("long-term", description="long-term, short-term, or pet-sitting")
+    lease_period: Optional[str] = Field(None, description="Lease duration, e.g. '6 months renewable'")
+    is_direct_landlord: bool = Field(False, description="True if listed by private owner/landlord")
     is_furnished: Optional[bool] = Field(None)
     amenities: List[str] = Field(default_factory=list)
     parking_slots: Optional[int] = Field(None)

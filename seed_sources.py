@@ -28,8 +28,7 @@ def seed_default_sources():
         {"name": "Property24", "url": "https://www.property24.com/to-rent/cape-town/western-cape/432", "type": "long-term"},
         {"name": "Property24 Pet Friendly", "url": "https://www.property24.com/to-rent/cape-town/western-cape/432/pet-friendly", "type": "long-term"},
         {"name": "Huis Huis (Short Term)", "url": "https://www.facebook.com/groups/158733218125929/", "type": "short-term"},
-        {"name": "Sea Point Rentals (Short Term)", "url": "https://www.facebook.com/groups/seapointrentals", "type": "short-term"},
-        {"name": "RentUncle", "url": "https://www.gumtree.co.za/s-property-to-rent/cape-town/v1c2l3100001p1", "type": "long-term"},
+        {"name": "Sea Point Rentals (Short Term)", "url": "https://www.facebook.com/groups/seapointrentals", "type": "short-term"}
     ]
 
     print("Seeding default sources for demo-user...")

@@ -114,8 +114,15 @@ def is_mission_match(listing: dict, alert: dict) -> bool:
     l_content = f"{l_address} {l_title}"
     
     # 4. Strict Suburb Matching
+    from core.geofence import MY_FAVOURITES_SUBURBS, DEEP_SOUTH_SUBURBS
     for area in interest_areas:
-        if area in l_content:
+        if any(k in area for k in ["favourite", "favorite"]):
+            if any(sub in l_content for sub in MY_FAVOURITES_SUBURBS):
+                return True
+        elif any(k in area for k in ["deep south", "south peninsula"]):
+            if any(sub in l_content for sub in DEEP_SOUTH_SUBURBS):
+                return True
+        elif area in l_content:
             return True
             
     return False
@@ -148,12 +155,21 @@ async def fetch_explore_listings(
     area: Optional[str] = None,
     min_price: Optional[int] = None,
     max_price: Optional[int] = None,
+    min_sqm: Optional[int] = None,
+    max_sqm: Optional[int] = None,
+    min_size: Optional[int] = None,
+    max_size: Optional[int] = None,
+    bedrooms: Optional[str] = None,
+    bathrooms: Optional[str] = None,
+    furnished: Optional[str] = None,
     platform: Optional[str] = None,
     view: Optional[str] = None,
     pets: Optional[bool] = None,
     layout: Optional[str] = None,
     page: int = 1,
-    intent: Optional[str] = None
+    intent: Optional[str] = None,
+    no_agents: Optional[bool] = None,
+    lease_term: Optional[str] = None
 ):
     """Global Feed for the Explore Page with Semantic Vista & Pet Filters."""
     db = get_db()
@@ -186,6 +202,46 @@ async def fetch_explore_listings(
         price = h.get("price") or 0
         if min_price and price < min_price: continue
         if max_price and price > max_price: continue
+
+        # [SIZE] Square meters filter
+        sqm_floor = min_sqm or min_size
+        sqm_ceil = max_sqm or max_size
+        l_sqm = h.get("sqm")
+        if sqm_floor and (l_sqm is None or l_sqm < sqm_floor): continue
+        if sqm_ceil and (l_sqm is not None and l_sqm > sqm_ceil): continue
+
+        # [BEDROOMS]
+        if bedrooms and bedrooms != 'any':
+            l_beds = h.get("bedrooms")
+            if l_beds is None:
+                continue
+            if bedrooms.endswith("+"):
+                try:
+                    if l_beds < float(bedrooms[:-1]): continue
+                except ValueError: pass
+            else:
+                try:
+                    if l_beds < float(bedrooms): continue
+                except ValueError: pass
+
+        # [BATHROOMS]
+        if bathrooms and bathrooms != 'any':
+            l_baths = h.get("bathrooms")
+            if l_baths is None:
+                continue
+            if bathrooms.endswith("+"):
+                try:
+                    if l_baths < float(bathrooms[:-1]): continue
+                except ValueError: pass
+            else:
+                try:
+                    if l_baths < float(bathrooms): continue
+                except ValueError: pass
+
+        # [FURNISHED]
+        if furnished and furnished != 'any':
+            if furnished.lower() == 'furnished' and not h.get("is_furnished"): continue
+            if furnished.lower() == 'unfurnished' and h.get("is_furnished") is True: continue
         if platform:
             p_val = str(h.get("platform", "")).lower()
             s_val = str(h.get("source_name", "")).lower()
@@ -205,6 +261,42 @@ async def fetch_explore_listings(
                 if not any(k in content for k in ["sea", "ocean", "beach", "atlantic", "seaview", "coast"]): continue
             elif view == "mountain":
                 if not any(k in content for k in ["mountain", "table mountain", "mountainview", "peak", "lions head"]): continue
+
+        # [NO AGENTS / DIRECT LANDLORD] (Active by default)
+        if no_agents is True or str(no_agents).lower() == 'true':
+            is_direct = h.get("is_direct_landlord") is True
+            plat = str(h.get("platform", "")).lower()
+            src = str(h.get("source_name", "")).lower()
+            if any(k in plat or k in src for k in ["facebook", "huis huis", "rentuncle", "direct landlord", "manual post"]):
+                is_direct = True
+            content = (str(h.get("title", "")) + " " + str(h.get("description", ""))).lower()
+            if any(k in content for k in [
+                "by owner", "landlord", "direct from owner", "private landlord", 
+                "no agent", "no agents", "private let", "lease takeover", "sublet", "sub-let"
+            ]):
+                is_direct = True
+            if not is_direct:
+                continue
+
+        # [LEASE TERM LENGTH] (1 = Month to Month, 3, 6, 12 Months)
+        if lease_term and lease_term != 'any':
+            content = (str(h.get("title", "")) + " " + str(h.get("description", "")) + " " + str(h.get("lease_period", "")) + " " + str(h.get("rental_type", ""))).lower()
+            term_str = str(lease_term).strip()
+            term_hit = False
+            if term_str == '1':
+                if any(k in content for k in ["month to month", "month-to-month", "month/month", "monthly", "1 month", "1-month", "flexible", "short-term", "short term"]):
+                    term_hit = True
+            elif term_str == '3':
+                if any(k in content for k in ["3 month", "3-month", "3 months", "3-months", "1-6 month", "winter", "short-term", "short term"]):
+                    term_hit = True
+            elif term_str == '6':
+                if any(k in content for k in ["6 month", "6-month", "6 months", "6-months", "semi-annual", "half year", "1-6 month"]):
+                    term_hit = True
+            elif term_str == '12':
+                if any(k in content for k in ["12 month", "12-month", "12 months", "12-months", "1 year", "1-year", "annual", "long-term", "long term"]) or h.get("rental_type") in ['long-term', None]:
+                    term_hit = True
+            if not term_hit:
+                continue
 
         res.append(h)
         
@@ -589,7 +681,12 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
             from core.geofence import get_zone_for_area
             mission_zone = get_zone_for_area(query)
             source_zone = get_zone_for_area(source_name)
-            if source_zone != "global" and source_zone != mission_zone: continue
+            is_compatible_zone = (
+                source_zone == "global" or 
+                source_zone == mission_zone or 
+                (mission_zone in ["my-favourites", "deep-south"] and source_zone in ["south", "deep-south", "my-favourites"])
+            )
+            if not is_compatible_zone: continue
 
             # [SOURCE IQ] Global Search Broadening
             clean_query = query
@@ -604,7 +701,10 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                 all_raw = []
                 for listing in result.listings:
                     l_dict = listing.dict() if hasattr(listing, 'dict') else listing
-                    l_dict['rental_type'] = source_type
+                    if l_dict.get("is_looking_for"):
+                        l_dict['rental_type'] = "looking-for"
+                    else:
+                        l_dict['rental_type'] = l_dict.get("rental_type") or source_type
                     all_raw.append(l_dict)
                 
                 if result.cached_hashes:
@@ -674,6 +774,15 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                             if min_b and listing_beds is not None:
                                 min_val = min(min_b) if isinstance(min_b, list) else min_b
                                 if listing_beds < min_val: continue
+                            
+                            min_s = config.get("min_sqm") or config.get("min_size")
+                            listing_sqm = l_dict.get("sqm")
+                            if min_s and listing_sqm is not None:
+                                if listing_sqm < min_s: continue
+                            
+                            max_s = config.get("max_sqm") or config.get("max_size")
+                            if max_s and listing_sqm is not None:
+                                if listing_sqm > max_s: continue
                             
                             # [AREA GUARD] 🛡️ Precision Multiplexing: Ensure listing matches requested neighborhood
                             if not is_mission_match(l_dict, config): continue

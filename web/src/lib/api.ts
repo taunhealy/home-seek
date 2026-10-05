@@ -29,8 +29,12 @@ export async function fetchWithAuth(endpoint: string, options: RequestInit = {})
     }
 
     return response;
-  } catch (error) {
-    console.error(`[API ERROR] Failed to fetch from ${url}:`, error);
+  } catch (error: any) {
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      console.warn(`[API] Backend unreachable at ${url}. Is the backend API running on ${API_BASE_URL}?`);
+    } else {
+      console.error(`[API ERROR] Failed to fetch from ${url}:`, error);
+    }
     throw error;
   }
 }

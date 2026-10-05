@@ -203,7 +203,7 @@ export default function DashboardPage() {
           <div className="space-y-4">
             {activeTab === 'listings' && (
               <div className="flex flex-wrap gap-2 mb-4 bg-white/[0.02] p-2 rounded-2xl border border-white/5">
-                {['', 'Facebook', 'Property24', 'RentUncle'].map((plat) => (
+                {['', 'Facebook', 'Property24'].map((plat) => (
                   <button 
                     key={plat}
                     onClick={() => setPlatformFilter(plat)}

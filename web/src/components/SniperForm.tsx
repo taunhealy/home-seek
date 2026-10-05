@@ -39,6 +39,7 @@ export const SniperForm: React.FC<SniperFormProps> = ({
   const [maxPrice, setMaxPrice] = useState(initialData?.max_price || 25000);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [selectedBedrooms, setSelectedBedrooms] = useState<number[]>(initialData?.min_bedrooms || []);
+  const [minSqm, setMinSqm] = useState<string>(initialData?.min_sqm ? String(initialData.min_sqm) : (initialData?.min_size ? String(initialData.min_size) : ''));
   const [rentalType, setRentalType] = useState<'all' | 'long-term' | 'short-term' | 'pet-sitting' | 'looking-for'>(initialData?.rental_type || 'all');
   const [propertySubType, setPropertySubType] = useState<'all' | 'Whole' | 'Shared'>(initialData?.property_sub_type || 'all');
   const [isDeploying, setIsDeploying] = useState(false);
@@ -100,6 +101,7 @@ export const SniperForm: React.FC<SniperFormProps> = ({
           alert_enabled: isAlertSave || !!searchId,
           max_price: maxPrice,
           min_bedrooms: selectedBedrooms,
+          min_sqm: minSqm ? parseInt(minSqm, 10) : null,
           pet_friendly: petPolicy === 'yes',
           pet_policy: petPolicy, 
           rental_type: rentalType,
@@ -318,6 +320,49 @@ export const SniperForm: React.FC<SniperFormProps> = ({
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Minimum Property Size (m²) */}
+            <div className="flex flex-col gap-3 bg-white/5 p-4 rounded-2xl border border-white/5">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Min Size (m²)</span>
+                <span className="text-[9px] font-black text-emerald-500/60 uppercase">{minSqm ? `${minSqm} m²+` : 'Any Size'}</span>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setMinSqm('')}
+                  className={`py-3 rounded-xl text-[10px] font-bold transition-all border ${
+                    !minSqm 
+                      ? 'bg-white text-black border-white shadow-[0_10px_20px_rgba(255,255,255,0.1)]' 
+                      : 'bg-white/5 text-white/40 border-white/5 hover:border-white/20'
+                  }`}
+                >
+                  ALL
+                </button>
+                {['40', '60', '80', '120'].map(val => {
+                  const isSelected = minSqm === val;
+                  return (
+                    <button 
+                      key={val} 
+                      type="button"
+                      onClick={() => setMinSqm(isSelected ? '' : val)} 
+                      className={`py-3 rounded-lg flex items-center justify-center text-[10px] font-bold border transition-all ${isSelected ? 'bg-emerald-500 border-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10'}`}
+                    >
+                      {val}m²+
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-1">
+                <input 
+                  type="number"
+                  placeholder="Custom min size (m²)"
+                  value={minSqm}
+                  onChange={(e) => setMinSqm(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 transition-all font-medium placeholder:text-white/20"
+                />
               </div>
             </div>
 

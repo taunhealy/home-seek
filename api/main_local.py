@@ -51,6 +51,7 @@ from services.templates import get_match_template, get_subscription_template, ge
 import json
 import asyncio
 import time
+import hashlib
 import datetime as dt
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -74,7 +75,7 @@ app = FastAPI(title="HomeSeek Local Elite Node", version="24.0.0")
 # Enable CORS (Production Lockdown v126.0)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://homeseekza.web.app", "http://localhost:3000"],
+    allow_origins=["https://homeseekza.web.app", "http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -134,18 +135,36 @@ async def fetch_explore_listings(
     area: Optional[str] = None,
     min_price: Optional[int] = None,
     max_price: Optional[int] = None,
+    min_sqm: Optional[int] = None,
+    max_sqm: Optional[int] = None,
+    min_size: Optional[int] = None,
+    max_size: Optional[int] = None,
+    bedrooms: Optional[str] = None,
+    bathrooms: Optional[str] = None,
+    furnished: Optional[str] = None,
     platform: Optional[str] = None,
     view: Optional[str] = None,
-    pets: Optional[bool] = None
+    pets: Optional[bool] = None,
+    layout: Optional[str] = None,
+    page: int = 1,
+    intent: Optional[str] = None,
+    no_agents: Optional[bool] = None,
+    lease_term: Optional[str] = None
 ):
     """Global Feed for the Explore Page with Semantic Vista & Pet Filters (v56.0)."""
     db = get_db()
     # For Semantic Vista/Pet filtering, we use the Memory-Sort logic to scan
-    docs = db.collection("listings").limit(500).stream()
+    docs = db.collection("listings").limit(1000).stream()
     all_hits = [{"id": d.id, **d.to_dict()} for d in docs]
     
     res = []
     for h in all_hits:
+        # [INTENT] 🛡️ Surgical Shield: Distinguish between Listings and Seekers
+        if intent == 'listings':
+            if h.get("is_looking_for") is True: continue
+        elif intent == 'seekers':
+            if h.get("is_looking_for") is not True: continue
+
         # 1. Standard Filters
         if rental_type == 'long-term':
             if h.get("rental_type") not in ['long-term', None]: continue
@@ -159,10 +178,54 @@ async def fetch_explore_listings(
             if not is_petsit: continue
         elif rental_type and h.get("rental_type") != rental_type: continue
         
+        # [LAYOUT] Whole units vs Shared rooms
+        if layout and h.get("property_sub_type") != layout: continue
+
         price = h.get("price") or 0
         if min_price and price < min_price: continue
         if max_price and price > max_price: continue
-        if platform and platform.lower() not in str(h.get("platform", "")).lower(): continue
+
+        # [SIZE] Square meters filter
+        sqm_floor = min_sqm or min_size
+        sqm_ceil = max_sqm or max_size
+        l_sqm = h.get("sqm")
+        if sqm_floor and (l_sqm is None or l_sqm < sqm_floor): continue
+        if sqm_ceil and (l_sqm is not None and l_sqm > sqm_ceil): continue
+
+        # [BEDROOMS]
+        if bedrooms and bedrooms != 'any':
+            l_beds = h.get("bedrooms")
+            if l_beds is None:
+                continue
+            if bedrooms.endswith("+"):
+                try:
+                    if l_beds < float(bedrooms[:-1]): continue
+                except ValueError: pass
+            else:
+                try:
+                    if l_beds < float(bedrooms): continue
+                except ValueError: pass
+
+        # [BATHROOMS]
+        if bathrooms and bathrooms != 'any':
+            l_baths = h.get("bathrooms")
+            if l_baths is None:
+                continue
+            if bathrooms.endswith("+"):
+                try:
+                    if l_baths < float(bathrooms[:-1]): continue
+                except ValueError: pass
+            else:
+                try:
+                    if l_baths < float(bathrooms): continue
+                except ValueError: pass
+
+        # [FURNISHED]
+        if furnished and furnished != 'any':
+            if furnished.lower() == 'furnished' and not h.get("is_furnished"): continue
+            if furnished.lower() == 'unfurnished' and h.get("is_furnished") is True: continue
+
+        if platform and platform.lower() not in str(h.get("platform", "")).lower() and platform.lower() not in str(h.get("source_name", "")).lower(): continue
         
         # Area Check (Fuzzy)
         area_hit = False
@@ -183,10 +246,49 @@ async def fetch_explore_listings(
             elif view == "mountain":
                 if not any(k in content for k in ["mountain", "table mountain", "mountainview", "peak", "lions head"]): continue
 
+        # [NO AGENTS / DIRECT LANDLORD] (Active by default)
+        if no_agents is True or str(no_agents).lower() == 'true':
+            is_direct = h.get("is_direct_landlord") is True
+            plat = str(h.get("platform", "")).lower()
+            src = str(h.get("source_name", "")).lower()
+            if any(k in plat or k in src for k in ["facebook", "huis huis", "rentuncle", "direct landlord", "manual post"]):
+                is_direct = True
+            content = (str(h.get("title", "")) + " " + str(h.get("description", ""))).lower()
+            if any(k in content for k in [
+                "by owner", "landlord", "direct from owner", "private landlord", 
+                "no agent", "no agents", "private let", "lease takeover", "sublet", "sub-let"
+            ]):
+                is_direct = True
+            if not is_direct:
+                continue
+
+        # [LEASE TERM LENGTH] (1 = Month to Month, 3, 6, 12 Months)
+        if lease_term and lease_term != 'any':
+            content = (str(h.get("title", "")) + " " + str(h.get("description", "")) + " " + str(h.get("lease_period", "")) + " " + str(h.get("rental_type", ""))).lower()
+            term_str = str(lease_term).strip()
+            term_hit = False
+            if term_str == '1':
+                if any(k in content for k in ["month to month", "month-to-month", "month/month", "monthly", "1 month", "1-month", "flexible", "short-term", "short term"]):
+                    term_hit = True
+            elif term_str == '3':
+                if any(k in content for k in ["3 month", "3-month", "3 months", "3-months", "1-6 month", "winter", "short-term", "short term"]):
+                    term_hit = True
+            elif term_str == '6':
+                if any(k in content for k in ["6 month", "6-month", "6 months", "6-months", "semi-annual", "half year", "1-6 month"]):
+                    term_hit = True
+            elif term_str == '12':
+                if any(k in content for k in ["12 month", "12-month", "12 months", "12-months", "1 year", "1-year", "annual", "long-term", "long term"]) or h.get("rental_type") in ['long-term', None]:
+                    term_hit = True
+            if not term_hit:
+                continue
+
         res.append(h)
         
     res.sort(key=lambda x: str(x.get('created_at', '')), reverse=True)
-    return res[:100]
+    per_page = 100
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    return res[start_idx:end_idx]
 
 @app.get("/system/stats")
 async def get_system_stats():
@@ -429,16 +531,22 @@ async def unsubscribe_user(user_id: str):
 
 @app.get("/geofence/suburbs")
 async def get_elite_suburbs():
-    """Exposes the PREMIUM_SUBURBS list for frontend autocomplete."""
+    """Exposes the PREMIUM_SUBURBS list with presets for frontend autocomplete."""
     from core.geofence import PREMIUM_SUBURBS
-    # Return as sorted title-case list for the UI
-    return sorted([s.title() for s in PREMIUM_SUBURBS])
+    suburbs = sorted([s.title() for s in PREMIUM_SUBURBS])
+    presets = [
+        "⭐ My Favourites (Deep South + Constantia/Tokai)",
+        "🏖️ Deep South (Noordhoek, Kommetjie, Fish Hoek, Kalk Bay)"
+    ]
+    return presets + suburbs
 
 @app.post("/trigger-snipe")
 async def trigger_targeted_snipe(data: dict, background_tasks: BackgroundTasks):
-    query = data.get("query")
+    query = data.get("query") or data.get("search_query") or ""
     source_ids = data.get("source_ids")
-    user_id = data.get("user_id") 
+    user_id = data.get("user_id") or "taun_test_user"
+    data["search_query"] = query
+    data["query"] = query
     
     task_id = await create_task(user_id, query)
     
@@ -447,6 +555,36 @@ async def trigger_targeted_snipe(data: dict, background_tasks: BackgroundTasks):
     
     background_tasks.add_task(run_local_scan, query, source_ids, task_id, manual_sub)
     return {"status": "local_node_dispatched", "task_id": task_id}
+
+@app.post("/trigger-full-scan")
+async def trigger_full_scan(payload: dict, background_tasks: BackgroundTasks):
+    user_id = payload.get("user_id", "taun_test_user")
+    effective_id = get_effective_user_id(user_id)
+    
+    from services.database import get_user_alerts, get_sources
+    alerts = await get_user_alerts(effective_id)
+    if not alerts: return {"status": "error", "message": "No alerts found."}
+    
+    sources = await get_sources()
+    source_ids = payload.get("source_ids") or [s['id'] for s in sources]
+    
+    for alert in alerts:
+        query = alert.get("search_query") or alert.get("query")
+        if not query: continue
+        task_id = await create_task(effective_id, query)
+        subscribers = [{"user_id": effective_id, "config": alert, "is_initiator": True}]
+        background_tasks.add_task(run_local_scan, query, source_ids, task_id, subscribers)
+        
+    return {"status": "success", "mission_count": len(alerts)}
+
+@app.post("/trigger-re-match")
+async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
+    user_id = payload.get("user_id", "taun_test_user")
+    effective_id = get_effective_user_id(user_id)
+    db = get_db()
+    global_docs = db.collection("users").document("global_scout").collection("listings").limit(100).stream()
+    listings = [d.to_dict() for d in global_docs]
+    return {"status": "success", "intel_pool": len(listings)}
 
 async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscribers: List[dict] = None):
     """
@@ -463,6 +601,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
             all_sources = await get_sources()
             source_ids = [s['id'] for s in all_sources]
 
+        valid_matches_count = 0
         for sid in source_ids:
             source_doc = db.collection("sources").document(sid).get()
             if not source_doc.exists: continue
@@ -477,20 +616,90 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
             mission_zone = get_zone_for_area(query)
             source_zone = get_zone_for_area(source_name)
             
-            if source_zone != "global" and source_zone != mission_zone:
+            is_compatible_zone = (
+                source_zone == "global" or 
+                source_zone == mission_zone or 
+                (mission_zone in ["my-favourites", "deep-south"] and source_zone in ["south", "deep-south", "my-favourites"])
+            )
+            if not is_compatible_zone:
                 print_safe(f"[ZONAL] Skipping irrelevant source: '{source_name}' for mission '{query}'")
                 continue
 
             # [INFO] [SOURCE IQ] Global Search Broadening (v82.0)
             # Remove literal markers from the search bar to prevent "Zerio-Match" on strict queries.
             # The AI Extractor and Subscriber Config still enforce the pet-policy internally.
-            clean_query = query
+            clean_query = str(query or "")
             for marker in ["(MUST BE PET FRIENDLY)", "PET FRIENDLY", "(PET FRIENDLY)"]:
                 clean_query = clean_query.replace(marker, "").replace(marker.lower(), "")
             clean_query = clean_query.strip()
 
-            await update_task(task_id, "Scouting", f"Node analyzing: {source_name}")
-            result = await engine.scrape_url(source.get('url'), task_id=task_id, search_area=clean_query)
+            is_p24 = "property24.com" in source.get('url', '') or "property24" in source_name.lower()
+            is_fav = any(k in clean_query.lower() for k in ["my favourites", "my favorites", "favourites", "favorites"])
+            is_deep_south = any(k in clean_query.lower() for k in ["deep south", "south peninsula"])
+
+            is_pet_req = any(s.get("config", {}).get("pet_friendly") for s in (subscribers or [])) or any(x in str(query).lower() for x in ["pet", "dog", "cat"])
+            pet_param = "?sp=ptf%3dTrue" if is_pet_req else ""
+
+            if is_p24 and is_fav:
+                favourite_targets = [
+                    # Deep South Suburbs
+                    ("Fish Hoek", f"https://www.property24.com/to-rent/fish-hoek/western-cape/475{pet_param}"),
+                    ("Noordhoek", f"https://www.property24.com/to-rent/noordhoek/western-cape/479{pet_param}"),
+                    ("Kommetjie", f"https://www.property24.com/to-rent/kommetjie/western-cape/478{pet_param}"),
+                    ("Scarborough", f"https://www.property24.com/to-rent/scarborough/western-cape/652{pet_param}"),
+                    ("Simons Town", f"https://www.property24.com/to-rent/simons-town/western-cape/401{pet_param}"),
+                    ("Muizenberg", f"https://www.property24.com/to-rent/muizenberg/cape-town/western-cape/9025{pet_param}"),
+                    ("Kalk Bay", f"https://www.property24.com/to-rent/kalk-bay/cape-town/western-cape/9067{pet_param}"),
+                    ("St James", f"https://www.property24.com/to-rent/st-james/cape-town/western-cape/9039{pet_param}"),
+                    ("Glencairn", f"https://www.property24.com/to-rent/glencairn/simons-town/western-cape/9107{pet_param}"),
+                    ("Capri", f"https://www.property24.com/to-rent/capri/fish-hoek/western-cape/10997{pet_param}"),
+                    ("Clovelly", f"https://www.property24.com/to-rent/clovelly/fish-hoek/western-cape/10947{pet_param}"),
+                    ("Sunnydale", f"https://www.property24.com/to-rent/sunnydale/noordhoek/western-cape/9090{pet_param}"),
+                    # User Additions: Meadowridge, Bergvliet, Constantia, Hout Bay, Llandudno
+                    ("Meadowridge", f"https://www.property24.com/to-rent/meadowridge/cape-town/western-cape/10052{pet_param}"),
+                    ("Bergvliet", f"https://www.property24.com/to-rent/bergvliet/cape-town/western-cape/10189{pet_param}"),
+                    ("Constantia", f"https://www.property24.com/to-rent/constantia/cape-town/western-cape/11742{pet_param}"),
+                    ("Hout Bay", f"https://www.property24.com/to-rent/hout-bay/western-cape/615{pet_param}"),
+                    ("Llandudno", f"https://www.property24.com/to-rent/llandudno/cape-town/western-cape/9118{pet_param}")
+                ]
+                all_fav_listings = []
+                for idx, (sub_name, sub_url) in enumerate(favourite_targets):
+                    if idx > 0:
+                        await asyncio.sleep(random.uniform(2.5, 4.5))
+                    await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name})")
+                    sub_res = await engine.scrape_url(sub_url, task_id=task_id, search_area=sub_name)
+                    if sub_res and sub_res.listings:
+                        all_fav_listings.extend(sub_res.listings)
+                from models.listing import ExtractionResult
+                result = ExtractionResult(listings=all_fav_listings, confidence_score=100.0, raw_summary=f"Parsed {len(all_fav_listings)} listings from Property24 Favourites")
+            elif is_p24 and is_deep_south:
+                deep_targets = [
+                    ("Fish Hoek", f"https://www.property24.com/to-rent/fish-hoek/western-cape/475{pet_param}"),
+                    ("Noordhoek", f"https://www.property24.com/to-rent/noordhoek/western-cape/479{pet_param}"),
+                    ("Kommetjie", f"https://www.property24.com/to-rent/kommetjie/western-cape/478{pet_param}"),
+                    ("Scarborough", f"https://www.property24.com/to-rent/scarborough/western-cape/652{pet_param}"),
+                    ("Simons Town", f"https://www.property24.com/to-rent/simons-town/western-cape/401{pet_param}"),
+                    ("Muizenberg", f"https://www.property24.com/to-rent/muizenberg/cape-town/western-cape/9025{pet_param}"),
+                    ("Kalk Bay", f"https://www.property24.com/to-rent/kalk-bay/cape-town/western-cape/9067{pet_param}"),
+                    ("St James", f"https://www.property24.com/to-rent/st-james/cape-town/western-cape/9039{pet_param}"),
+                    ("Glencairn", f"https://www.property24.com/to-rent/glencairn/simons-town/western-cape/9107{pet_param}"),
+                    ("Capri", f"https://www.property24.com/to-rent/capri/fish-hoek/western-cape/10997{pet_param}"),
+                    ("Clovelly", f"https://www.property24.com/to-rent/clovelly/fish-hoek/western-cape/10947{pet_param}"),
+                    ("Sunnydale", f"https://www.property24.com/to-rent/sunnydale/noordhoek/western-cape/9090{pet_param}")
+                ]
+                all_deep_listings = []
+                for idx, (sub_name, sub_url) in enumerate(deep_targets):
+                    if idx > 0:
+                        await asyncio.sleep(random.uniform(2.5, 4.5))
+                    await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name})")
+                    sub_res = await engine.scrape_url(sub_url, task_id=task_id, search_area=sub_name)
+                    if sub_res and sub_res.listings:
+                        all_deep_listings.extend(sub_res.listings)
+                from models.listing import ExtractionResult
+                result = ExtractionResult(listings=all_deep_listings, confidence_score=100.0, raw_summary=f"Parsed {len(all_deep_listings)} listings from Property24 Deep South")
+            else:
+                await update_task(task_id, "Scouting", f"Node analyzing: {source_name}")
+                result = await engine.scrape_url(source.get('url'), task_id=task_id, search_area=clean_query)
             
             if result:
                 all_raw = []
@@ -502,7 +711,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                     if l_dict.get("is_looking_for"):
                         l_dict['rental_type'] = "looking-for"
                     else:
-                        l_dict['rental_type'] = source_type
+                        l_dict['rental_type'] = l_dict.get("rental_type") or source_type
                         
                     all_raw.append(l_dict)
                 
@@ -543,26 +752,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                 all_raw = deduped_raw
 
                 if all_raw:
-                    print_safe(f"[MULTIPLEX] Processing {len(all_raw)} total hits for Mission Subscribers...")
-                    
-                    # [LIVENESS GATE] (v175.0)
-                    # Surgical verification of listing status to prevent 'Ghost Alerts'
-                    live_raw = []
-                    for item in all_raw:
-                        url = item.get("source_url")
-                        # Only check portals that expire fast (P24, RentUncle)
-                        is_portal = any(p in str(url) for p in ["property24.com", "rentuncle.co.za"])
-                        
-                        if is_portal:
-                            is_live = await engine.check_liveness(url)
-                            if not is_live:
-                                print_safe(f"[LIVENESS] [SUPPRESS] Skipping expired listing: {url}")
-                                continue
-                        live_raw.append(item)
-                    all_raw = live_raw
-
-                if all_raw:
-                    print_safe(f"[MULTIPLEX] Processing {len(all_raw)} total hits for Mission Subscribers...")
+                    print_safe(f"[MULTIPLEX] Processing {len(all_raw)} total hits for Mission Subscribers (Fresh Search Feed)...")
                     from services.database import save_listing
                     
                     valid_matches_count = 0
@@ -572,10 +762,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                         is_malformed = any(bad in extracted_url for bad in ["example.com", "missing_url"]) or not extracted_url
                         
                         if is_malformed:
-                            if "rentuncle" in source_name.lower():
-                                l_dict["source_url"] = source.get("url")
-                            else:
-                                continue
+                            continue
                         
                         # [FILTER] RIGOROUS SUPPRESSION: Skip "Looking For" (Wanted) posts unless opted-in (v115.1)
                         is_wanted = l_dict.get("is_looking_for")
@@ -597,20 +784,56 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 req_area = str(config.get("search_query", "")).lower()
                                 listing_addr = str(l_dict.get("address", "")).lower()
                                 
-                                # Extract actual suburb from the query (e.g. "Sea Point")
-                                from core.geofence import PREMIUM_SUBURBS
-                                matched_suburbs = [s for s in PREMIUM_SUBURBS if s in req_area]
+                                # Extract actual suburb from the query (e.g. "Sea Point", "My Favourites")
+                                from core.geofence import PREMIUM_SUBURBS, MY_FAVOURITES_SUBURBS, DEEP_SOUTH_SUBURBS
+                                if any(k in req_area for k in ["favourite", "favorite"]):
+                                    matched_suburbs = list(MY_FAVOURITES_SUBURBS)
+                                elif any(k in req_area for k in ["deep south", "south peninsula"]):
+                                    matched_suburbs = list(DEEP_SOUTH_SUBURBS)
+                                else:
+                                    matched_suburbs = [s for s in PREMIUM_SUBURBS if s in req_area]
                                 
                                 if matched_suburbs:
                                     # If the user specified suburbs, the listing MUST match at least one
                                     if not any(s in listing_addr for s in matched_suburbs):
                                         continue
                                 
-                                # Apply Specific Filters (Price, Beds, Pets)
+                                # Apply Specific Filters (Price, Beds, Pets, Landlord, Lease, Furnished, Specs)
                                 l_price = l_dict.get("price") or 0
-                                if config.get("max_price") and l_price > config.get("max_price"): continue
-                                if config.get("pet_friendly") and not l_dict.get("is_pet_friendly"): continue
+                                if config.get("min_price") and l_price > 0 and l_price < config.get("min_price"): 
+                                    print_safe(f"[RECON] [REJECT] Price R{l_price} < Min R{config.get('min_price')}")
+                                    continue
+                                if config.get("max_price") and l_price > config.get("max_price"): 
+                                    print_safe(f"[RECON] [REJECT] Price R{l_price} > Max R{config.get('max_price')}")
+                                    continue
+                                if config.get("pet_friendly") and not l_dict.get("is_pet_friendly"): 
+                                    continue
+
+                                # [NO AGENTS / DIRECT LANDLORD]
+                                if config.get("no_agents") and not l_dict.get("is_direct_landlord"):
+                                    print_safe(f"[RECON] [REJECT] Filtered out agent listing (No-Agents policy active)")
+                                    continue
                                 
+                                # [LEASE TERM]
+                                req_lease = config.get("lease_term")
+                                if req_lease and str(req_lease).lower() != "any":
+                                    lease_str = str(l_dict.get("lease_period", "")).lower()
+                                    desc_str = str(l_dict.get("description", "")).lower()
+                                    combined_lease = f"{lease_str} {desc_str}"
+                                    req_lease_str = str(req_lease).lower()
+                                    if req_lease_str in ["1", "1 (m2m)", "month-to-month", "month to month"]:
+                                        if not any(term in combined_lease for term in ["month to month", "month-to-month", "m2m", "monthly", "1 month", "flexible"]):
+                                            continue
+                                    elif req_lease_str in ["3", "3m"]:
+                                        if not any(term in combined_lease for term in ["3 month", "3-month", "3 months", "short-term", "short term"]):
+                                            continue
+                                    elif req_lease_str in ["6", "6m"]:
+                                        if not any(term in combined_lease for term in ["6 month", "6-month", "6 months"]):
+                                            continue
+                                    elif req_lease_str in ["12", "12m"]:
+                                        if not any(term in combined_lease for term in ["12 month", "1-year", "1 year", "long-term", "long term", "annual"]):
+                                            continue
+
                                 # [CATEGORY FILTER] Filter by rental type if specified
                                 req_type = config.get("rental_type")
                                 
@@ -622,14 +845,18 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 if not is_wanted and req_type == "looking-for":
                                     continue
 
-                                if req_type and req_type != "all" and req_type != "looking-for" and l_dict.get("rental_type") != req_type:
+                                if req_type and req_type not in ["all", "any"] and req_type != "looking-for" and l_dict.get("rental_type") != req_type:
                                     print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
                                     continue
                                 
-                                # [LAYOUT FILTER] Whole vs Shared (v90.0)
-                                req_layout = config.get("property_sub_type")
-                                if req_layout and req_layout != "all" and l_dict.get("property_sub_type") != req_layout:
-                                    continue
+                                # [LAYOUT FILTER] Whole vs Shared or Property Type (v90.0)
+                                req_layout = config.get("property_sub_type") or config.get("layout")
+                                if req_layout and req_layout not in ["all", "any", "any layout"]:
+                                    p_type = str(l_dict.get("property_type", "")).lower()
+                                    p_sub = str(l_dict.get("property_sub_type", "")).lower()
+                                    target_layout = req_layout.lower()
+                                    if target_layout not in p_type and target_layout not in p_sub:
+                                        continue
                                 
                                 # [BEDROOM FILTER] If no beds assigned, treat as 'Any' (v97.0)
                                 min_b = config.get("min_bedrooms")
@@ -643,14 +870,52 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 elif min_b and listing_beds is None:
                                     print_safe(f"[RECON] [PARTIAL] Partial Match: No beds assigned, treating as 'Any'")
                                 
+                                # [BATHROOM FILTER]
+                                min_baths = config.get("bathrooms")
+                                listing_baths = l_dict.get("bathrooms")
+                                if min_baths and listing_baths is not None:
+                                    if listing_baths < min_baths:
+                                        print_safe(f"[RECON] [REJECT] Baths {listing_baths} < Required {min_baths}")
+                                        continue
+
+                                # [FURNISHED FILTER]
+                                req_furn = config.get("furnished")
+                                if req_furn and req_furn not in ["any", "any furnishing", "all"]:
+                                    is_f = l_dict.get("is_furnished")
+                                    if "unfurnished" in req_furn.lower() and is_f is True:
+                                        continue
+                                    elif "furnished" in req_furn.lower() and "unfurnished" not in req_furn.lower() and is_f is False:
+                                        continue
+
+                                min_s = config.get("min_sqm") or config.get("min_size")
+                                listing_sqm = l_dict.get("sqm")
+                                if min_s and listing_sqm is not None:
+                                    if listing_sqm < min_s:
+                                        print_safe(f"[RECON] [REJECT] Size {listing_sqm}m² < Required {min_s}m²")
+                                        continue
+                                
+                                max_s = config.get("max_sqm") or config.get("max_size")
+                                if max_s and listing_sqm is not None:
+                                    if listing_sqm > max_s:
+                                        print_safe(f"[RECON] [REJECT] Size {listing_sqm}m² > Max {max_s}m²")
+                                        continue
+                                
                                 # [DEDUPE] Check if this is a fresh discovery for this user
                                 doc_id = create_listing_id(l_dict)
                                 user_seen = db.collection("users").document(user_id).collection("listings").document(doc_id).get().exists
 
                                 # Valid match for this user!
-                                print_safe(f"[RECON] [MATCH] VALID MATCH! Saving to User Feed: {user_id}")
-                                await save_listing(user_id, l_dict)
                                 valid_matches_count += 1
+                                print_safe(f"\n" + "="*50)
+                                print_safe(f"🏠 [HIT #{valid_matches_count}] {l_dict.get('title')}")
+                                print_safe(f"💰 Price:    R {l_price:,}")
+                                print_safe(f"📍 Area:     {l_dict.get('address')}")
+                                print_safe(f"🛡️ Landlord: {'Direct Landlord (No Agents)' if l_dict.get('is_direct_landlord') else 'Agent'}")
+                                if l_dict.get('bedrooms'): print_safe(f"🛏️ Beds:     {l_dict.get('bedrooms')}")
+                                if l_dict.get('lease_period'): print_safe(f"⏱️ Lease:    {l_dict.get('lease_period')}")
+                                print_safe(f"🔗 Link:     {l_dict.get('source_url')}")
+                                print_safe("="*50 + "\n")
+                                await save_listing(user_id, l_dict)
                                 
                                 # --- [SIGNAL BURST] INSTANT NOTIFICATION (v103.5) ---
                                 user_profile = await get_user_profile(user_id)
@@ -703,6 +968,8 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                     except Exception as notify_err:
                                         print_safe(f"[SIGNAL ERROR] Alert Dispatch Failed: {notify_err}")
         
+        print_safe(f"\n🎯 [MISSION COMPLETE] Harvested {valid_matches_count} matching listings for '{query}'.")
+        print_safe(f"🌐 View all live results in Explore: http://localhost:3000/explore\n")
         await update_task(task_id, "Complete", f"Aggregated scan finished for {query}.", completed=True)
 
 # [PULSE] AUTONOMOUS HEARTBEAT: The 24/7 Tiered Sniper Pulse

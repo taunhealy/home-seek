@@ -13,9 +13,7 @@ export const INTELLIGENCE_SOURCES: IntelligenceSource[] = [
   { id: 'Property24 Pet Friendly', label: 'P24 (Pet)', color: 'emerald', type: 'pet' },
   { id: 'Sea Point Rentals', label: 'FB: Sea Point Rentals', color: 'indigo', type: 'standard' },
   { id: 'Huis Huis', label: 'FB: Huis Huis', color: 'rose', type: 'standard' },
-  { id: 'Huis Huis Pet Friendly', label: 'FB: Huis Huis (Pet)', color: 'emerald', type: 'pet' },
-  { id: 'RentUncle', label: 'RentUncle', color: 'orange', type: 'standard' },
-  { id: 'RentUncle Pet Friendly', label: 'RentUncle (Pet)', color: 'emerald', type: 'pet' }
+  { id: 'Huis Huis Pet Friendly', label: 'FB: Huis Huis (Pet)', color: 'emerald', type: 'pet' }
 ];
 
 /**

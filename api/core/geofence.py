@@ -15,9 +15,10 @@ PREMIUM_SUBURBS = {
     "higgovale", "oranjezicht", "tamboerskloof", "gardens", "vredehoek",
     "city bowl", "devils peak",
 
-    # 🏖️ South Peninsula Coastal
-    "noordhoek", "kommetjie", "scarborough", "simon's town", "kalk bay", 
+    # 🏖️ South Peninsula Coastal (Deep South)
+    "noordhoek", "kommetjie", "scarborough", "simon's town", "simons town", "kalk bay", 
     "st james", "glencairn", "fish hoek", "muizenberg", "marina da gama", "lakeside",
+    "capri", "clovelly", "sunnydale", "ocean view",
 
     # 🏙️ Urban Revitalization Hubs
     "woodstock", "observatory", "salt river", "walmer estate", "university estate",
@@ -29,19 +30,34 @@ PREMIUM_SUBURBS = {
     "durbanville", "welgemoed", "plattekloof", "loevenstein", "stellenbosch", "somerset west"
 }
 
-# 🚫 BLACKLIST: Explicitly blocked nodes (to catch ambiguous AI extractions)
+# 🏖️ The Deep South Cluster
+DEEP_SOUTH_SUBURBS = {
+    "noordhoek", "kommetjie", "scarborough", "simon's town", "simons town", 
+    "kalk bay", "st james", "glencairn", "fish hoek", "muizenberg", 
+    "marina da gama", "lakeside", "capri", "clovelly", "sunnydale", "ocean view"
+}
+
+# ⭐ User Curated Cluster: Deep South only and Meadowridge, Bergvliet, Constantia, Hout Bay, Llandudno
+MY_FAVOURITES_SUBURBS = DEEP_SOUTH_SUBURBS | {
+    "meadowridge", "bergvliet", "constantia", "hout bay", "llandudno"
+}
+
+# 🚫 BLACKLIST: Explicitly blocked nodes (to catch ambiguous AI extractions or out-of-province redirects)
 BLOCKED_SUBURBS = {
     "grassy park", "wynberg", 
     "plumstead", "athlone", "mitchells plain", "khayelitsha", "parow", 
-    "bellville", "goodwood", "brooklyn", "maitland", "milnerton"
+    "bellville", "goodwood", "brooklyn", "maitland", "milnerton",
+    "pretoria", "gauteng", "buffelsdrift", "centurion", "johannesburg", "sandton", "midrand", "durban"
 }
 
 # 🌍 GEOFENCE ZONES: Grouping neighborhoods into 'Search Zones' for Source mapping (v85.0)
 GEOFENCE_ZONES = {
+    "my-favourites": MY_FAVOURITES_SUBURBS,
+    "deep-south": DEEP_SOUTH_SUBURBS,
     "atlantic": {"sea point", "green point", "mouille point", "three anchor bay", "bantry bay", "fresnaye", "clifton", "camps bay", "bakoven", "llandudno", "hout bay", "waterfront", "granger bay"},
     "west-coast": {"blouberg", "big bay", "table view", "west beach", "sunset beach"},
     "city-bowl": {"higgovale", "oranjezicht", "tamboerskloof", "gardens", "vredehoek", "city bowl", "devils peak", "woodstock", "observatory", "salt river", "walmer estate", "university estate"},
-    "south": {"constantia", "bishopscourt", "newlands", "claremont upper", "kenilworth upper", "rondebosch", "steenberg", "tokai", "kirstenhof", "bergvliet", "meadowridge", "noordhoek", "kommetjie", "scarborough", "simon's town", "kalk bay", "st james", "glencairn", "fish hoek", "muizenberg", "marina da gama", "lakeside"},
+    "south": {"constantia", "bishopscourt", "newlands", "claremont upper", "kenilworth upper", "rondebosch", "steenberg", "tokai", "kirstenhof", "bergvliet", "meadowridge"} | DEEP_SOUTH_SUBURBS,
     "north": {"durbanville", "welgemoed", "plattekloof", "loevenstein", "stellenbosch", "somerset west"}
 }
 
@@ -49,6 +65,10 @@ def get_zone_for_area(area_name: str) -> str:
     """Classifies a neighborhood into a search zone for source-mapping."""
     if not area_name: return "global"
     clean = area_name.lower().strip()
+    if any(k in clean for k in ["favourite", "favorite"]):
+        return "my-favourites"
+    if any(k in clean for k in ["deep south", "south peninsula"]):
+        return "deep-south"
     for zone, members in GEOFENCE_ZONES.items():
         if any(sub in clean for sub in members): return zone
     return "global"

@@ -38,6 +38,8 @@ class Listing(BaseModel):
     property_type: Optional[str] = Field(None, description="Apartment, House, Studio, etc.")
     property_sub_type: str = Field("Whole", description="Whole vs Shared")
     rental_type: Optional[str] = Field("long-term", description="long-term, short-term, or pet-sitting")
+    lease_period: Optional[str] = Field(None, description="e.g., '6 months renewable', '12 months', 'month-to-month'")
+    is_direct_landlord: bool = Field(False, description="True if listed by owner/landlord directly")
     view_category: Optional[str] = Field(None, description="Categorization: 'Sea', 'Mountain', or 'Other'")
     is_furnished: Optional[bool] = Field(None, description="TRUE if furnished")
     amenities: list[str] = Field(default_factory=list, description="Features: e.g., ['Pool', 'Security', 'Fibre']")
@@ -247,6 +249,8 @@ class GeminiExtractor:
             "   - 'long-term': Standard 12 month+ leases or if it doesn't mention any short-term/flexible duration.\n"
             "   - 'short-term': Flexible, daily/weekly/monthly stays (not sitting). Includes 'Short-Mid Term', '3-6 months', 'Month-to-month', 'Winter rental', 'Remote stay', or any duration less than 12 months.\n"
             "   - 'pet-sitting': UNIQUE CATEGORY for stay > 1 month where homeowner needs a pet/house-sitter.\n"
+            "   - Set 'lease_period': Extract explicit duration if mentioned (e.g. '6 months renewable', '3 months', 'Month-to-month', '12 months').\n"
+            "   - Set 'is_direct_landlord': Set TRUE if the listing indicates 'Contact Landlord', 'WhatsApp Landlord', 'Listed by Owner', or private landlord. Set FALSE if listed by an estate agency/agent.\n"
             "   - Set 'property_type' to 'Apartment', 'House', 'Studio', 'Cottage', or 'Townhouse' based on description.\n"
             "4. Availability & Contact: \n"
             "   - Set 'available_date' (e.g., 'Immediate', '1st June').\n"

@@ -178,14 +178,22 @@ class SniperEngine:
 
             # Start Heartbeat & Anchor
             self.anchor_page = await self.p_context.new_page()
-            try:
-                await self.anchor_page.goto("https://www.facebook.com", wait_until="domcontentloaded", timeout=45000)
-                print_flush("[SINGLETON] Anchor Page locked (Facebook).")
-            except Exception as e:
-                print_flush(f"[SINGLETON] Warning: Anchor Page failed to load ({e}). Engine starting anyway.")
+            has_fb_cookies = os.path.exists("cookies.json")
+            if has_fb_cookies:
+                try:
+                    await self.anchor_page.goto("https://www.facebook.com", wait_until="domcontentloaded", timeout=45000)
+                    print_flush("[SINGLETON] Anchor Page locked (Facebook session).")
+                except Exception as e:
+                    print_flush(f"[SINGLETON] Warning: Anchor Page failed to load ({e}). Engine starting anyway.")
+            else:
+                try:
+                    await self.anchor_page.goto("https://www.property24.com", wait_until="domcontentloaded", timeout=15000)
+                    print_flush("[SINGLETON] Anchor Page ready (Property24).")
+                except Exception:
+                    pass
             
             self.heartbeat_task = asyncio.create_task(self._session_heartbeat())
-            print_flush("[SINGLETON] Persistent Engine READY. Anchor Page locked. Heartbeat active.")
+            print_flush("[SINGLETON] Persistent Engine READY. Heartbeat active.")
 
     async def stop(self):
         """Gracefully shuts down the persistent browser."""
@@ -202,6 +210,8 @@ class SniperEngine:
         while True:
             try:
                 await asyncio.sleep(random.randint(900, 1500)) # 15-25 mins
+                if not os.path.exists("cookies.json"):
+                    continue
                 if self.p_context and self.anchor_page:
                     print_flush("[HEARTBEAT] Simulating human attendance on Anchor Page...")
                     # Ensure we are on a living page (FB feed)
@@ -299,13 +309,13 @@ class SniperEngine:
                     await asyncio.sleep(random.uniform(0.8, 2.0))
         except: pass
 
-    async def scrape_url(self, url: str, use_cookies: bool = True, task_id: Optional[str] = None, search_area: Optional[str] = None, model_name: Optional[str] = None, min_bedrooms: Optional[List[int]] = None, max_price: Optional[int] = None, is_pulse: bool = False) -> ExtractionResult:
+    async def scrape_url(self, url: str, use_cookies: bool = True, task_id: Optional[str] = None, search_area: Optional[str] = None, model_name: Optional[str] = None, min_bedrooms: Optional[List[int]] = None, max_price: Optional[int] = None, is_pulse: bool = False, min_sqm: Optional[int] = None, max_sqm: Optional[int] = None) -> ExtractionResult:
         """The 'Sniper' extraction stage - Obsidian-Stable v1.0.9."""
         from services.database import update_task
         print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] --- SCAN START (Pulse: {is_pulse}) ---")
         
         # 🟢 HYBRID MODE
-        is_portal = "property24.com" in url or "rentuncle.co.za" in url
+        is_portal = "property24.com" in url
         if CRAWL_AVAILABLE and not is_portal and ("/blog/" in url or "/news/" in url):
             if task_id: await update_task(task_id, "Extraction", "[DATA] Deploying Crawl4AI Sniper...")
             async with AsyncWebCrawler() as crawler:
@@ -370,12 +380,19 @@ class SniperEngine:
 
             # Start of extraction
             page = await context.new_page()
-            page.on("console", lambda msg: print_flush(f"[BROWSER] {msg.text}"))
+            def _filter_console(msg):
+                txt = msg.text
+                if any(k in txt for k in ["[GPT]", "PubAdsService", "GSI_LOGGER", "JQMIGRATE", "FedCM", "googletag", "autocomplete attributes", "console.trace"]):
+                    return
+                print_flush(f"[BROWSER] {txt}")
+            page.on("console", _filter_console)
             
             if is_portal and not re.search(r"/\d{8,}", url):
                 sep = "&" if "?" in url else "?"
                 if min_bedrooms: url += f"{sep}bedrooms={min_bedrooms}"; sep="&"
-                if max_price: url += f"{sep}maxPrice={max_price}"
+                if max_price: url += f"{sep}maxPrice={max_price}"; sep="&"
+                if min_sqm: url += f"{sep}minFloorSize={min_sqm}"; sep="&"
+                if max_sqm: url += f"{sep}maxFloorSize={max_sqm}"
 
             # [SPEED] Accelerated Direct Search for FB Groups
             if "facebook.com/groups" in url and search_area:
@@ -394,14 +411,20 @@ class SniperEngine:
                     if task_id: await update_task(task_id, "Blocked", f"Portal rejected request ({response.status})")
                     return ExtractionResult(listings=[], confidence_score=0, raw_summary=f"Server Unavailable ({response.status})")
 
-                # [VITAL] Wait for Search Hydration (FB specific)
-                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Waiting for Search Results to hydrate...")
-                try:
-                    # Look for common FB Feed markers
-                    await page.wait_for_selector('[role="feed"], div[class*="feed"], div[aria-label*="Search"]', timeout=15000)
-                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Results detected. Commencing harvest.")
-                except:
-                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Warning: Results feed not detected, continuing with broad sweep.")
+                # Hydration check tailored by source
+                if is_portal:
+                    try:
+                        await page.wait_for_selector('.p24_regularTile, .p24_promotedTile, .p24_featuredTile, .p24_tile, .p24_results', timeout=4000)
+                    except:
+                        pass
+                elif "facebook.com" in url:
+                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Waiting for Search Results to hydrate...")
+                    try:
+                        # Look for common FB Feed markers
+                        await page.wait_for_selector('[role="feed"], div[class*="feed"], div[aria-label*="Search"]', timeout=12000)
+                        print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Results detected. Commencing harvest.")
+                    except:
+                        print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [MISSION] Warning: Results feed not detected, continuing with broad sweep.")
             except Exception as e:
                 print_flush(f"[SYSTEM] Primary Navigation Timeout (continuing anyway): {str(e)[:40]}")
 
@@ -479,15 +502,57 @@ class SniperEngine:
                 scroll_count = 8 if "facebook.com" in url else 5
             cumulative_buffer = ""
             
+            # [PORTAL FAST-TRACK] Property24 Deterministic Extraction (0 AI tokens)
+            if "property24.com" in url:
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [PORTAL] Rapid deterministic extraction for Property24...")
+                await self.human_scroll(page, distance=random.randint(1200, 2000))
+                await self.human_delay(1, 2)
+                
+                p24_raw_cards = await page.evaluate("""() => {
+                    const tiles = document.querySelectorAll('.p24_regularTile, .p24_promotedTile, .p24_featuredTile');
+                    return Array.from(tiles).map(t => {
+                        const priceStr = t.querySelector('.p24_price')?.innerText?.trim() || '';
+                        const titleStr = t.querySelector('.p24_title')?.innerText?.trim() || '';
+                        const locationStr = t.querySelector('.p24_location')?.innerText?.trim() || '';
+                        const addressStr = t.querySelector('.p24_address')?.innerText?.trim() || '';
+                        const excerptStr = t.querySelector('.p24_excerpt')?.innerText?.trim() || '';
+                        const sizeStr = t.querySelector('.p24_size, [title*="Floor Size"], [title*="Erf Size"], [title*="Size"]')?.innerText?.trim() || '';
+                        const linkEl = t.querySelector('a[href*="/to-rent/"]');
+                        let link = linkEl?.getAttribute('href') || '';
+                        if (link && link.startsWith('/')) link = 'https://www.property24.com' + link;
+                        const isLandlord = t.querySelector('img[src*="listed_by_owner"]') !== null || (link && link.includes('plt=3')) || t.innerText.includes('Landlord');
+                        return {
+                            priceStr,
+                            titleStr,
+                            locationStr,
+                            addressStr,
+                            excerptStr,
+                            sizeStr,
+                            link,
+                            isLandlord,
+                            fullText: t.innerText
+                        };
+                    });
+                }""")
+                
+                from scraper.portal_parser import parse_p24_card
+                p24_listings = []
+                for card in p24_raw_cards:
+                    item = parse_p24_card(card, default_suburb=search_area)
+                    if item:
+                        p24_listings.append(item)
+                        
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [PORTAL] Successfully parsed {len(p24_listings)} Property24 listings directly (0 Gemini tokens).")
+                return ExtractionResult(listings=p24_listings, confidence_score=100.0, raw_summary=f"Parsed {len(p24_listings)} listings from Property24 DOM")
+
             # [VITAL] Link-Aware Harvesting (v47.0)
             # Instead of innerText (which kills URLs), we use a custom script to detect "Cards"
-            harvest_script = """() => {
+            harvest_script = r"""() => {
                 const listings = [];
                 // 1. Detect Cards based on Platform
                 const selectors = [
                     '.p24_regularTile', '.p24_promotedTile', '.p24_featuredTile', // Property24
-                    '.list_item', '.ad_box', '.listing-card', '.listing-result', '.search-result', // RentUncle Cards
-                    '.thumb_box', '.tricky_link', '.box_ad', // Fallbacks
+                    '.thumb_box', '.box_ad', // Fallbacks
                     'div[role="article"]', 'div[data-testid="fbfeed_story"]', // Facebook Core
                     'div[role="feed"] > div', 'div[class*="feed"] > div', 
                     'article', 'div[class*="listing"]' 
@@ -527,13 +592,11 @@ class SniperEngine:
                         }
                         
                         // 2. Property24 / Generic fallback
-                        // [v94.0] PORTAL-AWARE LINKING: P24 requires 8-9 digits. Generic portals (RentUncle) use slug-based links.
                         const isP24 = window.location.hostname.includes('property24.com');
                         const linkReg = isP24 ? /\\/\\d{8,}/ : /\\/.+/;
                         if (link === window.location.href || link.includes('/search/?q=') || !linkReg.test(link)) {
-                            // 🛰️ [v117.0] RentUncle Direct Capture - Target specific slug-based URLs
-                            const ruLink = f.classList.contains('tricky_link') ? f : f.querySelector('.tricky_link');
-                            let candidate = ruLink?.getAttribute('href') || "";
+                            const trickyLink = f.classList.contains('tricky_link') ? f : f.querySelector('.tricky_link');
+                            let candidate = trickyLink?.getAttribute('href') || "";
                             
                             if (candidate && !candidate.includes('javascript:void(0)')) {
                                 link = candidate;
@@ -759,6 +822,44 @@ class SniperEngine:
                     except: pass
 
     async def discover_portal_url(self, portal_url: str, suburb: str, task_id: str = None, original_query: Optional[str] = None) -> str:
+        clean_sub = str(suburb or "").lower().strip()
+        
+        # Suburb exact canonical map
+        suburb_urls = {
+            # Deep South
+            "fish hoek": "https://www.property24.com/to-rent/fish-hoek/western-cape/475",
+            "noordhoek": "https://www.property24.com/to-rent/noordhoek/western-cape/479",
+            "kommetjie": "https://www.property24.com/to-rent/kommetjie/western-cape/478",
+            "scarborough": "https://www.property24.com/to-rent/scarborough/western-cape/652",
+            "simons town": "https://www.property24.com/to-rent/simons-town/western-cape/401",
+            "simon's town": "https://www.property24.com/to-rent/simons-town/western-cape/401",
+            "muizenberg": "https://www.property24.com/to-rent/muizenberg/cape-town/western-cape/9025",
+            "kalk bay": "https://www.property24.com/to-rent/kalk-bay/cape-town/western-cape/9067",
+            "st james": "https://www.property24.com/to-rent/st-james/cape-town/western-cape/9039",
+            "glencairn": "https://www.property24.com/to-rent/glencairn/simons-town/western-cape/9107",
+            "capri": "https://www.property24.com/to-rent/capri/fish-hoek/western-cape/10997",
+            "clovelly": "https://www.property24.com/to-rent/clovelly/fish-hoek/western-cape/10947",
+            "sunnydale": "https://www.property24.com/to-rent/sunnydale/noordhoek/western-cape/9090",
+            # Requested Additions
+            "meadowridge": "https://www.property24.com/to-rent/meadowridge/cape-town/western-cape/10052",
+            "bergvliet": "https://www.property24.com/to-rent/bergvliet/cape-town/western-cape/10189",
+            "constantia": "https://www.property24.com/to-rent/constantia/cape-town/western-cape/11742",
+            "hout bay": "https://www.property24.com/to-rent/hout-bay/western-cape/615",
+            "llandudno": "https://www.property24.com/to-rent/llandudno/cape-town/western-cape/9118",
+            # Atlantic Seaboard
+            "sea point": "https://www.property24.com/to-rent/sea-point/cape-town/western-cape/11021",
+            "green point": "https://www.property24.com/to-rent/green-point/cape-town/western-cape/11017",
+            "camps bay": "https://www.property24.com/to-rent/camps-bay/cape-town/western-cape/11014",
+            "clifton": "https://www.property24.com/to-rent/clifton/cape-town/western-cape/11015",
+            "bakoven": "https://www.property24.com/to-rent/bakoven/cape-town/western-cape/11012"
+        }
+        for s_name, s_url in suburb_urls.items():
+            if s_name in clean_sub:
+                sep = "&" if "?" in s_url else "?"
+                if original_query and any(x in str(original_query).lower() for x in ["pet", "dog", "cat"]):
+                    return f"{s_url}{sep}sp=ptf%3dTrue"
+                return s_url
+
         from services.database import update_task
         async with async_playwright() as p:
             proxy_url = os.environ.get("HTTP_PROXY")
@@ -794,14 +895,14 @@ class SniperEngine:
                     suburb_id = matched_item.get("Id") or matched_item.get("id") or matched_item.get("value")
                     if relative_url: 
                         discovered_url = f"https://www.property24.com{relative_url}"
-                        # [HEAL] If relative URL is missing province/city, Property24 often 500s on listing IDs.
-                        if "cape-town/western-cape" not in discovered_url.lower() and "/to-rent/" in discovered_url:
-                             discovered_url = discovered_url.replace("/to-rent/", "/to-rent/cape-town/western-cape/")
+                        # [HEAL] Only inject province/city if not already present in the relative URL
+                        if "western-cape" not in discovered_url.lower() and "/to-rent/" in discovered_url:
+                            discovered_url = discovered_url.replace("/to-rent/", "/to-rent/cape-town/western-cape/")
                     elif suburb_id: 
                         discovered_url = f"https://www.property24.com/to-rent/{suburb_name_slug}/cape-town/western-cape/{suburb_id}"
-                if "property24.com" in discovered_url and original_query:
-                    if any(x in original_query.lower() for x in ["pet", "dog", "cat"]):
-                        separator = "&" if "?" in discovered_url else "?"
+                if "property24.com" in discovered_url:
+                    separator = "&" if "?" in discovered_url else "?"
+                    if original_query and any(x in original_query.lower() for x in ["pet", "dog", "cat"]):
                         discovered_url += f"{separator}sp=ptf%3dTrue"
                 return discovered_url
             except Exception as e:

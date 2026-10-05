@@ -15,96 +15,318 @@ class SniperHub(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Home-Seek | Local Extraction Console")
-        self.geometry("1000x650")
+        self.geometry("1180x820")
         
         self.server_process = None
         self.pulse_thread = None
         self.is_pulsing = False
         
-        # Grid Layout
+        # Grid Layout (Sidebar | Main Console)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # --- Sidebar ---
-        self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0)
+        # ==========================================
+        # 1. SCROLLABLE SIDEBAR (Control & Filters)
+        # ==========================================
+        self.sidebar_frame = ctk.CTkScrollableFrame(self, width=340, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         
+        # Logo & Server Status
         self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="Sniper Engine", font=ctk.CTkFont(size=20, weight="bold"))
-        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+        self.logo_label.pack(pady=(15, 4))
         
-        self.server_status_label = ctk.CTkLabel(self.sidebar_frame, text="Backend: OFFLINE", text_color="gray")
-        self.server_status_label.grid(row=1, column=0, padx=20, pady=5)
+        self.server_status_label = ctk.CTkLabel(self.sidebar_frame, text="Backend: OFFLINE", text_color="gray", font=ctk.CTkFont(size=12, weight="bold"))
+        self.server_status_label.pack(pady=(0, 8))
         
         self.btn_toggle_server = ctk.CTkButton(self.sidebar_frame, text="Boot Extraction Server", command=self.toggle_server)
-        self.btn_toggle_server.grid(row=2, column=0, padx=20, pady=10)
+        self.btn_toggle_server.pack(fill="x", padx=15, pady=(0, 6))
 
-        # 🚀 [PROMINENT] HEADLESS TOGGLE
+        # Invisible Mode
         self.headless_var = ctk.BooleanVar(value=False)
         self.headless_switch = ctk.CTkSwitch(self.sidebar_frame, text="Invisible Mode (Headless)", variable=self.headless_var)
-        self.headless_switch.grid(row=3, column=0, padx=20, pady=(5, 15))
+        self.headless_switch.pack(anchor="w", padx=20, pady=(4, 15))
 
-        # NEW: AUTH MAINTENANCE
-        self.auth_label = ctk.CTkLabel(self.sidebar_frame, text="🔐 SESSION AUTH", font=ctk.CTkFont(size=14, weight="bold"))
-        self.auth_label.grid(row=4, column=0, padx=20, pady=(30, 5))
-
-        self.btn_prime_session = ctk.CTkButton(self.sidebar_frame, text="Prime Login Session", command=self.prime_session, fg_color="#8b5cf6", hover_color="#7c3aed")
-        self.btn_prime_session.grid(row=5, column=0, padx=20, pady=10)
-
-        # Targeting Controls
-        self.target_label = ctk.CTkLabel(self.sidebar_frame, text="🎯 TARGETING", font=ctk.CTkFont(size=14, weight="bold"))
-        self.target_label.grid(row=6, column=0, padx=20, pady=(30, 5))
-
-        self.keyword_entry = ctk.CTkEntry(self.sidebar_frame, placeholder_text="Keyword (e.g. Sea Point)")
-        self.keyword_entry.grid(row=7, column=0, padx=20, pady=5, sticky="ew")
-
-        self.source_var = ctk.StringVar(value="Select Source")
-        self.source_menu = ctk.CTkOptionMenu(self.sidebar_frame, variable=self.source_var, values=["Huis Huis", "Huis Huis Pet Friendly", "Sea Point Rentals", "FB Marketplace", "Property24"])
-        self.source_menu.grid(row=8, column=0, padx=20, pady=5, sticky="ew")
-
-        self.btn_manual_snipe = ctk.CTkButton(self.sidebar_frame, text="Snipe Now", command=self.manual_snipe, fg_color="#f59e0b", hover_color="#d97706")
-        self.btn_manual_snipe.grid(row=9, column=0, padx=20, pady=10)
-
-        # NEW: QUICK SNIPE
-        self.quick_label = ctk.CTkLabel(self.sidebar_frame, text="[Missions] QUICK SNIPES", font=ctk.CTkFont(size=14, weight="bold"))
-        self.quick_label.grid(row=10, column=0, padx=20, pady=(30, 5))
-
-        self.btn_quick_seapoint = ctk.CTkButton(self.sidebar_frame, text="Snipe: Sea Point (Huis Huis)", command=self.quick_seapoint, fg_color="#ec4899", hover_color="#db2777")
-        self.btn_quick_seapoint.grid(row=11, column=0, padx=20, pady=10)
-
-        # Advanced Pulse & Diag (Moved down to prevent overlap)
-        self.btn_re_match = ctk.CTkButton(self.sidebar_frame, text="🧠 ALERTS SCAN (DB ONLY)", command=self.intel_re_match, fg_color="#10b981", hover_color="#059669")
-        self.btn_re_match.grid(row=12, column=0, padx=20, pady=(30, 5))
-
-        self.btn_force_hunt = ctk.CTkButton(self.sidebar_frame, text="🏹 HUNT NOW (WEB SCAN)", command=self.force_pulse, fg_color="#3b82f6", hover_color="#2563eb")
-        self.btn_force_hunt.grid(row=13, column=0, padx=20, pady=5)
-
-        self.btn_diag = ctk.CTkButton(self.sidebar_frame, text="Run Pro Diagnostic", command=self.run_prod_diag, fg_color="#6366f1", hover_color="#4f46e5")
-        self.btn_diag.grid(row=14, column=0, padx=20, pady=10)
+        # --- SECTION: TARGET & PORTAL ---
+        self._create_section_label("🎯 MISSION TARGET")
         
+        self.keyword_entry = ctk.CTkEntry(self.sidebar_frame, placeholder_text="Area / Suburb (e.g. Sea Point, Fish Hoek)")
+        self.keyword_entry.pack(fill="x", padx=15, pady=(2, 4))
+
+        # Quick Zone Preset Buttons
+        preset_row = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        preset_row.pack(fill="x", padx=15, pady=(0, 6))
         
-        # --- Main Console ---
+        btn_fav = ctk.CTkButton(
+            preset_row, 
+            text="⭐ My Favourites", 
+            command=lambda: self._set_keyword("My Favourites"),
+            fg_color="#334155", 
+            hover_color="#475569", 
+            font=ctk.CTkFont(size=10, weight="bold"),
+            height=24
+        )
+        btn_fav.pack(side="left", fill="x", expand=True, padx=(0, 2))
+
+        btn_south = ctk.CTkButton(
+            preset_row, 
+            text="🏖️ Deep South", 
+            command=lambda: self._set_keyword("Deep South"),
+            fg_color="#334155", 
+            hover_color="#475569", 
+            font=ctk.CTkFont(size=10, weight="bold"),
+            height=24
+        )
+        btn_south.pack(side="left", fill="x", expand=True, padx=(2, 2))
+
+        btn_sea = ctk.CTkButton(
+            preset_row, 
+            text="🌊 Sea Point", 
+            command=lambda: self._set_keyword("Sea Point"),
+            fg_color="#334155", 
+            hover_color="#475569", 
+            font=ctk.CTkFont(size=10, weight="bold"),
+            height=24
+        )
+        btn_sea.pack(side="left", fill="x", expand=True, padx=(2, 0))
+
+        self.source_var = ctk.StringVar(value="Property24")
+        self.source_menu = ctk.CTkOptionMenu(
+            self.sidebar_frame, 
+            variable=self.source_var, 
+            values=["Property24", "FB Marketplace", "Huis Huis", "Huis Huis Pet Friendly", "Sea Point Rentals", "All Sources"]
+        )
+        self.source_menu.pack(fill="x", padx=15, pady=(0, 14))
+
+        # --- SECTION: EXPLORE LEASE & AGENT FILTERS ---
+        self._create_section_label("🛡️ LANDLORD & LEASE TYPE")
+        
+        # Direct Landlord (No Agents) Filter - Active by default
+        self.no_agents_var = ctk.BooleanVar(value=True)
+        self.no_agents_switch = ctk.CTkSwitch(
+            self.sidebar_frame, 
+            text="No Agents (Direct Landlord Only)", 
+            variable=self.no_agents_var,
+            progress_color="#10b981"
+        )
+        self.no_agents_switch.pack(anchor="w", padx=20, pady=(2, 8))
+
+        # Rental Category (Long Term / Short Term / Room Share)
+        self._create_sub_label("Rental Category:")
+        self.rental_type_var = ctk.StringVar(value="Long Term")
+        self.rental_type_seg = ctk.CTkSegmentedButton(
+            self.sidebar_frame, 
+            values=["Long Term", "Short Term", "Room Share"], 
+            variable=self.rental_type_var
+        )
+        self.rental_type_seg.pack(fill="x", padx=15, pady=(0, 8))
+
+        # Lease Term Length
+        self._create_sub_label("Lease Term:")
+        self.lease_term_var = ctk.StringVar(value="Any")
+        self.lease_term_seg = ctk.CTkSegmentedButton(
+            self.sidebar_frame, 
+            values=["Any", "1 (M2M)", "3m", "6m", "12m"], 
+            variable=self.lease_term_var
+        )
+        self.lease_term_seg.pack(fill="x", padx=15, pady=(0, 14))
+
+        # --- SECTION: BUDGET & DIMENSIONS ---
+        self._create_section_label("💰 BUDGET & SPACE")
+        
+        price_row = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        price_row.pack(fill="x", padx=15, pady=(2, 6))
+        
+        self.min_price_entry = ctk.CTkEntry(price_row, placeholder_text="Min R")
+        self.min_price_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        
+        self.max_price_entry = ctk.CTkEntry(price_row, placeholder_text="Max R")
+        self.max_price_entry.pack(side="right", fill="x", expand=True, padx=(4, 0))
+
+        self.min_sqm_entry = ctk.CTkEntry(self.sidebar_frame, placeholder_text="Min Size (m²)")
+        self.min_sqm_entry.pack(fill="x", padx=15, pady=(0, 14))
+
+        # --- SECTION: PROPERTY SPECS ---
+        self._create_section_label("🛏️ PROPERTY SPECS")
+        
+        self._create_sub_label("Bedrooms:")
+        self.beds_var = ctk.StringVar(value="Any")
+        self.beds_seg = ctk.CTkSegmentedButton(
+            self.sidebar_frame, 
+            values=["Any", "1", "2", "3", "4+"], 
+            variable=self.beds_var
+        )
+        self.beds_seg.pack(fill="x", padx=15, pady=(0, 8))
+
+        self.baths_var = ctk.StringVar(value="Any Baths")
+        self.baths_menu = ctk.CTkOptionMenu(
+            self.sidebar_frame, 
+            variable=self.baths_var, 
+            values=["Any Baths", "1+ Bath", "2+ Baths", "3+ Baths"]
+        )
+        self.baths_menu.pack(fill="x", padx=15, pady=(0, 6))
+
+        self.layout_var = ctk.StringVar(value="Any Layout")
+        self.layout_menu = ctk.CTkOptionMenu(
+            self.sidebar_frame, 
+            variable=self.layout_var, 
+            values=["Any Layout", "Apartment", "House", "Cottage", "Studio", "Room"]
+        )
+        self.layout_menu.pack(fill="x", padx=15, pady=(0, 6))
+
+        self.furnished_var = ctk.StringVar(value="Any Furnishing")
+        self.furnished_menu = ctk.CTkOptionMenu(
+            self.sidebar_frame, 
+            variable=self.furnished_var, 
+            values=["Any Furnishing", "Furnished", "Unfurnished"]
+        )
+        self.furnished_menu.pack(fill="x", padx=15, pady=(0, 6))
+
+        self.pets_var = ctk.BooleanVar(value=False)
+        self.pets_switch = ctk.CTkSwitch(
+            self.sidebar_frame, 
+            text="🐾 Pet Friendly Only", 
+            variable=self.pets_var,
+            progress_color="#10b981"
+        )
+        self.pets_switch.pack(anchor="w", padx=20, pady=(6, 14))
+
+        # --- SECTION: ACTIONS ---
+        self._create_section_label("🚀 MISSION DISPATCH")
+        
+        self.btn_manual_snipe = ctk.CTkButton(
+            self.sidebar_frame, 
+            text="🎯 Snipe Now (Filtered Mission)", 
+            command=self.manual_snipe, 
+            fg_color="#f59e0b", 
+            hover_color="#d97706",
+            font=ctk.CTkFont(size=13, weight="bold")
+        )
+        self.btn_manual_snipe.pack(fill="x", padx=15, pady=(4, 6))
+
+        self.btn_quick_favourites = ctk.CTkButton(
+            self.sidebar_frame, 
+            text="⭐ Snipe: My Favourites (Deep South + 5)", 
+            command=self.quick_favourites, 
+            fg_color="#d97706", 
+            hover_color="#b45309",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        self.btn_quick_favourites.pack(fill="x", padx=15, pady=(0, 6))
+
+        self.btn_quick_seapoint = ctk.CTkButton(
+            self.sidebar_frame, 
+            text="⚡ Snipe: Sea Point (Quick)", 
+            command=self.quick_seapoint, 
+            fg_color="#ec4899", 
+            hover_color="#db2777"
+        )
+        self.btn_quick_seapoint.pack(fill="x", padx=15, pady=(0, 6))
+
+        self.btn_force_hunt = ctk.CTkButton(
+            self.sidebar_frame, 
+            text="🏹 HUNT NOW (WEB SCAN)", 
+            command=self.force_pulse, 
+            fg_color="#3b82f6", 
+            hover_color="#2563eb"
+        )
+        self.btn_force_hunt.pack(fill="x", padx=15, pady=(0, 6))
+
+        self.btn_re_match = ctk.CTkButton(
+            self.sidebar_frame, 
+            text="🧠 ALERTS SCAN (DB ONLY)", 
+            command=self.intel_re_match, 
+            fg_color="#10b981", 
+            hover_color="#059669"
+        )
+        self.btn_re_match.pack(fill="x", padx=15, pady=(0, 6))
+
+        self.btn_prime_session = ctk.CTkButton(
+            self.sidebar_frame, 
+            text="🔐 Prime Login Session", 
+            command=self.prime_session, 
+            fg_color="#8b5cf6", 
+            hover_color="#7c3aed"
+        )
+        self.btn_prime_session.pack(fill="x", padx=15, pady=(0, 6))
+
+        self.btn_diag = ctk.CTkButton(
+            self.sidebar_frame, 
+            text="🩺 Run Pro Diagnostic", 
+            command=self.run_prod_diag, 
+            fg_color="#6366f1", 
+            hover_color="#4f46e5"
+        )
+        self.btn_diag.pack(fill="x", padx=15, pady=(0, 15))
+
+        # ==========================================
+        # 2. MAIN CONSOLE (Telemetry & Output)
+        # ==========================================
         self.main_frame = ctk.CTkFrame(self)
         self.main_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
         self.main_frame.grid_rowconfigure(2, weight=1)
         self.main_frame.grid_columnconfigure(0, weight=1)
 
-        self.console_title = ctk.CTkLabel(self.main_frame, text="Active Mission Telemetry", font=ctk.CTkFont(size=16, weight="bold"))
-        self.console_title.grid(row=0, column=0, sticky="w", padx=20, pady=(20, 10))
+        self.console_title = ctk.CTkLabel(
+            self.main_frame, 
+            text="Active Mission Telemetry", 
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        self.console_title.grid(row=0, column=0, sticky="w", padx=20, pady=(20, 5))
         
-        # Facebook Security Audit
-        self.cookie_status = ctk.CTkLabel(self.main_frame, text="Checking Facebook Auth...", font=ctk.CTkFont(size=12))
-        self.cookie_status.grid(row=1, column=0, sticky="w", padx=20, pady=5)
+        self.cookie_status = ctk.CTkLabel(
+            self.main_frame, 
+            text="Checking Facebook Auth...", 
+            font=ctk.CTkFont(size=12)
+        )
+        self.cookie_status.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 10))
         
-        self.terminal = ctk.CTkTextbox(self.main_frame, font=ctk.CTkFont(family="Consolas", size=12), text_color="#10b981", fg_color="#000000")
-        self.terminal.grid(row=2, column=0, sticky="nsew", padx=20, pady=20)
+        self.terminal = ctk.CTkTextbox(
+            self.main_frame, 
+            font=ctk.CTkFont(family="Consolas", size=12), 
+            text_color="#10b981", 
+            fg_color="#090d16"
+        )
+        self.terminal.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
         
-        self.log_text("SYSTEM INITIALIZED. Waiting for orders...")
+        self.log_text("SYSTEM INITIALIZED. Explore filters loaded & ready.")
+        self.log_text("👉 Select an Area (or click '⭐ My Favourites') and click '🎯 Snipe Now' to begin.")
         self.check_cookies()
+        self.check_initial_server_status()
+
+    # --- UI Helpers ---
+    def _create_section_label(self, text: str):
+        lbl = ctk.CTkLabel(
+            self.sidebar_frame, 
+            text=text, 
+            font=ctk.CTkFont(size=12, weight="bold"), 
+            text_color="#94a3b8"
+        )
+        lbl.pack(anchor="w", padx=15, pady=(10, 4))
+
+    def _create_sub_label(self, text: str):
+        lbl = ctk.CTkLabel(
+            self.sidebar_frame, 
+            text=text, 
+            font=ctk.CTkFont(size=11), 
+            text_color="#64748b"
+        )
+        lbl.pack(anchor="w", padx=15, pady=(2, 2))
 
     def log_text(self, message):
         msg = f"[{dt.datetime.now().strftime('%H:%M:%S')}] {message}\n"
         self.terminal.insert("end", msg)
         self.terminal.see("end")
+
+    def check_initial_server_status(self):
+        def _check():
+            try:
+                res = requests.get("http://localhost:8000/docs", timeout=1.5)
+                if res.status_code == 200:
+                    self.server_status_label.configure(text="Backend: ONLINE (Port 8000)", text_color="#10b981")
+                    self.log_text("⚡ Extraction Server is ONLINE (Port 8000). Ready to search!")
+            except Exception:
+                pass
+        threading.Thread(target=_check, daemon=True).start()
 
     def check_cookies(self):
         cookie_path = "cookies.json"
@@ -122,6 +344,12 @@ class SniperHub(ctk.CTk):
         else:
             self.cookie_status.configure(text="❌ Facebook Auth: cookies.json NOT FOUND", text_color="#ef4444")
 
+    def get_python_exec(self):
+        venv_python = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".venv", "Scripts", "python.exe"))
+        if os.path.exists(venv_python):
+            return venv_python
+        return sys.executable
+
     def toggle_server(self):
         if self.server_process is None:
             self.log_text("🔍 Clearing Port 8000...")
@@ -136,8 +364,10 @@ class SniperHub(ctk.CTk):
             env["PYTHONUNBUFFERED"] = "1"
             env["HEADLESS"] = "true" if self.headless_var.get() else "false"
             
+            py_exe = self.get_python_exec()
+            cmd = f'"{py_exe}" -m uvicorn main_local:app --host 0.0.0.0 --port 8000'
             self.server_process = subprocess.Popen(
-                "python -m uvicorn main:app --host 0.0.0.0 --port 8000", 
+                cmd, 
                 shell=True, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.STDOUT, 
@@ -164,11 +394,6 @@ class SniperHub(ctk.CTk):
         self.log_text("⏳ The bot will wait until you close the browser window yourself.")
         
         def _thread():
-            import sys
-            env = os.environ.copy()
-            env["LOCAL_SNIPER"] = "True"
-            env["AUTH_PRIME_MODE"] = "True" 
-            # We'll run a specific priming script
             prime_script = """
 import asyncio
 import os
@@ -178,13 +403,11 @@ async def run():
         user_data_path = os.path.join(os.getcwd(), 'local_session')
         fixed_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         
-        # [ALIGNED] Use Proxy for Priming if available
         proxy_config = None
         proxy_url = os.environ.get("HTTP_PROXY")
         if proxy_url:
             import urllib.parse
             parsed = urllib.parse.urlparse(proxy_url)
-            # Standard format for Decodo/BrightData
             username = f"{parsed.username}-session-prime" if parsed.username else None
             proxy_config = {"server": f"{parsed.hostname}:{parsed.port}", "username": username, "password": parsed.password}
 
@@ -199,7 +422,6 @@ async def run():
         page = await context.new_page()
         await page.goto('https://www.facebook.com')
         print('PRIME: Browser open. Log in and close when done.')
-        # Wait indefinitely until closed
         while True:
             try:
                 if context.pages == []: break
@@ -211,7 +433,7 @@ if __name__ == '__main__':
     asyncio.run(run())
 """
             with open("prime_helper.py", "w") as f: f.write(prime_script)
-            subprocess.run([sys.executable, "prime_helper.py"])
+            subprocess.run([self.get_python_exec(), "prime_helper.py"])
             self.log_text("✅ SESSION PRIMED: Login captured! You can now use 'Snipe Now' freely.")
             self.check_cookies()
 
@@ -222,9 +444,8 @@ if __name__ == '__main__':
         self.log_text(f"🧠 ANALYZING GLOBAL INTEL for {user_id} (DB Only)...")
         
         def _post():
-            import time
             success = False
-            for attempt in range(15): # 30s total window
+            for attempt in range(15):
                 try:
                     res = requests.post(
                         "http://127.0.0.1:8000/trigger-re-match", 
@@ -258,9 +479,8 @@ if __name__ == '__main__':
         self.log_text(f"🚀 INITIATING PROACTIVE ALERTS SCAN for {user_id}...")
         
         def _post():
-            import time
             success = False
-            for attempt in range(15): # 30s total window
+            for attempt in range(15):
                 try:
                     res = requests.post(
                         "http://127.0.0.1:8000/trigger-full-scan", 
@@ -290,10 +510,10 @@ if __name__ == '__main__':
         threading.Thread(target=_post, daemon=True).start()
 
     def manual_snipe(self):
-        keyword = self.keyword_entry.get()
+        keyword = self.keyword_entry.get().strip()
         source_name = self.source_var.get()
-        if not keyword or source_name == "Select Source":
-            self.log_text("⚠️ ERROR: Enter keyword and select source.")
+        if not keyword:
+            self.log_text("⚠️ ERROR: Enter an Area / Suburb (e.g. Sea Point, Fish Hoek).")
             return
 
         source_id_map = {
@@ -304,19 +524,92 @@ if __name__ == '__main__':
             "Property24": "llLUh4dRz0mu7p2lHbtC"
         }
         source_id = source_id_map.get(source_name)
-        
-        self.log_text(f"🎯 SNIPING: {keyword} @ {source_name}...")
+        source_ids = [source_id] if source_id else None
+
+        # Parse Budget & Dimensions
+        min_p_raw = self.min_price_entry.get().strip().replace("R", "").replace(",", "")
+        max_p_raw = self.max_price_entry.get().strip().replace("R", "").replace(",", "")
+        min_sqm_raw = self.min_sqm_entry.get().strip().replace(",", "")
+
+        min_price = int(min_p_raw) if min_p_raw.isdigit() else None
+        max_price = int(max_p_raw) if max_p_raw.isdigit() else None
+        min_sqm = int(min_sqm_raw) if min_sqm_raw.isdigit() else None
+
+        # Parse Specs
+        beds_val = self.beds_var.get()
+        min_beds = None
+        if beds_val in ["1", "2", "3"]:
+            min_beds = int(beds_val)
+        elif beds_val == "4+":
+            min_beds = 4
+
+        baths_val = self.baths_var.get()
+        min_baths = None
+        if "1+" in baths_val: min_baths = 1
+        elif "2+" in baths_val: min_baths = 2
+        elif "3+" in baths_val: min_baths = 3
+
+        rental_type_map = {
+            "Long Term": "long-term",
+            "Short Term": "short-term",
+            "Room Share": "room-share"
+        }
+        rental_type = rental_type_map.get(self.rental_type_var.get(), "long-term")
+
+        lease_term_raw = self.lease_term_var.get()
+        lease_term = None
+        if lease_term_raw == "1 (M2M)": lease_term = "1"
+        elif lease_term_raw == "3m": lease_term = "3"
+        elif lease_term_raw == "6m": lease_term = "6"
+        elif lease_term_raw == "12m": lease_term = "12"
+
+        layout_raw = self.layout_var.get()
+        layout = layout_raw if layout_raw != "Any Layout" else None
+
+        furn_raw = self.furnished_var.get()
+        furnished = furn_raw.lower() if furn_raw != "Any Furnishing" else None
+
+        no_agents = self.no_agents_var.get()
+        pet_friendly = self.pets_var.get()
+
+        payload = {
+            "query": keyword,
+            "search_query": keyword,
+            "source_ids": source_ids,
+            "user_id": "taun_test_user",
+            "no_agents": no_agents,
+            "rental_type": rental_type,
+            "lease_term": lease_term,
+            "min_price": min_price,
+            "max_price": max_price,
+            "min_bedrooms": min_beds,
+            "bathrooms": min_baths,
+            "layout": layout,
+            "property_sub_type": layout,
+            "furnished": furnished,
+            "pet_friendly": pet_friendly,
+            "min_sqm": min_sqm
+        }
+
+        self.log_text(f"🎯 MISSION DISPATCHED: {keyword} @ {source_name}")
+        self.log_text(f"   [FILTERS] NoAgents: {no_agents} | Term: {lease_term_raw} | Type: {self.rental_type_var.get()}")
+        self.log_text(f"   [SPECS] Budget: R{min_price or 0}-R{max_price or 'Any'} | Beds: {beds_val} | Baths: {baths_val} | Pets: {pet_friendly}")
+
         def _post():
-            import time
             success = False
-            for attempt in range(15): # 30s total window
+            for attempt in range(15):
                 try:
-                    requests.post(
+                    res = requests.post(
                         "http://127.0.0.1:8000/trigger-snipe", 
-                        json={"query": keyword, "source_ids": [source_id], "user_id": "taun_test_user"},
+                        json=payload,
                         proxies={"http": None, "https": None},
                         timeout=30
                     )
+                    if res.status_code == 200:
+                        task_id = res.json().get("task_id", "N/A")
+                        self.log_text(f"✅ MISSION ACTIVE: Local node executing task {task_id}")
+                    else:
+                        self.log_text(f"⚠️ Server returned status: {res.status_code}")
                     success = True
                     break
                 except requests.exceptions.ConnectionError:
@@ -332,6 +625,16 @@ if __name__ == '__main__':
         
         threading.Thread(target=_post, daemon=True).start()
 
+    def _set_keyword(self, text: str):
+        self.keyword_entry.delete(0, "end")
+        self.keyword_entry.insert(0, text)
+
+    def quick_favourites(self):
+        """One-click mission for My Favourites (Deep South only + Meadowridge, Bergvliet, Constantia, Hout Bay, Llandudno)."""
+        self._set_keyword("My Favourites")
+        self.source_var.set("Property24")
+        self.manual_snipe()
+
     def quick_seapoint(self):
         """One-click mission for Sea Point @ Huis Huis."""
         self.keyword_entry.delete(0, "end")
@@ -344,11 +647,10 @@ if __name__ == '__main__':
         self.log_text("[PULSE] PROXY PULSE: Sending manual kick to autonomous node...")
         def _kick():
             try:
-                # Trigger the heart instead of the old loop
                 requests.post("http://127.0.0.1:8000/force-pulse", timeout=5)
                 self.log_text("[SUCCESS] PULSE SIGNAL RECEIVED: Heartbeat commenced.")
             except: 
-                self.log_text("[FAILED] FAILED: Is the server (main.py) running?")
+                self.log_text("[FAILED] FAILED: Is the server running?")
         
         threading.Thread(target=_kick, daemon=True).start()
 

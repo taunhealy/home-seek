@@ -6,7 +6,7 @@ import {
   User, 
   signOut as firebaseSignOut 
 } from 'firebase/auth';
-import { auth } from './firebase';
+import { auth, isFirebaseConfigured } from './firebase';
 import { fetchWithAuth } from './api';
 
 interface AuthContextType {
@@ -72,6 +72,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async () => {
+    if (!isFirebaseConfigured) {
+      alert("Firebase authentication is not configured yet. Please configure NEXT_PUBLIC_FIREBASE_API_KEY in web/.env.local.");
+      return;
+    }
     const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
     const provider = new GoogleAuthProvider();
     try {
