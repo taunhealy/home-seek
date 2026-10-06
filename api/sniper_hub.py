@@ -21,6 +21,9 @@ class SniperHub(ctk.CTk):
         self.pulse_thread = None
         self.is_pulsing = False
         
+        # Intercept window close for clean process shutdown
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
         # Grid Layout (Sidebar | Main Console)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -240,6 +243,16 @@ class SniperHub(ctk.CTk):
         )
         self.btn_re_match.pack(fill="x", padx=15, pady=(0, 6))
 
+        self.btn_stop_scan = ctk.CTkButton(
+            self.sidebar_frame, 
+            text="🛑 ABORT / STOP MISSION", 
+            command=self.stop_scraping, 
+            fg_color="#dc2626", 
+            hover_color="#b91c1c",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        self.btn_stop_scan.pack(fill="x", padx=15, pady=(0, 10))
+
         self.btn_prime_session = ctk.CTkButton(
             self.sidebar_frame, 
             text="🔐 Prime Login Session", 
@@ -378,10 +391,31 @@ class SniperHub(ctk.CTk):
             self.server_status_label.configure(text="Backend: ONLINE (Port 8000)", text_color="#10b981")
             threading.Thread(target=self._stream_server_logs, daemon=True).start()
         else:
-            self.server_process.terminate()
-            self.server_process = None
+            self.log_text("🛑 Shutting down server and scraping engines...")
+            # 1. Send abort signal to stop active scans
+            try:
+                requests.post("http://127.0.0.1:8000/stop-scan", timeout=2)
+            except: pass
+
+            # 2. Kill the process tree on Windows to ensure uvicorn and playwright aren't orphaned
+            if self.server_process:
+                try:
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(self.server_process.pid)], capture_output=True)
+                except: pass
+                try:
+                    self.server_process.terminate()
+                except: pass
+                self.server_process = None
+
+            # 3. Clean up port 8000 in case any process is still holding it
+            try:
+                cmd = 'Stop-Process -Id (Get-NetTCPConnection -LocalPort 8000).OwningProcess -Force'
+                subprocess.run(["powershell", "-Command", cmd], capture_output=True)
+            except: pass
+
             self.btn_toggle_server.configure(text="Boot Extraction Server", fg_color=["#3B8ED0", "#1F6AA5"])
             self.server_status_label.configure(text="Backend: OFFLINE", text_color="gray")
+            self.log_text("⚡ Extraction Server is OFFLINE.")
 
     def _stream_server_logs(self):
         for line in self.server_process.stdout:
@@ -657,6 +691,26 @@ if __name__ == '__main__':
     def run_prod_diag(self):
         self.log_text("🩺 Diagnostic Started...")
         threading.Thread(target=lambda: requests.post("http://127.0.0.1:8000/diag/proxy-check"), daemon=True).start()
+
+    def stop_scraping(self):
+        """Immediately aborts any active scraping mission."""
+        self.log_text("🛑 ABORT: Requesting immediate halt to running scans...")
+        def _abort():
+            try:
+                res = requests.post("http://127.0.0.1:8000/stop-scan", timeout=5)
+                if res.status_code == 200:
+                    self.log_text("🛑 SUCCESS: Scan cancellation acknowledged by server.")
+                else:
+                    self.log_text(f"⚠️ Abort signal returned status code {res.status_code}")
+            except Exception as e:
+                self.log_text(f"⚠️ Could not reach server to cancel scan: {e}")
+        threading.Thread(target=_abort, daemon=True).start()
+
+    def on_closing(self):
+        """Ensures that shutting down the UI also terminates background processes."""
+        if self.server_process is not None:
+            self.toggle_server()
+        self.destroy()
 
 if __name__ == "__main__":
     app = SniperHub()

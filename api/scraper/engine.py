@@ -505,8 +505,15 @@ class SniperEngine:
             # [PORTAL FAST-TRACK] Property24 Deterministic Extraction (0 AI tokens)
             if "property24.com" in url:
                 print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [PORTAL] Rapid deterministic extraction for Property24...")
+                
+                # [BOT GUARD] Detect Cloudflare / Bot Challenges immediately
+                page_title = (await page.title() or "").lower()
+                if any(x in page_title for x in ["just a moment", "attention required", "cloudflare", "turnstile", "verify you are human", "access denied", "robot"]):
+                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [SHIELD WARNING] ⚠️ Property24 Bot Challenge detected ('{page_title}'). Halting to protect IP.")
+                    return ExtractionResult(listings=[], confidence_score=0.0, raw_summary=f"Bot challenge encountered: {page_title}")
+
                 await self.human_scroll(page, distance=random.randint(1200, 2000))
-                await self.human_delay(1, 2)
+                await self.human_delay(1.5, 3.0)
                 
                 p24_raw_cards = await page.evaluate("""() => {
                     const tiles = document.querySelectorAll('.p24_regularTile, .p24_promotedTile, .p24_featuredTile');

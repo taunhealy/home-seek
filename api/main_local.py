@@ -1,6 +1,7 @@
 import os
 import asyncio
 import sys
+import random
 
 # [STABILITY] Windows Subprocess Patch (v24.1)
 if sys.platform == 'win32':
@@ -84,6 +85,21 @@ app.add_middleware(
 # [TOOL] State Management
 engine = SniperEngine()
 sniper_lock = asyncio.Lock()
+
+# [ABORT CONTROLLER] Scan Cancellation Flags
+IS_SCAN_CANCELLED = False
+
+def request_scan_stop():
+    global IS_SCAN_CANCELLED
+    IS_SCAN_CANCELLED = True
+
+def reset_scan_stop():
+    global IS_SCAN_CANCELLED
+    IS_SCAN_CANCELLED = False
+
+def check_scan_cancelled():
+    global IS_SCAN_CANCELLED
+    return IS_SCAN_CANCELLED
 
 def verify_user_match(requested_id: str, uid: str = None):
     """Ensures that the developer owner is only accessing their own data (v45.0)."""
@@ -262,25 +278,31 @@ async def fetch_explore_listings(
             if not is_direct:
                 continue
 
-        # [LEASE TERM LENGTH] (1 = Month to Month, 3, 6, 12 Months)
+        # [LEASE TERM LENGTH] (1 = Month to Month, 3, 6, 12 Months) - Multi-Select Support
         if lease_term and lease_term != 'any':
             content = (str(h.get("title", "")) + " " + str(h.get("description", "")) + " " + str(h.get("lease_period", "")) + " " + str(h.get("rental_type", ""))).lower()
-            term_str = str(lease_term).strip()
-            term_hit = False
-            if term_str == '1':
-                if any(k in content for k in ["month to month", "month-to-month", "month/month", "monthly", "1 month", "1-month", "flexible", "short-term", "short term"]):
-                    term_hit = True
-            elif term_str == '3':
-                if any(k in content for k in ["3 month", "3-month", "3 months", "3-months", "1-6 month", "winter", "short-term", "short term"]):
-                    term_hit = True
-            elif term_str == '6':
-                if any(k in content for k in ["6 month", "6-month", "6 months", "6-months", "semi-annual", "half year", "1-6 month"]):
-                    term_hit = True
-            elif term_str == '12':
-                if any(k in content for k in ["12 month", "12-month", "12 months", "12-months", "1 year", "1-year", "annual", "long-term", "long term"]) or h.get("rental_type") in ['long-term', None]:
-                    term_hit = True
-            if not term_hit:
-                continue
+            selected_terms = [t.strip() for t in str(lease_term).split(",") if t.strip() and t.strip() != 'any']
+            if selected_terms:
+                term_hit = False
+                for term_str in selected_terms:
+                    if term_str == '1':
+                        if any(k in content for k in ["month to month", "month-to-month", "month/month", "monthly", "1 month", "1-month", "flexible", "short-term", "short term"]):
+                            term_hit = True
+                            break
+                    elif term_str == '3':
+                        if any(k in content for k in ["3 month", "3-month", "3 months", "3-months", "1-6 month", "winter", "short-term", "short term"]):
+                            term_hit = True
+                            break
+                    elif term_str == '6':
+                        if any(k in content for k in ["6 month", "6-month", "6 months", "6-months", "semi-annual", "half year", "1-6 month"]):
+                            term_hit = True
+                            break
+                    elif term_str == '12':
+                        if any(k in content for k in ["12 month", "12-month", "12 months", "12-months", "1 year", "1-year", "annual", "long-term", "long term"]) or h.get("rental_type") in ['long-term', None]:
+                            term_hit = True
+                            break
+                if not term_hit:
+                    continue
 
         res.append(h)
         
@@ -586,6 +608,13 @@ async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
     listings = [d.to_dict() for d in global_docs]
     return {"status": "success", "intel_pool": len(listings)}
 
+@app.post("/stop-scan")
+@app.post("/cancel-scan")
+async def stop_scan():
+    request_scan_stop()
+    print_safe("[ABORT] 🛑 Scan cancellation requested via API.")
+    return {"status": "cancelled", "message": "Scraping cancellation initiated."}
+
 async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscribers: List[dict] = None):
     """
     ELITE MULTIPLEX SCAN (v81.1): 
@@ -594,6 +623,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
     - Tiered Broadcast: Only saves to specific users if they match filters.
     """
     async with sniper_lock:
+        reset_scan_stop()
         print_safe(f"[LOCAL NODE] MULTIPLEX SCAN: {query} for {len(subscribers or [])} sub(s)")
         db = get_db()
         
@@ -603,6 +633,10 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
 
         valid_matches_count = 0
         for sid in source_ids:
+            if check_scan_cancelled():
+                print_safe(f"[ABORT] 🛑 Scan aborted by user before evaluating source {sid}.")
+                await update_task(task_id, "Cancelled", "Mission cancelled by user.", completed=True)
+                return
             source_doc = db.collection("sources").document(sid).get()
             if not source_doc.exists: continue
             source = source_doc.to_dict()
@@ -664,10 +698,18 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                 ]
                 all_fav_listings = []
                 for idx, (sub_name, sub_url) in enumerate(favourite_targets):
+                    if check_scan_cancelled():
+                        print_safe(f"[ABORT] 🛑 P24 Favourites scan halted by user before '{sub_name}'.")
+                        break
                     if idx > 0:
-                        await asyncio.sleep(random.uniform(2.5, 4.5))
-                    await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name})")
+                        # [STEALTH] Human-paced jitter (5.0s - 8.5s) to avoid bot rate limits
+                        await asyncio.sleep(random.uniform(5.0, 8.5))
+                    await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name}) [{idx+1}/{len(favourite_targets)}]")
                     sub_res = await engine.scrape_url(sub_url, task_id=task_id, search_area=sub_name)
+                    if sub_res and sub_res.confidence_score == 0 and "bot challenge" in (sub_res.raw_summary or "").lower():
+                        print_safe(f"[SHIELD] 🛑 Throttling P24 Favourites: Anti-bot challenge detected. Halting scan to safeguard IP.")
+                        await update_task(task_id, "Throttled", "Property24 anti-bot challenge detected.")
+                        break
                     if sub_res and sub_res.listings:
                         all_fav_listings.extend(sub_res.listings)
                 from models.listing import ExtractionResult
@@ -689,10 +731,18 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                 ]
                 all_deep_listings = []
                 for idx, (sub_name, sub_url) in enumerate(deep_targets):
+                    if check_scan_cancelled():
+                        print_safe(f"[ABORT] 🛑 P24 Deep South scan halted by user before '{sub_name}'.")
+                        break
                     if idx > 0:
-                        await asyncio.sleep(random.uniform(2.5, 4.5))
-                    await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name})")
+                        # [STEALTH] Human-paced jitter (5.0s - 8.5s) to avoid bot rate limits
+                        await asyncio.sleep(random.uniform(5.0, 8.5))
+                    await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name}) [{idx+1}/{len(deep_targets)}]")
                     sub_res = await engine.scrape_url(sub_url, task_id=task_id, search_area=sub_name)
+                    if sub_res and sub_res.confidence_score == 0 and "bot challenge" in (sub_res.raw_summary or "").lower():
+                        print_safe(f"[SHIELD] 🛑 Throttling P24 Deep South: Anti-bot challenge detected. Halting scan to safeguard IP.")
+                        await update_task(task_id, "Throttled", "Property24 anti-bot challenge detected.")
+                        break
                     if sub_res and sub_res.listings:
                         all_deep_listings.extend(sub_res.listings)
                 from models.listing import ExtractionResult
@@ -968,6 +1018,11 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                     except Exception as notify_err:
                                         print_safe(f"[SIGNAL ERROR] Alert Dispatch Failed: {notify_err}")
         
+        if check_scan_cancelled():
+            print_safe(f"\n🛑 [MISSION ABORTED] Task {task_id} halted by user.")
+            await update_task(task_id, "Cancelled", f"Mission cancelled by user for {query}.", completed=True)
+            return
+
         print_safe(f"\n🎯 [MISSION COMPLETE] Harvested {valid_matches_count} matching listings for '{query}'.")
         print_safe(f"🌐 View all live results in Explore: http://localhost:3000/explore\n")
         await update_task(task_id, "Complete", f"Aggregated scan finished for {query}.", completed=True)

@@ -10,13 +10,16 @@ COMMERCIAL_KEYWORDS = [
 SHORT_TERM_PATTERNS = [
     (r"\bmonth[\s-]to[\s-]month\b", "Month-to-month"),
     (r"\b(?:[1-6]|one|two|three|four|five|six)[\s-]months?(?:\s+renewable)?\b", "1-6 Months"),
-    (r"\bwinter\s+(?:let|rental|lease)\b", "Winter Rental"),
-    (r"\bshort[\s-]term\b", "Short-term"),
-    (r"\bholiday\s+(?:rental|let|home)\b", "Holiday Rental"),
+    (r"\bavailable\s+(?:for\s+)?(?:only\s+)?(?:up\s+to\s+)?(?:[1-6]|one|two|three|four|five|six)\s+months?\b", "1-6 Months"),
+    (r"\bwinter\s+(?:let|rental|lease|stay)\b", "Winter Rental"),
+    (r"\bsummer\s+(?:let|rental|lease|stay)\b", "Summer Rental"),
+    (r"\bshort[\s-](?:term|stay|let|lease)\b", "Short-term"),
+    (r"\bholiday\s+(?:rental|let|home|stay|accommodation)\b", "Holiday Rental"),
     (r"\btemporary\s+(?:stay|lease|rental)\b", "Temporary Stay"),
-    (r"\b(?:daily\s+rate|per\s+day|per\s+night|per\s+week|weekly)\b", "Daily/Weekly"),
+    (r"\b(?:daily\s+rate|per\s+day|per\s+night|per\s+week|weekly|nightly)\b", "Daily/Weekly"),
     (r"\bavailable\s+until\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b", "Fixed Term Until Date"),
     (r"\bflexible\s+(?:lease|duration|dates|stay)\b", "Flexible Duration"),
+    (r"\b(?:airbnb|mid[\s-]term|medium[\s-]term)\b", "Mid-term"),
 ]
 
 def is_commercial(title: str, text: str = "") -> bool:
@@ -33,9 +36,9 @@ def extract_lease_term(text: str) -> tuple[str, Optional[str]]:
     for pattern, label in SHORT_TERM_PATTERNS:
         match = re.search(pattern, text_clean)
         if match:
-            # Check for false positive: "short walk to beach", "12 months"
+            # Check for false positive: "short walk", "short drive", "short distance"
             matched_str = match.group(0)
-            if "short walk" in text_clean and "short" in matched_str and "short-term" not in text_clean:
+            if any(fp in text_clean for fp in ["short walk", "short drive", "short stroll", "short distance"]) and "short" in matched_str and "short-term" not in text_clean and "short term" not in text_clean and "short let" not in text_clean and "short stay" not in text_clean:
                 continue
             return "short-term", match.group(0).strip().capitalize()
             

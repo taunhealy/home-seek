@@ -91,7 +91,7 @@ export default function ExplorePage() {
   const [filters, setFilters] = useState({
     intent: 'listings',
     noAgents: true,
-    leaseTerm: 'any',
+    leaseTerms: [] as string[],
     pets: false,
     minPrice: '',
     maxPrice: '',
@@ -134,7 +134,7 @@ export default function ExplorePage() {
         intent: filters.intent,
         page: filters.page.toString(),
         ...(filters.noAgents && { no_agents: 'true' }),
-        ...(filters.leaseTerm !== 'any' && { lease_term: filters.leaseTerm }),
+        ...(filters.leaseTerms.length > 0 && { lease_term: filters.leaseTerms.join(',') }),
         ...(filters.pets && { pets: 'true' }),
         ...(filters.minPrice && { min_price: filters.minPrice }),
         ...(filters.maxPrice && { max_price: filters.maxPrice }),
@@ -210,7 +210,7 @@ export default function ExplorePage() {
     filters.horizon,
     filters.platform,
     filters.noAgents,
-    filters.leaseTerm
+    filters.leaseTerms.join(',')
   ]);
 
   useEffect(() => {
@@ -373,12 +373,12 @@ export default function ExplorePage() {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em]">Lease Term (Months)</h2>
-                  {filters.leaseTerm !== 'any' && (
+                  {filters.leaseTerms.length > 0 && (
                     <button
-                      onClick={() => setFilters({ ...filters, leaseTerm: 'any', page: 1 })}
+                      onClick={() => setFilters({ ...filters, leaseTerms: [], page: 1 })}
                       className="text-[9px] font-bold text-white/40 hover:text-emerald-400 uppercase tracking-wider"
                     >
-                      Clear
+                      Clear ({filters.leaseTerms.length})
                     </button>
                   )}
                 </div>
@@ -389,16 +389,21 @@ export default function ExplorePage() {
                     { id: '6', label: '6', sub: 'Months', value: '6' },
                     { id: '12', label: '12', sub: 'Months', value: '12' }
                   ].map((term) => {
-                    const isSelected = filters.leaseTerm === term.value;
+                    const isSelected = filters.leaseTerms.includes(term.value);
                     return (
                       <button
                         key={term.id}
                         type="button"
-                        onClick={() => setFilters({
-                          ...filters,
-                          leaseTerm: isSelected ? 'any' : term.value,
-                          page: 1
-                        })}
+                        onClick={() => {
+                          const updated = isSelected
+                            ? filters.leaseTerms.filter(t => t !== term.value)
+                            : [...filters.leaseTerms, term.value];
+                          setFilters({
+                            ...filters,
+                            leaseTerms: updated,
+                            page: 1
+                          });
+                        }}
                         className={`flex flex-col items-center justify-center py-2.5 px-1 rounded-xl border transition-all ${
                           isSelected
                             ? 'bg-emerald-500 text-black border-emerald-400 font-black shadow-[0_0_15px_rgba(16,185,129,0.3)]'
@@ -563,16 +568,21 @@ export default function ExplorePage() {
                   { id: '6', label: '6 Months', value: '6' },
                   { id: '12', label: '12 Months', value: '12' }
                 ].map((term) => {
-                  const isSelected = filters.leaseTerm === term.value;
+                  const isSelected = filters.leaseTerms.includes(term.value);
                   return (
                     <button
                       key={term.id}
                       type="button"
-                      onClick={() => setFilters({
-                        ...filters,
-                        leaseTerm: isSelected ? 'any' : term.value,
-                        page: 1
-                      })}
+                      onClick={() => {
+                        const updated = isSelected
+                          ? filters.leaseTerms.filter(t => t !== term.value)
+                          : [...filters.leaseTerms, term.value];
+                        setFilters({
+                          ...filters,
+                          leaseTerms: updated,
+                          page: 1
+                        });
+                      }}
                       className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
                         isSelected
                           ? 'bg-emerald-500 text-black border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
@@ -583,13 +593,13 @@ export default function ExplorePage() {
                     </button>
                   );
                 })}
-                {filters.leaseTerm !== 'any' && (
+                {filters.leaseTerms.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setFilters({ ...filters, leaseTerm: 'any', page: 1 })}
+                    onClick={() => setFilters({ ...filters, leaseTerms: [], page: 1 })}
                     className="text-[9px] font-bold text-white/30 hover:text-white uppercase tracking-wider px-2 py-1"
                   >
-                    Clear
+                    Clear ({filters.leaseTerms.length})
                   </button>
                 )}
               </div>
@@ -619,14 +629,15 @@ export default function ExplorePage() {
                   onRemove={() => setFilters({ ...filters, noAgents: false, page: 1 })} 
                 />
               )}
-              {filters.leaseTerm !== 'any' && (
+              {filters.leaseTerms.map((termVal) => (
                 <FilterBadge 
-                  label={filters.leaseTerm === '1' ? '1 Mo (Month-to-Month)' : `${filters.leaseTerm} Mo Lease`} 
+                  key={termVal}
+                  label={termVal === '1' ? '1 Mo (Month-to-Month)' : `${termVal} Mo Lease`} 
                   icon={Clock}
                   active 
-                  onRemove={() => setFilters({ ...filters, leaseTerm: 'any', page: 1 })} 
+                  onRemove={() => setFilters({ ...filters, leaseTerms: filters.leaseTerms.filter(t => t !== termVal), page: 1 })} 
                 />
-              )}
+              ))}
               {filters.pets && (
                 <FilterBadge 
                   label="Pet Friendly" 
@@ -1177,7 +1188,7 @@ export default function ExplorePage() {
                       setFilters({
                         intent: 'listings',
                         noAgents: true,
-                        leaseTerm: 'any',
+                        leaseTerms: [],
                         pets: false,
                         minPrice: '',
                         maxPrice: '',

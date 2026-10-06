@@ -278,25 +278,31 @@ async def fetch_explore_listings(
             if not is_direct:
                 continue
 
-        # [LEASE TERM LENGTH] (1 = Month to Month, 3, 6, 12 Months)
+        # [LEASE TERM LENGTH] (1 = Month to Month, 3, 6, 12 Months) - Multi-Select Support
         if lease_term and lease_term != 'any':
             content = (str(h.get("title", "")) + " " + str(h.get("description", "")) + " " + str(h.get("lease_period", "")) + " " + str(h.get("rental_type", ""))).lower()
-            term_str = str(lease_term).strip()
-            term_hit = False
-            if term_str == '1':
-                if any(k in content for k in ["month to month", "month-to-month", "month/month", "monthly", "1 month", "1-month", "flexible", "short-term", "short term"]):
-                    term_hit = True
-            elif term_str == '3':
-                if any(k in content for k in ["3 month", "3-month", "3 months", "3-months", "1-6 month", "winter", "short-term", "short term"]):
-                    term_hit = True
-            elif term_str == '6':
-                if any(k in content for k in ["6 month", "6-month", "6 months", "6-months", "semi-annual", "half year", "1-6 month"]):
-                    term_hit = True
-            elif term_str == '12':
-                if any(k in content for k in ["12 month", "12-month", "12 months", "12-months", "1 year", "1-year", "annual", "long-term", "long term"]) or h.get("rental_type") in ['long-term', None]:
-                    term_hit = True
-            if not term_hit:
-                continue
+            selected_terms = [t.strip() for t in str(lease_term).split(",") if t.strip() and t.strip() != 'any']
+            if selected_terms:
+                term_hit = False
+                for term_str in selected_terms:
+                    if term_str == '1':
+                        if any(k in content for k in ["month to month", "month-to-month", "month/month", "monthly", "1 month", "1-month", "flexible", "short-term", "short term"]):
+                            term_hit = True
+                            break
+                    elif term_str == '3':
+                        if any(k in content for k in ["3 month", "3-month", "3 months", "3-months", "1-6 month", "winter", "short-term", "short term"]):
+                            term_hit = True
+                            break
+                    elif term_str == '6':
+                        if any(k in content for k in ["6 month", "6-month", "6 months", "6-months", "semi-annual", "half year", "1-6 month"]):
+                            term_hit = True
+                            break
+                    elif term_str == '12':
+                        if any(k in content for k in ["12 month", "12-month", "12 months", "12-months", "1 year", "1-year", "annual", "long-term", "long term"]) or h.get("rental_type") in ['long-term', None]:
+                            term_hit = True
+                            break
+                if not term_hit:
+                    continue
 
         res.append(h)
         
