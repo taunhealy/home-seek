@@ -156,7 +156,7 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
 
     platform_str = "Property24 (Direct Landlord)" if is_landlord else "Property24"
 
-    return RentalListing(
+    listing = RentalListing(
         title=title or f"{p_type} in {clean_address}",
         price=price,
         bedrooms=bedrooms,
@@ -176,3 +176,15 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
         is_looking_for=False,
         description=excerpt or title
     )
+
+    # Note: Detail page enrichment via raw urllib is disabled to prevent Property24 Traffic Defender 503 blocks.
+    # The search card DOM already contains the title, price, excerpt, beds, and direct landlord indicators.
+    return listing
+
+def enrich_p24_listing_full_text(listing: RentalListing) -> RentalListing:
+    """
+    Safely returns listing without making raw unauthenticated HTTP requests during search.
+    Search card excerpts already contain key specs and lease indicators.
+    """
+    return listing
+

@@ -113,25 +113,50 @@ class SniperHub(ctk.CTk):
         )
         self.no_agents_switch.pack(anchor="w", padx=20, pady=(2, 8))
 
-        # Rental Category (Long Term / Short Term / Room Share)
+        # Auto-Open in Browser Switch - Active by default
+        self.auto_open_var = ctk.BooleanVar(value=True)
+        self.auto_open_switch = ctk.CTkSwitch(
+            self.sidebar_frame, 
+            text="🌐 Auto-Open Links in Browser", 
+            variable=self.auto_open_var,
+            progress_color="#3b82f6"
+        )
+        self.auto_open_switch.pack(anchor="w", padx=20, pady=(2, 8))
+
+        # Rental Category (Any / Long Term / Short Term / Room Share)
         self._create_sub_label("Rental Category:")
-        self.rental_type_var = ctk.StringVar(value="Long Term")
+        self.rental_type_var = ctk.StringVar(value="Any")
         self.rental_type_seg = ctk.CTkSegmentedButton(
             self.sidebar_frame, 
-            values=["Long Term", "Short Term", "Room Share"], 
+            values=["Any", "Long Term", "Short Term", "Room Share"], 
             variable=self.rental_type_var
         )
         self.rental_type_seg.pack(fill="x", padx=15, pady=(0, 8))
 
-        # Lease Term Length
-        self._create_sub_label("Lease Term:")
-        self.lease_term_var = ctk.StringVar(value="Any")
-        self.lease_term_seg = ctk.CTkSegmentedButton(
-            self.sidebar_frame, 
-            values=["Any", "1 (M2M)", "3m", "6m", "12m"], 
-            variable=self.lease_term_var
-        )
-        self.lease_term_seg.pack(fill="x", padx=15, pady=(0, 14))
+        # Lease Term Length (Multi-Select Checkboxes)
+        self._create_sub_label("Lease Term Length (Multi-Select):")
+        lease_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        lease_frame.pack(fill="x", padx=15, pady=(0, 10))
+
+        r1 = ctk.CTkFrame(lease_frame, fg_color="transparent")
+        r1.pack(fill="x", pady=(0, 4))
+        self.term_m2m_var = ctk.BooleanVar(value=False)
+        self.cb_m2m = ctk.CTkCheckBox(r1, text="M2M (1m)", variable=self.term_m2m_var, font=ctk.CTkFont(size=11))
+        self.cb_m2m.pack(side="left", expand=True, fill="x")
+
+        self.term_3m_var = ctk.BooleanVar(value=False)
+        self.cb_3m = ctk.CTkCheckBox(r1, text="3 Months", variable=self.term_3m_var, font=ctk.CTkFont(size=11))
+        self.cb_3m.pack(side="left", expand=True, fill="x")
+
+        r2 = ctk.CTkFrame(lease_frame, fg_color="transparent")
+        r2.pack(fill="x", pady=(0, 4))
+        self.term_6m_var = ctk.BooleanVar(value=False)
+        self.cb_6m = ctk.CTkCheckBox(r2, text="6 Months", variable=self.term_6m_var, font=ctk.CTkFont(size=11))
+        self.cb_6m.pack(side="left", expand=True, fill="x")
+
+        self.term_12m_var = ctk.BooleanVar(value=False)
+        self.cb_12m = ctk.CTkCheckBox(r2, text="12 Months+", variable=self.term_12m_var, font=ctk.CTkFont(size=11))
+        self.cb_12m.pack(side="left", expand=True, fill="x")
 
         # --- SECTION: BUDGET & DIMENSIONS ---
         self._create_section_label("💰 BUDGET & SPACE")
@@ -377,14 +402,17 @@ class SniperHub(ctk.CTk):
             env["PYTHONUNBUFFERED"] = "1"
             env["HEADLESS"] = "true" if self.headless_var.get() else "false"
             
+            api_dir = os.path.dirname(os.path.abspath(__file__))
+            env["PYTHONPATH"] = api_dir + (os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else "")
             py_exe = self.get_python_exec()
-            cmd = f'"{py_exe}" -m uvicorn main_local:app --host 0.0.0.0 --port 8000'
+            cmd = f'"{py_exe}" -m uvicorn main_local:app --app-dir "{api_dir}" --host 0.0.0.0 --port 8000'
             self.server_process = subprocess.Popen(
                 cmd, 
                 shell=True, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.STDOUT, 
                 text=True,
+                cwd=api_dir,
                 env=env
             )
             self.btn_toggle_server.configure(text="Shutdown Server", fg_color="#ef4444")
@@ -584,18 +612,20 @@ if __name__ == '__main__':
         elif "3+" in baths_val: min_baths = 3
 
         rental_type_map = {
+            "Any": None,
             "Long Term": "long-term",
             "Short Term": "short-term",
             "Room Share": "room-share"
         }
-        rental_type = rental_type_map.get(self.rental_type_var.get(), "long-term")
+        rental_type = rental_type_map.get(self.rental_type_var.get())
 
-        lease_term_raw = self.lease_term_var.get()
-        lease_term = None
-        if lease_term_raw == "1 (M2M)": lease_term = "1"
-        elif lease_term_raw == "3m": lease_term = "3"
-        elif lease_term_raw == "6m": lease_term = "6"
-        elif lease_term_raw == "12m": lease_term = "12"
+        selected_terms = []
+        if self.term_m2m_var.get(): selected_terms.append("1")
+        if self.term_3m_var.get(): selected_terms.append("3")
+        if self.term_6m_var.get(): selected_terms.append("6")
+        if self.term_12m_var.get(): selected_terms.append("12")
+
+        lease_terms_disp = ", ".join([f"{t}m" if t != "1" else "1 (M2M)" for t in selected_terms]) if selected_terms else "Any"
 
         layout_raw = self.layout_var.get()
         layout = layout_raw if layout_raw != "Any Layout" else None
@@ -605,6 +635,7 @@ if __name__ == '__main__':
 
         no_agents = self.no_agents_var.get()
         pet_friendly = self.pets_var.get()
+        auto_open = self.auto_open_var.get()
 
         payload = {
             "query": keyword,
@@ -613,7 +644,9 @@ if __name__ == '__main__':
             "user_id": "taun_test_user",
             "no_agents": no_agents,
             "rental_type": rental_type,
-            "lease_term": lease_term,
+            "lease_term": selected_terms if selected_terms else None,
+            "lease_terms": selected_terms,
+            "auto_open_links": auto_open,
             "min_price": min_price,
             "max_price": max_price,
             "min_bedrooms": min_beds,
@@ -626,7 +659,7 @@ if __name__ == '__main__':
         }
 
         self.log_text(f"🎯 MISSION DISPATCHED: {keyword} @ {source_name}")
-        self.log_text(f"   [FILTERS] NoAgents: {no_agents} | Term: {lease_term_raw} | Type: {self.rental_type_var.get()}")
+        self.log_text(f"   [FILTERS] NoAgents: {no_agents} | Terms: {lease_terms_disp} | Category: {self.rental_type_var.get()} | AutoOpen: {auto_open}")
         self.log_text(f"   [SPECS] Budget: R{min_price or 0}-R{max_price or 'Any'} | Beds: {beds_val} | Baths: {baths_val} | Pets: {pet_friendly}")
 
         def _post():

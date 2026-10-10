@@ -676,25 +676,14 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
 
             if is_p24 and is_fav:
                 favourite_targets = [
-                    # Deep South Suburbs
-                    ("Fish Hoek", f"https://www.property24.com/to-rent/fish-hoek/western-cape/475{pet_param}"),
-                    ("Noordhoek", f"https://www.property24.com/to-rent/noordhoek/western-cape/479{pet_param}"),
-                    ("Kommetjie", f"https://www.property24.com/to-rent/kommetjie/western-cape/478{pet_param}"),
-                    ("Scarborough", f"https://www.property24.com/to-rent/scarborough/western-cape/652{pet_param}"),
-                    ("Simons Town", f"https://www.property24.com/to-rent/simons-town/western-cape/401{pet_param}"),
-                    ("Muizenberg", f"https://www.property24.com/to-rent/muizenberg/cape-town/western-cape/9025{pet_param}"),
-                    ("Kalk Bay", f"https://www.property24.com/to-rent/kalk-bay/cape-town/western-cape/9067{pet_param}"),
-                    ("St James", f"https://www.property24.com/to-rent/st-james/cape-town/western-cape/9039{pet_param}"),
-                    ("Glencairn", f"https://www.property24.com/to-rent/glencairn/simons-town/western-cape/9107{pet_param}"),
-                    ("Capri", f"https://www.property24.com/to-rent/capri/fish-hoek/western-cape/10997{pet_param}"),
-                    ("Clovelly", f"https://www.property24.com/to-rent/clovelly/fish-hoek/western-cape/10947{pet_param}"),
-                    ("Sunnydale", f"https://www.property24.com/to-rent/sunnydale/noordhoek/western-cape/9090{pet_param}"),
-                    # User Additions: Meadowridge, Bergvliet, Constantia, Hout Bay, Llandudno
-                    ("Meadowridge", f"https://www.property24.com/to-rent/meadowridge/cape-town/western-cape/10052{pet_param}"),
-                    ("Bergvliet", f"https://www.property24.com/to-rent/bergvliet/cape-town/western-cape/10189{pet_param}"),
+                    # Southern Peninsula parent covers all Deep South: Fish Hoek, Noordhoek, Kommetjie, Scarborough, Simon's Town, Muizenberg, Kalk Bay, etc.
+                    ("Southern Peninsula (Deep South)", f"https://www.property24.com/to-rent/southern-peninsula/cape-town/western-cape/24{pet_param}"),
+                    # User Additions: Constantia, Hout Bay, Llandudno, Bergvliet, Meadowridge
                     ("Constantia", f"https://www.property24.com/to-rent/constantia/cape-town/western-cape/11742{pet_param}"),
                     ("Hout Bay", f"https://www.property24.com/to-rent/hout-bay/western-cape/615{pet_param}"),
-                    ("Llandudno", f"https://www.property24.com/to-rent/llandudno/cape-town/western-cape/9118{pet_param}")
+                    ("Llandudno", f"https://www.property24.com/to-rent/llandudno/cape-town/western-cape/9118{pet_param}"),
+                    ("Bergvliet", f"https://www.property24.com/to-rent/bergvliet/cape-town/western-cape/10189{pet_param}"),
+                    ("Meadowridge", f"https://www.property24.com/to-rent/meadowridge/cape-town/western-cape/10052{pet_param}")
                 ]
                 all_fav_listings = []
                 for idx, (sub_name, sub_url) in enumerate(favourite_targets):
@@ -702,32 +691,23 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                         print_safe(f"[ABORT] 🛑 P24 Favourites scan halted by user before '{sub_name}'.")
                         break
                     if idx > 0:
-                        # [STEALTH] Human-paced jitter (5.0s - 8.5s) to avoid bot rate limits
-                        await asyncio.sleep(random.uniform(5.0, 8.5))
+                        # [STEALTH] Human-paced jitter (6.0s - 10.0s) between major regions
+                        await asyncio.sleep(random.uniform(6.0, 10.0))
                     await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name}) [{idx+1}/{len(favourite_targets)}]")
                     sub_res = await engine.scrape_url(sub_url, task_id=task_id, search_area=sub_name)
-                    if sub_res and sub_res.confidence_score == 0 and "bot challenge" in (sub_res.raw_summary or "").lower():
-                        print_safe(f"[SHIELD] 🛑 Throttling P24 Favourites: Anti-bot challenge detected. Halting scan to safeguard IP.")
-                        await update_task(task_id, "Throttled", "Property24 anti-bot challenge detected.")
+                    if sub_res and (sub_res.confidence_score == 0 and any(w in (sub_res.raw_summary or "").lower() for w in ["bot challenge", "503", "429", "blocked", "server unavailable"])):
+                        print_safe(f"[SHIELD] 🛑 Throttling P24: Server returned block/cooldown ({sub_res.raw_summary}). Halting immediately to protect IP.")
+                        await update_task(task_id, "Throttled", f"Property24 cooldown ({sub_res.raw_summary}). Halting to protect IP.")
                         break
                     if sub_res and sub_res.listings:
                         all_fav_listings.extend(sub_res.listings)
                 from models.listing import ExtractionResult
                 result = ExtractionResult(listings=all_fav_listings, confidence_score=100.0, raw_summary=f"Parsed {len(all_fav_listings)} listings from Property24 Favourites")
             elif is_p24 and is_deep_south:
+                # [OPTIMIZED] Southern Peninsula parent region URL covers all Deep South in 1-2 rapid requests instead of 12 separate URLs
                 deep_targets = [
-                    ("Fish Hoek", f"https://www.property24.com/to-rent/fish-hoek/western-cape/475{pet_param}"),
-                    ("Noordhoek", f"https://www.property24.com/to-rent/noordhoek/western-cape/479{pet_param}"),
-                    ("Kommetjie", f"https://www.property24.com/to-rent/kommetjie/western-cape/478{pet_param}"),
-                    ("Scarborough", f"https://www.property24.com/to-rent/scarborough/western-cape/652{pet_param}"),
-                    ("Simons Town", f"https://www.property24.com/to-rent/simons-town/western-cape/401{pet_param}"),
-                    ("Muizenberg", f"https://www.property24.com/to-rent/muizenberg/cape-town/western-cape/9025{pet_param}"),
-                    ("Kalk Bay", f"https://www.property24.com/to-rent/kalk-bay/cape-town/western-cape/9067{pet_param}"),
-                    ("St James", f"https://www.property24.com/to-rent/st-james/cape-town/western-cape/9039{pet_param}"),
-                    ("Glencairn", f"https://www.property24.com/to-rent/glencairn/simons-town/western-cape/9107{pet_param}"),
-                    ("Capri", f"https://www.property24.com/to-rent/capri/fish-hoek/western-cape/10997{pet_param}"),
-                    ("Clovelly", f"https://www.property24.com/to-rent/clovelly/fish-hoek/western-cape/10947{pet_param}"),
-                    ("Sunnydale", f"https://www.property24.com/to-rent/sunnydale/noordhoek/western-cape/9090{pet_param}")
+                    ("Southern Peninsula", f"https://www.property24.com/to-rent/southern-peninsula/cape-town/western-cape/24{pet_param}"),
+                    ("Southern Peninsula (Page 2)", f"https://www.property24.com/to-rent/southern-peninsula/cape-town/western-cape/24/p2{pet_param}")
                 ]
                 all_deep_listings = []
                 for idx, (sub_name, sub_url) in enumerate(deep_targets):
@@ -735,21 +715,27 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                         print_safe(f"[ABORT] 🛑 P24 Deep South scan halted by user before '{sub_name}'.")
                         break
                     if idx > 0:
-                        # [STEALTH] Human-paced jitter (5.0s - 8.5s) to avoid bot rate limits
-                        await asyncio.sleep(random.uniform(5.0, 8.5))
+                        await asyncio.sleep(random.uniform(5.0, 8.0))
                     await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name}) [{idx+1}/{len(deep_targets)}]")
                     sub_res = await engine.scrape_url(sub_url, task_id=task_id, search_area=sub_name)
-                    if sub_res and sub_res.confidence_score == 0 and "bot challenge" in (sub_res.raw_summary or "").lower():
-                        print_safe(f"[SHIELD] 🛑 Throttling P24 Deep South: Anti-bot challenge detected. Halting scan to safeguard IP.")
-                        await update_task(task_id, "Throttled", "Property24 anti-bot challenge detected.")
+                    if sub_res and (sub_res.confidence_score == 0 and any(w in (sub_res.raw_summary or "").lower() for w in ["bot challenge", "503", "429", "blocked", "server unavailable"])):
+                        print_safe(f"[SHIELD] 🛑 Throttling P24: Server returned block/cooldown ({sub_res.raw_summary}). Halting immediately to protect IP.")
+                        await update_task(task_id, "Throttled", f"Property24 cooldown ({sub_res.raw_summary}). Halting to protect IP.")
                         break
                     if sub_res and sub_res.listings:
                         all_deep_listings.extend(sub_res.listings)
                 from models.listing import ExtractionResult
                 result = ExtractionResult(listings=all_deep_listings, confidence_score=100.0, raw_summary=f"Parsed {len(all_deep_listings)} listings from Property24 Deep South")
             else:
-                await update_task(task_id, "Scouting", f"Node analyzing: {source_name}")
-                result = await engine.scrape_url(source.get('url'), task_id=task_id, search_area=clean_query)
+                target_url = source.get('url')
+                if is_p24 and clean_query:
+                    from scraper.portal_resolver import resolve_p24_url
+                    resolved_url = resolve_p24_url(clean_query, is_pet_friendly=is_pet_req)
+                    if resolved_url:
+                        target_url = resolved_url
+                        print_safe(f"[PORTAL] 🎯 Dynamic URL resolved for '{clean_query}': {target_url}")
+                await update_task(task_id, "Scouting", f"Node analyzing: {source_name} ({clean_query})")
+                result = await engine.scrape_url(target_url, task_id=task_id, search_area=clean_query)
             
             if result:
                 all_raw = []
@@ -834,19 +820,34 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 req_area = str(config.get("search_query", "")).lower()
                                 listing_addr = str(l_dict.get("address", "")).lower()
                                 
-                                # Extract actual suburb from the query (e.g. "Sea Point", "My Favourites")
-                                from core.geofence import PREMIUM_SUBURBS, MY_FAVOURITES_SUBURBS, DEEP_SOUTH_SUBURBS
-                                if any(k in req_area for k in ["favourite", "favorite"]):
-                                    matched_suburbs = list(MY_FAVOURITES_SUBURBS)
-                                elif any(k in req_area for k in ["deep south", "south peninsula"]):
-                                    matched_suburbs = list(DEEP_SOUTH_SUBURBS)
-                                else:
-                                    matched_suburbs = [s for s in PREMIUM_SUBURBS if s in req_area]
-                                
-                                if matched_suburbs:
-                                    # If the user specified suburbs, the listing MUST match at least one
-                                    if not any(s in listing_addr for s in matched_suburbs):
-                                        continue
+                                is_province_search = any(p in req_area for p in ["western cape", "all", "any"]) or not req_area
+                                if not is_province_search:
+                                    # Extract actual suburb from the query (e.g. "Sea Point", "My Favourites")
+                                    from core.geofence import PREMIUM_SUBURBS, MY_FAVOURITES_SUBURBS, DEEP_SOUTH_SUBURBS
+                                    if any(k in req_area for k in ["favourite", "favorite"]):
+                                        matched_suburbs = list(MY_FAVOURITES_SUBURBS)
+                                    elif any(k in req_area for k in ["deep south", "south peninsula"]):
+                                        matched_suburbs = list(DEEP_SOUTH_SUBURBS)
+                                    else:
+                                        matched_suburbs = [s for s in PREMIUM_SUBURBS if s in req_area]
+                                        if not matched_suburbs and req_area:
+                                            clean_q = req_area.replace("(must be pet friendly)", "").replace("(pet friendly)", "").strip()
+                                            if clean_q and clean_q != "any":
+                                                matched_suburbs = [clean_q]
+                                    
+                                    if matched_suburbs:
+                                        listing_url = str(l_dict.get("source_url", "")).lower()
+                                        from core.geofence import get_zone_for_area
+                                        req_zone = get_zone_for_area(req_area)
+                                        listing_zone = get_zone_for_area(listing_addr)
+
+                                        matches_suburb = (
+                                            any(s in listing_addr for s in matched_suburbs) or
+                                            any(f"/{s}/" in listing_url or f"/{s}-" in listing_url or f"-{s}/" in listing_url or f"/{s.replace(' ', '-')}/" in listing_url for s in matched_suburbs) or
+                                            (req_zone != "global" and req_zone == listing_zone)
+                                        )
+                                        if not matches_suburb:
+                                            continue
                                 
                                 # Apply Specific Filters (Price, Beds, Pets, Landlord, Lease, Furnished, Specs)
                                 l_price = l_dict.get("price") or 0
@@ -864,25 +865,32 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                     print_safe(f"[RECON] [REJECT] Filtered out agent listing (No-Agents policy active)")
                                     continue
                                 
-                                # [LEASE TERM]
-                                req_lease = config.get("lease_term")
-                                if req_lease and str(req_lease).lower() != "any":
+                                # [LEASE TERM] (Multi-Term Compatible)
+                                req_lease = config.get("lease_terms") or config.get("lease_term")
+                                has_explicit_lease_terms = bool(req_lease and req_lease != "any" and req_lease != ["any"])
+                                if has_explicit_lease_terms:
+                                    req_terms = req_lease if isinstance(req_lease, list) else [req_lease]
                                     lease_str = str(l_dict.get("lease_period", "")).lower()
                                     desc_str = str(l_dict.get("description", "")).lower()
                                     combined_lease = f"{lease_str} {desc_str}"
-                                    req_lease_str = str(req_lease).lower()
-                                    if req_lease_str in ["1", "1 (m2m)", "month-to-month", "month to month"]:
-                                        if not any(term in combined_lease for term in ["month to month", "month-to-month", "m2m", "monthly", "1 month", "flexible"]):
-                                            continue
-                                    elif req_lease_str in ["3", "3m"]:
-                                        if not any(term in combined_lease for term in ["3 month", "3-month", "3 months", "short-term", "short term"]):
-                                            continue
-                                    elif req_lease_str in ["6", "6m"]:
-                                        if not any(term in combined_lease for term in ["6 month", "6-month", "6 months"]):
-                                            continue
-                                    elif req_lease_str in ["12", "12m"]:
-                                        if not any(term in combined_lease for term in ["12 month", "1-year", "1 year", "long-term", "long term", "annual"]):
-                                            continue
+                                    
+                                    term_keywords = {
+                                        "1": ["month to month", "month-to-month", "m2m", "monthly", "1 month", "flexible"],
+                                        "3": ["3 month", "3-month", "3 months", "short-term", "short term", "flexible"],
+                                        "6": ["6 month", "6-month", "6 months", "half year", "flexible"],
+                                        "12": ["12 month", "1-year", "1 year", "long-term", "long term", "annual", "yearly"]
+                                    }
+                                    
+                                    matched_any_term = False
+                                    for t in req_terms:
+                                        t_key = str(t).lower().replace(" (m2m)", "").replace("m", "").strip()
+                                        keywords = term_keywords.get(t_key, [str(t).lower()])
+                                        if any(k in combined_lease for k in keywords):
+                                            matched_any_term = True
+                                            break
+                                            
+                                    if not matched_any_term:
+                                        continue
 
                                 # [CATEGORY FILTER] Filter by rental type if specified
                                 req_type = config.get("rental_type")
@@ -895,9 +903,12 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 if not is_wanted and req_type == "looking-for":
                                     continue
 
-                                if req_type and req_type not in ["all", "any"] and req_type != "looking-for" and l_dict.get("rental_type") != req_type:
-                                    print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
-                                    continue
+                                # If explicit lease terms (M2M, 3m, 6m) are active, do not let generic category
+                                # mismatch drop listings that meet the requested duration.
+                                if req_type and req_type not in ["all", "any"] and req_type != "looking-for":
+                                    if not has_explicit_lease_terms and l_dict.get("rental_type") != req_type:
+                                        print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
+                                        continue
                                 
                                 # [LAYOUT FILTER] Whole vs Shared or Property Type (v90.0)
                                 req_layout = config.get("property_sub_type") or config.get("layout")
@@ -966,6 +977,17 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 print_safe(f"🔗 Link:     {l_dict.get('source_url')}")
                                 print_safe("="*50 + "\n")
                                 await save_listing(user_id, l_dict)
+
+                                # [AUTO-LAUNCH] Open matched listing in web browser
+                                if config.get("auto_open_links", True):
+                                    source_url = l_dict.get("source_url")
+                                    if source_url and str(source_url).startswith("http"):
+                                        import webbrowser
+                                        try:
+                                            webbrowser.open_new_tab(source_url)
+                                            print_safe(f"[BROWSER] 🚀 Launched matched listing in browser: {source_url}")
+                                        except Exception as b_err:
+                                            print_safe(f"[BROWSER] Could not open browser: {b_err}")
                                 
                                 # --- [SIGNAL BURST] INSTANT NOTIFICATION (v103.5) ---
                                 user_profile = await get_user_profile(user_id)

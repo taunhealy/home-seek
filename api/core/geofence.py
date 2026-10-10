@@ -27,7 +27,11 @@ PREMIUM_SUBURBS = {
     "blouberg", "big bay", "table view", "west beach", "sunset beach",
 
     # 🍷 Winelands & Northern Elite
-    "durbanville", "welgemoed", "plattekloof", "loevenstein", "stellenbosch", "somerset west"
+    "durbanville", "welgemoed", "plattekloof", "loevenstein", "stellenbosch", "somerset west",
+
+    # 🌲 Garden Route & Eden
+    "george", "knysna", "mossel bay", "plettenberg bay", "wilderness", "sedgefield", "heatherlands",
+    "herolds bay", "victoria bay", "blanco", "george central", "denneoord", "loerie park", "earlesveld"
 }
 
 # 🏖️ The Deep South Cluster
@@ -58,7 +62,11 @@ GEOFENCE_ZONES = {
     "west-coast": {"blouberg", "big bay", "table view", "west beach", "sunset beach"},
     "city-bowl": {"higgovale", "oranjezicht", "tamboerskloof", "gardens", "vredehoek", "city bowl", "devils peak", "woodstock", "observatory", "salt river", "walmer estate", "university estate"},
     "south": {"constantia", "bishopscourt", "newlands", "claremont upper", "kenilworth upper", "rondebosch", "steenberg", "tokai", "kirstenhof", "bergvliet", "meadowridge"} | DEEP_SOUTH_SUBURBS,
-    "north": {"durbanville", "welgemoed", "plattekloof", "loevenstein", "stellenbosch", "somerset west"}
+    "north": {"durbanville", "welgemoed", "plattekloof", "loevenstein", "stellenbosch", "somerset west"},
+    "garden-route": {
+        "george", "knysna", "mossel bay", "plettenberg bay", "wilderness", "sedgefield", 
+        "heatherlands", "herolds bay", "victoria bay", "blanco", "george central", "denneoord", "loerie park", "earlesveld"
+    }
 }
 
 def get_zone_for_area(area_name: str) -> str:
