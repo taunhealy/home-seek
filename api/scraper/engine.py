@@ -309,7 +309,7 @@ class SniperEngine:
                     await asyncio.sleep(random.uniform(0.8, 2.0))
         except: pass
 
-    async def scrape_url(self, url: str, use_cookies: bool = True, task_id: Optional[str] = None, search_area: Optional[str] = None, model_name: Optional[str] = None, min_bedrooms: Optional[List[int]] = None, max_price: Optional[int] = None, is_pulse: bool = False, min_sqm: Optional[int] = None, max_sqm: Optional[int] = None) -> ExtractionResult:
+    async def scrape_url(self, url: str, use_cookies: bool = True, task_id: Optional[str] = None, search_area: Optional[str] = None, model_name: Optional[str] = None, min_bedrooms: Optional[List[int]] = None, max_price: Optional[int] = None, is_pulse: bool = False, min_sqm: Optional[int] = None, max_sqm: Optional[int] = None, max_pages: Optional[int] = None) -> ExtractionResult:
         """The 'Sniper' extraction stage - Obsidian-Stable v1.0.9."""
         from services.database import update_task
         print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] --- SCAN START (Pulse: {is_pulse}) ---")
@@ -502,55 +502,150 @@ class SniperEngine:
                 scroll_count = 8 if "facebook.com" in url else 5
             cumulative_buffer = ""
             
-            # [PORTAL FAST-TRACK] Property24 Deterministic Extraction (0 AI tokens)
+            # [PORTAL FAST-TRACK] Property24 Multi-Page Deterministic Extraction (0 AI tokens)
             if "property24.com" in url:
                 print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [PORTAL] Rapid deterministic extraction for Property24...")
                 
-                # [BOT GUARD] Detect Cloudflare / Bot Challenges immediately
-                page_title = (await page.title() or "").lower()
-                if any(x in page_title for x in ["just a moment", "attention required", "cloudflare", "turnstile", "verify you are human", "access denied", "robot"]):
-                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [SHIELD WARNING] ⚠️ Property24 Bot Challenge detected ('{page_title}'). Halting to protect IP.")
-                    return ExtractionResult(listings=[], confidence_score=0.0, raw_summary=f"Bot challenge encountered: {page_title}")
-
-                await self.human_scroll(page, distance=random.randint(1200, 2000))
-                await self.human_delay(1.5, 3.0)
-                
-                p24_raw_cards = await page.evaluate("""() => {
-                    const tiles = document.querySelectorAll('.p24_regularTile, .p24_promotedTile, .p24_featuredTile');
-                    return Array.from(tiles).map(t => {
-                        const priceStr = t.querySelector('.p24_price')?.innerText?.trim() || '';
-                        const titleStr = t.querySelector('.p24_title')?.innerText?.trim() || '';
-                        const locationStr = t.querySelector('.p24_location')?.innerText?.trim() || '';
-                        const addressStr = t.querySelector('.p24_address')?.innerText?.trim() || '';
-                        const excerptStr = t.querySelector('.p24_excerpt')?.innerText?.trim() || '';
-                        const sizeStr = t.querySelector('.p24_size, [title*="Floor Size"], [title*="Erf Size"], [title*="Size"]')?.innerText?.trim() || '';
-                        const linkEl = t.querySelector('a[href*="/to-rent/"]');
-                        let link = linkEl?.getAttribute('href') || '';
-                        if (link && link.startsWith('/')) link = 'https://www.property24.com' + link;
-                        const isLandlord = t.querySelector('img[src*="listed_by_owner"]') !== null || (link && link.includes('plt=3')) || t.innerText.includes('Landlord');
-                        return {
-                            priceStr,
-                            titleStr,
-                            locationStr,
-                            addressStr,
-                            excerptStr,
-                            sizeStr,
-                            link,
-                            isLandlord,
-                            fullText: t.innerText
-                        };
-                    });
-                }""")
-                
-                from scraper.portal_parser import parse_p24_card
+                target_pages = 1 if is_pulse else (max_pages if max_pages and max_pages > 0 else 3)
                 p24_listings = []
-                for card in p24_raw_cards:
-                    item = parse_p24_card(card, default_suburb=search_area)
-                    if item:
-                        p24_listings.append(item)
-                        
-                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [PORTAL] Successfully parsed {len(p24_listings)} Property24 listings directly (0 Gemini tokens).")
-                return ExtractionResult(listings=p24_listings, confidence_score=100.0, raw_summary=f"Parsed {len(p24_listings)} listings from Property24 DOM")
+                seen_listing_keys = set()
+                current_page = 1
+                from scraper.portal_parser import parse_p24_card
+
+                while current_page <= target_pages:
+                    # User cancellation check (Local Stealth Node)
+                    try:
+                        from main_local import check_scan_cancelled
+                        if check_scan_cancelled():
+                            print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [ABORT] 🛑 Property24 scan aborted by user on page {current_page}.")
+                            break
+                    except: pass
+
+                    # [BOT GUARD] Detect Cloudflare / Bot Challenges immediately
+                    page_title = (await page.title() or "").lower()
+                    if any(x in page_title for x in ["just a moment", "attention required", "cloudflare", "turnstile", "verify you are human", "access denied", "robot"]):
+                        print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [SHIELD WARNING] ⚠️ Property24 Bot Challenge detected ('{page_title}'). Halting to protect IP.")
+                        break
+
+                    await self.human_scroll(page, distance=random.randint(1200, 2000))
+                    await self.human_delay(1.2, 2.2)
+
+                    page_extraction = await page.evaluate("""() => {
+                        const tiles = document.querySelectorAll('.p24_tileContainer, .p24_regularTile, .p24_proTile, .js_resultTile');
+                        const seen = new Set();
+                        const cards = [];
+
+                        tiles.forEach(t => {
+                            const listingNum = t.getAttribute('data-listing-number') || t.closest('[data-listing-number]')?.getAttribute('data-listing-number');
+                            const linkEl = t.querySelector('a[href*="/to-rent/"]');
+                            let link = linkEl?.getAttribute('href') || '';
+                            if (link && link.startsWith('/')) link = 'https://www.property24.com' + link;
+
+                            const key = listingNum || link;
+                            if (key && seen.has(key)) return;
+                            if (key) seen.add(key);
+
+                            // Price: clone and strip child elements (e.g. .p24_description) to isolate direct text
+                            const priceEl = t.querySelector('.p24_price');
+                            let priceStr = '';
+                            if (priceEl) {
+                                const clone = priceEl.cloneNode(true);
+                                while (clone.firstElementChild) {
+                                    clone.firstElementChild.remove();
+                                }
+                                priceStr = clone.textContent?.trim() || '';
+                            }
+
+                            // Title: check class and attribute variants
+                            const titleStr = t.querySelector('.p24_title')?.innerText?.trim()
+                                             || t.querySelector('.p24_description')?.innerText?.trim()
+                                             || t.querySelector('meta[itemprop="name"]')?.getAttribute('content')
+                                             || t.querySelector('[title*="rent"], [title*="Rent"]')?.getAttribute('title')
+                                             || t.getAttribute('title')
+                                             || t.querySelector('.p24_proTile')?.getAttribute('title')
+                                             || '';
+
+                            const locationStr = t.querySelector('.p24_location')?.innerText?.trim() || '';
+                            const addressStr = t.querySelector('.p24_address')?.innerText?.trim() || '';
+                            const excerptStr = t.querySelector('.p24_excerpt')?.innerText?.trim() || '';
+                            const sizeStr = t.querySelector('.p24_size, [title*="Floor Size"], [title*="Erf Size"], [title*="Size"]')?.innerText?.trim() || '';
+                            const isLandlord = t.querySelector('img[src*="listed_by_owner"]') !== null || (link && link.includes('plt=3')) || t.innerText.includes('Landlord');
+
+                            const bedsEl = t.querySelector('[title="Bedrooms"], [title*="Bedroom"]');
+                            const bedsStr = bedsEl?.innerText?.trim() || '';
+                            const bathsEl = t.querySelector('[title="Bathrooms"], [title*="Bathroom"]');
+                            const bathsStr = bathsEl?.innerText?.trim() || '';
+
+                            if (priceStr || titleStr || link) {
+                                cards.push({
+                                    priceStr,
+                                    titleStr,
+                                    locationStr,
+                                    addressStr,
+                                    excerptStr,
+                                    sizeStr,
+                                    bedsStr,
+                                    bathsStr,
+                                    link,
+                                    isLandlord,
+                                    fullText: t.innerText
+                                });
+                            }
+                        });
+
+                        // Extract Next page link
+                        let nextPageUrl = '';
+                        const allPagerLinks = Array.from(document.querySelectorAll('.p24_pager a'));
+                        for (const a of allPagerLinks) {
+                            if (a.innerText.includes('Next') && !a.classList.contains('text-muted')) {
+                                const href = a.getAttribute('href');
+                                if (href && !href.startsWith('javascript:')) {
+                                    nextPageUrl = href.startsWith('/') ? 'https://www.property24.com' + href : href;
+                                    break;
+                                }
+                            }
+                        }
+                        return { cards, nextPageUrl };
+                    }""")
+
+                    page_cards = page_extraction.get("cards", [])
+                    next_page_url = page_extraction.get("nextPageUrl")
+
+                    page_added = 0
+                    for card in page_cards:
+                        item = parse_p24_card(card, default_suburb=search_area)
+                        if item:
+                            item_key = item.source_url or f"{item.title}-{item.price}"
+                            if item_key not in seen_listing_keys:
+                                seen_listing_keys.add(item_key)
+                                p24_listings.append(item)
+                                page_added += 1
+
+                    print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [PORTAL] Page {current_page}/{target_pages}: Parsed {page_added} listings (Running total: {len(p24_listings)}).")
+
+                    # Navigate to next page if permitted and available
+                    if current_page < target_pages and next_page_url:
+                        current_page += 1
+                        if task_id:
+                            try:
+                                await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({search_area or 'Search'}) [Page {current_page}/{target_pages}]")
+                            except: pass
+
+                        print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [PAGINATION] Advancing to Property24 Page {current_page}: {next_page_url}")
+                        await self.human_delay(2.5, 4.0)
+                        try:
+                            await page.goto(next_page_url, wait_until="domcontentloaded", timeout=35000)
+                            try:
+                                await page.wait_for_selector('.p24_tileContainer, .js_resultTile, .p24_regularTile, .p24_proTile', timeout=4000)
+                            except: pass
+                        except Exception as nav_e:
+                            print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [PAGINATION] Navigation error on page {current_page}: {nav_e}")
+                            break
+                    else:
+                        break
+
+                print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [PORTAL] Harvested {len(p24_listings)} total Property24 listings across {current_page} page(s) (0 Gemini tokens).")
+                return ExtractionResult(listings=p24_listings, confidence_score=100.0, raw_summary=f"Parsed {len(p24_listings)} listings across {current_page} pages from Property24 DOM")
 
             # [VITAL] Link-Aware Harvesting (v47.0)
             # Instead of innerText (which kills URLs), we use a custom script to detect "Cards"

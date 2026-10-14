@@ -48,7 +48,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List, Union
 from pydantic import BaseModel
-from services.templates import get_match_template, get_subscription_template, get_invoice_template
+from services.templates import get_match_template, get_subscription_template, get_invoice_template, build_alert_subject
 import json
 import asyncio
 import time
@@ -83,6 +83,8 @@ app.add_middleware(
 )
 
 # [TOOL] State Management
+from intelligence.evaluator import PropertyEvaluator
+evaluator = PropertyEvaluator()
 engine = SniperEngine()
 sniper_lock = asyncio.Lock()
 
@@ -399,6 +401,45 @@ async def deploy_sniper(mission: dict, background_tasks: BackgroundTasks):
     background_tasks.add_task(run_local_scan, query, [], task_id, all_subs)
     return {"status": "deployed", "task_id": task_id}
 
+class EvaluationRequest(BaseModel):
+    listing: dict
+    must_include: Optional[List[str]] = []
+    must_exclude: Optional[List[str]] = []
+    lifestyle_signals: Optional[List[str]] = []
+    strict_mode: Optional[bool] = False
+    require_verified_sea_view: Optional[bool] = False
+    min_agency_rating: Optional[float] = None
+    exclude_low_rated_agencies: Optional[bool] = False
+    allow_direct_landlords: Optional[bool] = True
+    commute_anchors: Optional[List[Dict[str, Any]]] = []
+    require_independent_living: Optional[bool] = False
+    require_private_entrance: Optional[bool] = False
+    require_private_garden: Optional[bool] = False
+    exclude_landlord_on_site: Optional[bool] = False
+    exclude_shared_house: Optional[bool] = True
+
+@app.post("/evaluate-listing")
+async def evaluate_listing_endpoint(req: EvaluationRequest):
+    """Generates comprehensive Pros, Cons & Hidden Costs, and Viewing Checklist using Gemini 3.8 Flash."""
+    try:
+        report = await evaluator.evaluate_property(
+            listing=req.listing,
+            must_include=req.must_include or [],
+            must_exclude=req.must_exclude or [],
+            lifestyle_signals=req.lifestyle_signals or [],
+            strict_mode=req.strict_mode or False,
+            commute_anchors=req.commute_anchors or [],
+            require_independent_living=req.require_independent_living or False,
+            require_private_entrance=req.require_private_entrance or False,
+            require_private_garden=req.require_private_garden or False,
+            exclude_landlord_on_site=req.exclude_landlord_on_site or False,
+            exclude_shared_house=req.exclude_shared_house if req.exclude_shared_house is not None else True
+        )
+        return {"status": "success", "report": report.dict()}
+    except Exception as e:
+        print_safe(f"[EVALUATION ERROR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/health")
 async def get_health():
     return {
@@ -673,6 +714,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
 
             is_pet_req = any(s.get("config", {}).get("pet_friendly") for s in (subscribers or [])) or any(x in str(query).lower() for x in ["pet", "dog", "cat"])
             pet_param = "?sp=ptf%3dTrue" if is_pet_req else ""
+            is_pulse = any(s.get("config", {}).get("is_pulse", False) for s in (subscribers or []))
 
             if is_p24 and is_fav:
                 favourite_targets = [
@@ -694,7 +736,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                         # [STEALTH] Human-paced jitter (6.0s - 10.0s) between major regions
                         await asyncio.sleep(random.uniform(6.0, 10.0))
                     await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name}) [{idx+1}/{len(favourite_targets)}]")
-                    sub_res = await engine.scrape_url(sub_url, task_id=task_id, search_area=sub_name)
+                    sub_res = await engine.scrape_url(sub_url, task_id=task_id, search_area=sub_name, is_pulse=is_pulse, max_pages=1)
                     if sub_res and (sub_res.confidence_score == 0 and any(w in (sub_res.raw_summary or "").lower() for w in ["bot challenge", "503", "429", "blocked", "server unavailable"])):
                         print_safe(f"[SHIELD] 🛑 Throttling P24: Server returned block/cooldown ({sub_res.raw_summary}). Halting immediately to protect IP.")
                         await update_task(task_id, "Throttled", f"Property24 cooldown ({sub_res.raw_summary}). Halting to protect IP.")
@@ -704,28 +746,10 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                 from models.listing import ExtractionResult
                 result = ExtractionResult(listings=all_fav_listings, confidence_score=100.0, raw_summary=f"Parsed {len(all_fav_listings)} listings from Property24 Favourites")
             elif is_p24 and is_deep_south:
-                # [OPTIMIZED] Southern Peninsula parent region URL covers all Deep South in 1-2 rapid requests instead of 12 separate URLs
-                deep_targets = [
-                    ("Southern Peninsula", f"https://www.property24.com/to-rent/southern-peninsula/cape-town/western-cape/24{pet_param}"),
-                    ("Southern Peninsula (Page 2)", f"https://www.property24.com/to-rent/southern-peninsula/cape-town/western-cape/24/p2{pet_param}")
-                ]
-                all_deep_listings = []
-                for idx, (sub_name, sub_url) in enumerate(deep_targets):
-                    if check_scan_cancelled():
-                        print_safe(f"[ABORT] 🛑 P24 Deep South scan halted by user before '{sub_name}'.")
-                        break
-                    if idx > 0:
-                        await asyncio.sleep(random.uniform(5.0, 8.0))
-                    await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name}) [{idx+1}/{len(deep_targets)}]")
-                    sub_res = await engine.scrape_url(sub_url, task_id=task_id, search_area=sub_name)
-                    if sub_res and (sub_res.confidence_score == 0 and any(w in (sub_res.raw_summary or "").lower() for w in ["bot challenge", "503", "429", "blocked", "server unavailable"])):
-                        print_safe(f"[SHIELD] 🛑 Throttling P24: Server returned block/cooldown ({sub_res.raw_summary}). Halting immediately to protect IP.")
-                        await update_task(task_id, "Throttled", f"Property24 cooldown ({sub_res.raw_summary}). Halting to protect IP.")
-                        break
-                    if sub_res and sub_res.listings:
-                        all_deep_listings.extend(sub_res.listings)
-                from models.listing import ExtractionResult
-                result = ExtractionResult(listings=all_deep_listings, confidence_score=100.0, raw_summary=f"Parsed {len(all_deep_listings)} listings from Property24 Deep South")
+                # [OPTIMIZED] Southern Peninsula parent region URL covers all Deep South with automated 2-page pagination
+                deep_url = f"https://www.property24.com/to-rent/southern-peninsula/cape-town/western-cape/24{pet_param}"
+                await update_task(task_id, "Scouting", "Node analyzing: Property24 (Southern Peninsula - Deep South)")
+                result = await engine.scrape_url(deep_url, task_id=task_id, search_area="Southern Peninsula", is_pulse=is_pulse, max_pages=2)
             else:
                 target_url = source.get('url')
                 if is_p24 and clean_query:
@@ -734,8 +758,16 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                     if resolved_url:
                         target_url = resolved_url
                         print_safe(f"[PORTAL] 🎯 Dynamic URL resolved for '{clean_query}': {target_url}")
+                
+                # Determine mission page depth (default: 3 pages for rich harvest, 1 for pulse)
+                mission_max_pages = 1 if is_pulse else 3
+                if subscribers:
+                    sub_pages = [s.get("config", {}).get("max_pages") for s in subscribers if s.get("config", {}).get("max_pages")]
+                    if sub_pages:
+                        mission_max_pages = max(sub_pages)
+
                 await update_task(task_id, "Scouting", f"Node analyzing: {source_name} ({clean_query})")
-                result = await engine.scrape_url(target_url, task_id=task_id, search_area=clean_query)
+                result = await engine.scrape_url(target_url, task_id=task_id, search_area=clean_query, is_pulse=is_pulse, max_pages=mission_max_pages)
             
             if result:
                 all_raw = []
@@ -890,6 +922,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                             break
                                             
                                     if not matched_any_term:
+                                        print_safe(f"[RECON] [REJECT] Lease term mismatch (Requested: {req_terms})")
                                         continue
 
                                 # [CATEGORY FILTER] Filter by rental type if specified
@@ -961,6 +994,46 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                         print_safe(f"[RECON] [REJECT] Size {listing_sqm}m² > Max {max_s}m²")
                                         continue
                                 
+                                # [AGENCY GUARD] 🛡️ Agency Google Rating Gate
+                                min_agency_rating = config.get("min_agency_rating")
+                                exclude_low_agency = config.get("exclude_low_rated_agencies", False)
+                                allow_direct = config.get("allow_direct_landlords", True)
+                                
+                                is_direct = l_dict.get("is_direct_landlord", False)
+                                agency_rating = l_dict.get("agency_rating")
+                                
+                                if exclude_low_agency and min_agency_rating and not (is_direct and allow_direct):
+                                    if agency_rating is not None and agency_rating < float(min_agency_rating):
+                                        print_safe(f"[AGENCY GUARD] Dropping listing '{l_dict.get('title')}' - Agency rating {agency_rating}★ < Required {min_agency_rating}★")
+                                        continue
+
+                                # [AI CRITERIA] 🧠 Evaluate Must Include / Must Exclude / Lifestyle
+                                ai_must_inc = config.get("must_include") or []
+                                ai_must_exc = config.get("must_exclude") or []
+                                lifestyle_sigs = config.get("lifestyle_signals") or []
+                                strict_mode = config.get("strict_mode", False)
+                                
+                                ai_report = None
+                                if ai_must_inc or ai_must_exc or lifestyle_sigs:
+                                    try:
+                                        eval_result = await evaluator.evaluate_property(
+                                            listing=l_dict,
+                                            must_include=ai_must_inc,
+                                            must_exclude=ai_must_exc,
+                                            lifestyle_signals=lifestyle_sigs,
+                                            strict_mode=strict_mode
+                                        )
+                                        if strict_mode and not eval_result.is_match:
+                                            print_safe(f"[STRICT FILTER] Dropping listing '{l_dict.get('title')}' - failed strict criteria.")
+                                            continue
+                                        ai_report = eval_result.dict()
+                                        l_dict['ai_report'] = ai_report
+                                        l_dict['match_score'] = eval_result.fit_score
+                                        if eval_result.verdict:
+                                            l_dict['match_reason'] = eval_result.verdict
+                                    except Exception as eval_err:
+                                        print_safe(f"[EVALUATE SCAN ERROR] {eval_err}")
+
                                 # [DEDUPE] Check if this is a fresh discovery for this user
                                 doc_id = create_listing_id(l_dict)
                                 user_seen = db.collection("users").document(user_id).collection("listings").document(doc_id).get().exists
@@ -1011,12 +1084,21 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                             price_val = l_dict.get('price')
                                             price_display = f"R{price_val:,}" if price_val and price_val > 0 else "Price on Request"
 
+                                            # Extract upfront privacy tags
+                                            priv_flags = []
+                                            if l_dict.get('dwelling_privacy') == 'garden_cottage': priv_flags.append('Shared Erf / Cottage')
+                                            if l_dict.get('has_shared_entrance'): priv_flags.append('Shared Driveway')
+                                            if l_dict.get('has_shared_pool'): priv_flags.append('Shared Pool')
+                                            if l_dict.get('is_landlord_on_site'): priv_flags.append('Landlord on Erf')
+
                                             wa_msg = f"🏠 *HomeSeek Sniper: New Discovery*\n\n"
                                             wa_msg += f"*{l_dict.get('title')}*\n"
                                             wa_msg += f"💰 *Price:* {price_display}\n"
                                             wa_msg += f"📍 *Area:* {l_dict.get('address', 'Cape Town')}\n"
-                                            wa_msg += f"🛏️ *Specs:* {l_dict.get('bedrooms', 'N/A')} Beds | {l_dict.get('property_sub_type', 'Whole')}\n\n"
-                                            wa_msg += f"--- \n"
+                                            wa_msg += f"🛏️ *Specs:* {l_dict.get('bedrooms', 'N/A')} Beds | {l_dict.get('property_sub_type', 'Whole')}\n"
+                                            if priv_flags:
+                                                wa_msg += f"⚠️ *Privacy:* {', '.join(priv_flags)}\n"
+                                            wa_msg += f"\n--- \n"
                                             wa_msg += f"🧠 *AI INSIGHT:*\n"
                                             wa_msg += f"_{l_dict.get('ai_summary', 'Fresh listing matching your alert criteria.')}_\n\n"
                                             wa_msg += f"✅ *INTEL:*\n"
@@ -1033,10 +1115,10 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                         user_email = user_profile.get("email")
                                         if user_email:
                                             email_client = ResendEmailClient()
-                                            subject = f"🏹 Match: {l_dict.get('title')}"
-                                            body = get_match_template(l_dict)
+                                            subject = build_alert_subject(l_dict, report=l_dict.get('ai_report'))
+                                            body = get_match_template(l_dict, report=l_dict.get('ai_report'))
                                             asyncio.create_task(email_client.send_email(user_email, subject, body))
-                                            print_safe(f"[SIGNAL] Email Alert Dispatched to {user_email}")
+                                            print_safe(f"[SIGNAL] Email Alert Dispatched to {user_email} with Subject: '{subject}'")
                                     except Exception as notify_err:
                                         print_safe(f"[SIGNAL ERROR] Alert Dispatch Failed: {notify_err}")
         

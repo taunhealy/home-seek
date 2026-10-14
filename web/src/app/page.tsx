@@ -1,22 +1,23 @@
-"use client";
+'use client';
 
 import React from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { 
   Target, 
-  Zap, 
-  Search, 
-  Bell, 
-  Smartphone, 
-  Mail, 
-  Globe, 
-  ArrowRight,
-  ShieldCheck,
-  Cpu
-} from 'lucide-react';
-
+  MapPin, 
+  ShieldCheck, 
+  MagnifyingGlass, 
+  Car, 
+  Buildings, 
+  ArrowRight, 
+  Heart, 
+  CheckCircle,
+  DeviceMobile,
+  Envelope,
+  Lightning,
+  Sparkle
+} from '@phosphor-icons/react';
 import { useAuth } from '@/lib/auth-context';
 import { Navbar } from '@/components/Navbar';
 
@@ -24,7 +25,7 @@ export default function Home() {
   const { user, profile, loading, login, logout } = useAuth();
 
   return (
-    <div className="min-h-screen bg-black text-white font-outfit">
+    <div className="min-h-screen bg-white text-zinc-900 font-sans flex flex-col pt-16">
       {/* Navigation */}
       <Navbar 
         user={user} 
@@ -35,275 +36,231 @@ export default function Home() {
       />
 
       {/* Hero Section */}
-      <section className="relative pt-40 pb-20 px-8 max-w-7xl mx-auto overflow-hidden">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-primary/10 rounded-full blur-[120px] -z-10 translate-x-1/2 -translate-y-1/2" />
-        <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-blue-500/10 rounded-full blur-[100px] -z-10 -translate-x-1/2 translate-y-1/2" />
+      <section className="relative pt-20 pb-16 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto text-center space-y-8">
         
-        <div className="text-center space-y-8 relative">
-          <motion.div 
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-          >
-            <span className="inline-block bg-white/5 border border-white/10 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.3em] text-emerald-primary mb-6">
-              AI-Powered Real Estate Intake
-            </span>
-            <h1 className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.9] mb-8">
-              NEVER MISS A <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-primary via-emerald-300 to-emerald-primary bg-[length:200%_auto] animate-gradient-slow">PERFECT HOME.</span>
-            </h1>
-            <p className="max-w-2xl mx-auto text-white/50 text-xl font-medium leading-relaxed">
-              An autonomous rental sniper designed for the South African market. 
-              We monitor multiple platforms 24/7 so you don't have to. 
-              Get notified as soon as your desired property is discovered.
-            </p>
-          </motion.div>
-
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2, duration: 0.4 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
-          >
-            <Link 
-              href="/dashboard"
-              className="w-full sm:w-auto bg-white text-black px-10 py-5 rounded-2xl text-lg font-black flex items-center justify-center gap-3 hover:bg-emerald-primary hover:text-white transition-all group active:scale-95 shadow-xl"
-            >
-              START SNIPING <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </Link>
-            <Link 
-              href="/explore"
-              className="w-full sm:w-auto bg-white/5 border border-white/10 px-10 py-5 rounded-2xl text-lg font-black flex items-center justify-center gap-3 hover:bg-white/10 transition-all active:scale-95 shadow-xl"
-            >
-              EXPLORE LISTINGS <Zap className="w-5 h-5 fill-emerald-primary text-emerald-primary" />
-            </Link>
-          </motion.div>
-        </div>
-
-        {/* Dashboard Preview */}
-        <motion.div 
-          initial={{ opacity: 0, y: 100 }}
+        {/* Subtle pill tag */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4, duration: 0.8 }}
-          className="mt-20 relative px-4"
+          transition={{ duration: 0.4 }}
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-zinc-200 bg-zinc-50 text-xs font-semibold text-zinc-700 shadow-2xs"
         >
-          <div className="glass-emerald rounded-[3rem] p-4 lg:p-8 aspect-video border border-white/10 shadow-2xl relative">
-             <div className="absolute inset-0 bg-transparent rounded-[2.5rem] overflow-hidden">
-                <div className="w-full h-full bg-[#050505] flex flex-col p-6 space-y-6">
-                   <div className="h-4 w-1/4 bg-white/5 rounded-full" />
-                   <div className="grid grid-cols-3 gap-4">
-                      <div className="h-40 bg-white/5 rounded-3xl" />
-                      <div className="h-40 bg-white/5 rounded-3xl" />
-                      <div className="h-40 bg-white/5 rounded-3xl" />
-                   </div>
-                   <div className="h-8 w-1/3 bg-white/10 rounded-full" />
-                   <div className="grid grid-cols-2 gap-4">
-                      <div className="h-24 bg-white/5 rounded-2xl border border-emerald-primary/10" />
-                      <div className="h-24 bg-white/5 rounded-2xl border border-emerald-primary/10" />
-                   </div>
+          <span className="w-2 h-2 rounded-full bg-zinc-950 animate-pulse" />
+          <span>Real-Time Property Intelligence</span>
+        </motion.div>
+
+        {/* Main Headline */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="space-y-4"
+        >
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-zinc-950 leading-[1.05]">
+            Never miss your <br className="hidden sm:inline" />
+            <span className="text-zinc-950">ideal home.</span>
+          </h1>
+          <p className="max-w-2xl mx-auto text-base sm:text-lg text-zinc-600 font-normal leading-relaxed">
+            Autonomous property tracking built for smart renters. Define your search criteria, 
+            proximity anchors, and living privacy preferences — our radar does the rest.
+          </p>
+        </motion.div>
+
+        {/* Hero CTAs */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+          className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-2"
+        >
+          <Link
+            href="/search"
+            className="w-full sm:w-auto px-7 py-3.5 rounded-2xl bg-zinc-950 text-white hover:bg-black font-semibold text-sm transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 group active:scale-98"
+          >
+            <span>Set Up Search Criteria</span>
+            <ArrowRight size={16} weight="bold" className="group-hover:translate-x-1 transition-transform" />
+          </Link>
+
+          <Link
+            href="/properties"
+            className="w-full sm:w-auto px-7 py-3.5 rounded-2xl bg-white text-zinc-900 border border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50 font-semibold text-sm transition-all shadow-2xs flex items-center justify-center gap-2 active:scale-98"
+          >
+            <Buildings size={16} weight="bold" />
+            <span>Explore Properties & Map</span>
+          </Link>
+        </motion.div>
+
+        {/* Hero Live Preview (Split Card & Map Teaser) */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.3 }}
+          className="mt-12 rounded-3xl border border-zinc-200 bg-white p-3 sm:p-5 shadow-xl text-left"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+            
+            {/* Left Preview: Horizontal Card matching the user's reference */}
+            <div className="lg:col-span-7 bg-zinc-50/80 rounded-2xl p-4 sm:p-5 border border-zinc-200/80 flex flex-col sm:flex-row gap-4 items-center sm:items-start">
+              <img
+                src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=80"
+                alt="Property preview"
+                className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border border-zinc-200 shrink-0"
+              />
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="font-bold text-sm sm:text-base text-zinc-950 truncate">
+                    14 Victoria Road, Camps Bay
+                  </h4>
+                  <span className="text-xs text-zinc-400 whitespace-nowrap">2 hours ago</span>
                 </div>
-             </div>
-             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                <div className="bg-emerald-primary/10 backdrop-blur-2xl border border-emerald-primary/20 p-8 rounded-full">
-                   <Search className="w-12 h-12 text-emerald-primary animate-pulse" />
+                
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white border border-zinc-200 text-zinc-900">
+                    R 28,000 / mo
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-white border border-zinc-200 text-zinc-700">
+                    3 bedroom
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-white border border-zinc-200 text-zinc-700">
+                    2 bathroom
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-white border border-zinc-200 text-zinc-700">
+                    135 sqm
+                  </span>
                 </div>
-             </div>
+
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <span className="text-zinc-500">property24.com</span>
+                  <div className="flex items-center gap-1.5 text-zinc-900 font-semibold">
+                    <CheckCircle size={14} weight="fill" className="text-zinc-950" />
+                    <span>Private Garden & Independent</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Preview: Proximity Commute Indicator */}
+            <div className="lg:col-span-5 bg-zinc-950 text-white rounded-2xl p-5 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  Proximity Anchor Match
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
+                  98% FIT
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Target size={16} weight="bold" className="text-zinc-300" />
+                  <span className="text-xs font-bold text-white">Work: Amazon River Club HQ</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-zinc-300">
+                  <Car size={15} />
+                  <span>18 mins driving commute · 12.4 km</span>
+                </div>
+              </div>
+
+              <Link
+                href="/properties"
+                className="w-full py-2 bg-white text-zinc-950 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-zinc-100 transition-colors"
+              >
+                <span>View On Interactive Map</span>
+                <ArrowRight size={13} weight="bold" />
+              </Link>
+            </div>
+
           </div>
         </motion.div>
+
       </section>
 
-      {/* How It Works */}
-      <section id="how-it-works" className="py-32 px-8 max-w-7xl mx-auto space-y-24">
-        <div className="text-center space-y-4">
-          <h2 className="text-xs font-black uppercase tracking-[0.4em] text-emerald-primary">The Protocol</h2>
-          <p className="text-4xl md:text-5xl font-black">HOW THE SNIPER WORKS</p>
+      {/* 4 Core Pillars Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto w-full border-t border-zinc-200">
+        <div className="text-center max-w-2xl mx-auto space-y-2 mb-12">
+          <h2 className="text-2xl sm:text-3xl font-bold text-zinc-950">
+            Engineered For Frictionless Renting
+          </h2>
+          <p className="text-xs sm:text-sm text-zinc-600">
+            Everything you need across 4 streamlined pages: Home, Search, Properties, and Contact.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-          {[
-            { 
-              icon: Globe, 
-              title: "GLOBAL SCAN", 
-              desc: "Our engine patrols Gumtree, Facebook, Property24, and private portals simultaneously every 10 minutes." 
-            },
-            { 
-              icon: Cpu, 
-              title: "AI ANALYSIS", 
-              desc: "Gemini AI instantly filters noise, extracts requirements, and validates listing quality to filter appropriate listings." 
-            },
-            { 
-              icon: Bell, 
-              title: "INSTANT DEPLOYMENT", 
-              desc: "When a match is found, we blast notifications via WhatsApp or Email so you can beat the queue." 
-            }
-          ].map((item, i) => (
-            <div key={i} className="space-y-6 group">
-              <div className="p-5 bg-white/5 rounded-3xl border border-white/5 group-hover:border-emerald-primary/30 transition-all">
-                <item.icon className="w-10 h-10 text-emerald-primary" />
-              </div>
-              <h3 className="text-2xl font-black">{item.title}</h3>
-              <p className="text-white/40 leading-relaxed font-medium">{item.desc}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          
+          {/* Card 1 */}
+          <div className="p-6 rounded-3xl border border-zinc-200 bg-white space-y-3 shadow-2xs hover:border-zinc-400 transition-all">
+            <div className="w-10 h-10 rounded-2xl bg-zinc-100 flex items-center justify-center text-zinc-950 font-bold">
+              <MagnifyingGlass size={20} weight="bold" />
             </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Feature Grid */}
-      <section id="features" className="py-32 bg-white/5 border-y border-white/5">
-        <div className="max-w-7xl mx-auto px-8 grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
-           <div className="space-y-12">
-              <div className="space-y-4">
-                 <h2 className="text-xs font-black uppercase tracking-[0.4em] text-emerald-primary">Intelligence</h2>
-                 <p className="text-4xl md:text-6xl font-black tracking-tight leading-[1.1]">THE HOMESEEK <br />DIFFERENCE.</p>
-              </div>
-              
-              <div className="space-y-8">
-                 {[
-                   { icon: Globe, t: "Facebook Groups Scanning", d: "We patrol private and public rental groups 24/7, catching listings before they ever hit major property portals." },
-                   { icon: Cpu, t: "AI Intelligence", d: "Our engine deciphers complex descriptions to extract exact locations, prices, and requirements—filtering the noise for you." },
-                   { icon: Zap, t: "Instant Alerts", d: "Receive high-priority signals via WhatsApp or Email the moment a match is found. Beat the queue every time." }
-                 ].map((feat, i) => (
-                   <div key={i} className="flex gap-6 items-start">
-                      <div className="p-3 bg-emerald-primary/10 rounded-2xl text-emerald-primary mt-1">
-                         <feat.icon className="w-6 h-6" />
-                      </div>
-                      <div className="space-y-1">
-                         <h4 className="text-xl font-bold">{feat.t}</h4>
-                         <p className="text-white/40 text-sm font-medium">{feat.d}</p>
-                      </div>
-                   </div>
-                 ))}
-              </div>
-           </div>
-           
-           <div className="relative">
-              <div className="glass p-8 rounded-[3rem] border border-white/10 space-y-6">
-                 <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold opacity-40 uppercase tracking-widest">Incoming Intel</span>
-                    <span className="bg-emerald-primary text-black text-[10px] font-black px-2 py-1 rounded-full animate-pulse">LIVE</span>
-                 </div>
-                 <div className="space-y-4">
-                    <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex gap-4">
-                       <div className="w-12 h-12 bg-white/10 rounded-xl" />
-                       <div className="flex-1 space-y-2">
-                          <div className="h-4 w-3/4 bg-white/20 rounded-full" />
-                          <div className="h-3 w-1/2 bg-white/10 rounded-full" />
-                       </div>
-                    </div>
-                    <div className="bg-emerald-primary/5 p-4 rounded-2xl border border-emerald-primary/20 flex gap-4">
-                       <div className="w-12 h-12 bg-emerald-primary/20 rounded-xl" />
-                       <div className="flex-1 space-y-2">
-                          <div className="h-4 w-3/4 bg-emerald-primary/40 rounded-full" />
-                          <div className="h-3 w-1/2 bg-emerald-primary/20 rounded-full" />
-                       </div>
-                    </div>
-                    <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex gap-4">
-                       <div className="w-12 h-12 bg-white/10 rounded-xl" />
-                       <div className="flex-1 space-y-2">
-                          <div className="h-4 w-3/4 bg-white/20 rounded-full" />
-                          <div className="h-3 w-1/2 bg-white/10 rounded-full" />
-                       </div>
-                    </div>
-                 </div>
-              </div>
-           </div>
-        </div>
-      </section>
-
-      {/* Pricing Section */}
-      <section id="pricing" className="py-32 px-8 max-w-7xl mx-auto space-y-16">
-        <div className="text-center space-y-4">
-          <h2 className="text-xs font-black uppercase tracking-[0.4em] text-emerald-primary">Simple Pricing</h2>
-          <p className="text-4xl md:text-5xl font-black">CHOOSE THE RIGHT PLAN FOR YOU</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {/* FREE */}
-          <div className="bg-white/5 border border-white/5 p-8 rounded-[2.5rem] flex flex-col justify-between hover:border-white/10 transition-all group">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-2">Standard</h3>
-                <p className="text-4xl font-black">FREE</p>
-              </div>
-              <ul className="space-y-4 text-sm font-medium text-white/60">
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
-                   Manual Scan Only
-                </li>
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
-                   Email Summaries
-                </li>
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-white/20 rounded-full" />
-                   Basic Dashboard
-                </li>
-              </ul>
-            </div>
-            <Link href="/dashboard" className="mt-12 block text-center py-4 rounded-2xl bg-white/5 border border-white/10 font-black text-sm uppercase tracking-widest hover:bg-white/10 transition-all">Select Protocol</Link>
+            <h3 className="font-bold text-sm text-zinc-950">Granular Search</h3>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Define suburbs, price windows, bedrooms, and must-haves like inverters and fibre connections.
+            </p>
           </div>
 
-          {/* BRONZE */}
-          <div className="bg-white/5 border border-white/5 p-8 rounded-[2.5rem] flex flex-col justify-between hover:border-white/10 transition-all">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-sm font-bold text-white/60 uppercase tracking-widest mb-2">Silver Hunter</h3>
-                <p className="text-4xl font-black">R149<span className="text-sm opacity-40">/mo</span></p>
-              </div>
-              <ul className="space-y-4 text-sm font-medium text-white/80">
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   5 Active Snipers
-                </li>
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   Scanning Every 4 Hours
-                </li>
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   WhatsApp & Email Notifications
-                </li>
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   Automated Tracking
-                </li>
-              </ul>
+          {/* Card 2 */}
+          <div className="p-6 rounded-3xl border border-zinc-200 bg-white space-y-3 shadow-2xs hover:border-zinc-400 transition-all">
+            <div className="w-10 h-10 rounded-2xl bg-zinc-100 flex items-center justify-center text-zinc-950 font-bold">
+              <Target size={20} weight="bold" />
             </div>
-            <Link href="/dashboard" className="mt-12 block text-center py-4 rounded-2xl bg-white/5 border border-white/10 font-black text-sm uppercase tracking-widest hover:bg-white/10 transition-all">Upgrade to Silver</Link>
+            <h3 className="font-bold text-sm text-zinc-950">Proximity Anchors</h3>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Set your target destinations (Work, Beach, School) and see real driving times mapped to each listing.
+            </p>
           </div>
 
-          {/* GOLD */}
-          <div className="bg-white/5 border-2 border-emerald-primary/30 p-8 rounded-[2.5rem] flex flex-col justify-between relative overflow-hidden shadow-[0_0_40px_rgba(16,185,129,0.1)]">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-sm font-bold text-yellow-500 uppercase tracking-widest mb-2">Gold Hunter</h3>
-                <p className="text-4xl font-black">R299<span className="text-sm opacity-40">/mo</span></p>
-              </div>
-              <ul className="space-y-4 text-sm font-medium text-white/90">
-                <li className="flex items-center gap-3 text-emerald-primary">
-                   <Zap className="w-4 h-4 text-emerald-primary fill-emerald-primary" />
-                   30 Active Snipers Authorized
-                </li>
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                    Scanning Every 30 Minutes
-                </li>
-                <li className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-emerald-primary rounded-full" />
-                   WhatsApp & Email Notifications
-                </li>
-              </ul>
+          {/* Card 3 */}
+          <div className="p-6 rounded-3xl border border-zinc-200 bg-white space-y-3 shadow-2xs hover:border-zinc-400 transition-all">
+            <div className="w-10 h-10 rounded-2xl bg-zinc-100 flex items-center justify-center text-zinc-950 font-bold">
+              <ShieldCheck size={20} weight="bold" />
             </div>
-            <Link href="/dashboard" className="mt-12 block text-center py-4 rounded-2xl bg-emerald-primary text-black font-black text-sm uppercase tracking-widest hover:shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all">Upgrade to Gold</Link>
+            <h3 className="font-bold text-sm text-zinc-950">Privacy Shield</h3>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Checkboxes for private entrance, exclusive garden, independent living, and no landlord on-site.
+            </p>
           </div>
+
+          {/* Card 4 */}
+          <div className="p-6 rounded-3xl border border-zinc-200 bg-white space-y-3 shadow-2xs hover:border-zinc-400 transition-all">
+            <div className="w-10 h-10 rounded-2xl bg-zinc-100 flex items-center justify-center text-zinc-950 font-bold">
+              <Buildings size={20} weight="bold" />
+            </div>
+            <h3 className="font-bold text-sm text-zinc-950">Interactive Map</h3>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Split screen layout with crisp horizontal cards and live map markers for properties and anchors.
+            </p>
+          </div>
+
         </div>
-        
-        <p className="text-center text-white/20 text-xs font-bold uppercase tracking-[0.2em]">
-           * MULTIPLEX ALERTS enable real-time detection across all discovery missions in the network.
-        </p>
       </section>
 
-      </div>
+      {/* Bottom CTA Banner */}
+      <section className="bg-zinc-50 border-t border-zinc-200 py-16 px-4 sm:px-6 text-center">
+        <div className="max-w-2xl mx-auto space-y-6">
+          <h2 className="text-2xl sm:text-3xl font-bold text-zinc-950">
+            Ready to find your next home?
+          </h2>
+          <p className="text-xs sm:text-sm text-zinc-600">
+            Start by setting up your search criteria or jump straight into the interactive properties map.
+          </p>
+          <div className="flex flex-col sm:flex-row justify-center gap-3">
+            <Link
+              href="/search"
+              className="px-6 py-3 bg-zinc-950 text-white rounded-xl text-xs font-bold hover:bg-black transition-colors"
+            >
+              Configure Search Criteria
+            </Link>
+            <Link
+              href="/properties"
+              className="px-6 py-3 bg-white border border-zinc-200 text-zinc-900 rounded-xl text-xs font-bold hover:bg-zinc-50 transition-colors"
+            >
+              Browse Properties Feed
+            </Link>
+          </div>
+        </div>
+      </section>
+
+    </div>
   );
 }
-

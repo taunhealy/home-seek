@@ -98,7 +98,17 @@ class SniperHub(ctk.CTk):
             variable=self.source_var, 
             values=["Property24", "FB Marketplace", "Huis Huis", "Huis Huis Pet Friendly", "Sea Point Rentals", "All Sources"]
         )
-        self.source_menu.pack(fill="x", padx=15, pady=(0, 14))
+        self.source_menu.pack(fill="x", padx=15, pady=(0, 8))
+
+        # Scan Depth (Pages to Harvest)
+        self._create_sub_label("Scan Depth (Pages):")
+        self.pages_var = ctk.StringVar(value="3 Pages")
+        self.pages_seg = ctk.CTkSegmentedButton(
+            self.sidebar_frame, 
+            values=["1 Page", "2 Pages", "3 Pages", "5 Pages"], 
+            variable=self.pages_var
+        )
+        self.pages_seg.pack(fill="x", padx=15, pady=(0, 14))
 
         # --- SECTION: EXPLORE LEASE & AGENT FILTERS ---
         self._create_section_label("🛡️ LANDLORD & LEASE TYPE")
@@ -572,95 +582,108 @@ if __name__ == '__main__':
         threading.Thread(target=_post, daemon=True).start()
 
     def manual_snipe(self):
-        keyword = self.keyword_entry.get().strip()
-        source_name = self.source_var.get()
-        if not keyword:
-            self.log_text("⚠️ ERROR: Enter an Area / Suburb (e.g. Sea Point, Fish Hoek).")
+        try:
+            keyword = self.keyword_entry.get().strip()
+            source_name = self.source_var.get()
+            if not keyword:
+                self.log_text("⚠️ ERROR: Enter an Area / Suburb (e.g. Sea Point, Fish Hoek).")
+                return
+
+            source_id_map = {
+                "Huis Huis": "Lix5HlnnquOBb8KjEsCa", 
+                "Huis Huis Pet Friendly": "x8j0OMfg6xn5X9aPI2MI", 
+                "Sea Point Rentals": "BFqKlkZ1oTzkXpuJ9nQ3",
+                "FB Marketplace": "0JPElXlENPTODJGr8hU9", 
+                "Property24": "llLUh4dRz0mu7p2lHbtC"
+            }
+            source_id = source_id_map.get(source_name)
+            source_ids = [source_id] if source_id else None
+
+            # Parse Budget & Dimensions
+            min_p_raw = self.min_price_entry.get().strip().replace("R", "").replace(",", "")
+            max_p_raw = self.max_price_entry.get().strip().replace("R", "").replace(",", "")
+            min_sqm_raw = self.min_sqm_entry.get().strip().replace(",", "")
+
+            min_price = int(min_p_raw) if min_p_raw.isdigit() else None
+            max_price = int(max_p_raw) if max_p_raw.isdigit() else None
+            min_sqm = int(min_sqm_raw) if min_sqm_raw.isdigit() else None
+
+            # Parse Specs
+            beds_val = self.beds_var.get()
+            min_beds = None
+            if beds_val in ["1", "2", "3"]:
+                min_beds = int(beds_val)
+            elif beds_val == "4+":
+                min_beds = 4
+
+            baths_val = self.baths_var.get()
+            min_baths = None
+            if "1+" in baths_val: min_baths = 1
+            elif "2+" in baths_val: min_baths = 2
+            elif "3+" in baths_val: min_baths = 3
+
+            rental_type_map = {
+                "Any": None,
+                "Long Term": "long-term",
+                "Short Term": "short-term",
+                "Room Share": "room-share"
+            }
+            rental_type = rental_type_map.get(self.rental_type_var.get())
+
+            selected_terms = []
+            if self.term_m2m_var.get(): selected_terms.append("1")
+            if self.term_3m_var.get(): selected_terms.append("3")
+            if self.term_6m_var.get(): selected_terms.append("6")
+            if self.term_12m_var.get(): selected_terms.append("12")
+
+            lease_terms_disp = ", ".join([f"{t}m" if t != "1" else "1 (M2M)" for t in selected_terms]) if selected_terms else "Any"
+
+            layout_raw = self.layout_var.get()
+            layout = layout_raw if layout_raw != "Any Layout" else None
+
+            furn_raw = self.furnished_var.get()
+            furnished = furn_raw.lower() if furn_raw != "Any Furnishing" else None
+
+            no_agents = self.no_agents_var.get()
+            pet_friendly = self.pets_var.get()
+            auto_open = self.auto_open_var.get()
+
+            max_pages = 3
+            if hasattr(self, 'pages_var'):
+                try:
+                    pages_val = self.pages_var.get()
+                    max_pages = int(pages_val.split()[0])
+                except Exception:
+                    max_pages = 3
+
+            payload = {
+                "query": keyword,
+                "search_query": keyword,
+                "source_ids": source_ids,
+                "user_id": "taun_test_user",
+                "no_agents": no_agents,
+                "rental_type": rental_type,
+                "lease_term": selected_terms if selected_terms else None,
+                "lease_terms": selected_terms,
+                "auto_open_links": auto_open,
+                "min_price": min_price,
+                "max_price": max_price,
+                "min_bedrooms": min_beds,
+                "bathrooms": min_baths,
+                "layout": layout,
+                "property_sub_type": layout,
+                "furnished": furnished,
+                "pet_friendly": pet_friendly,
+                "min_sqm": min_sqm,
+                "max_pages": max_pages
+            }
+
+            self.log_text(f"🎯 MISSION DISPATCHED: {keyword} @ {source_name} ({max_pages} pages)")
+            self.log_text(f"   [FILTERS] NoAgents: {no_agents} | Terms: {lease_terms_disp} | Category: {self.rental_type_var.get()} | AutoOpen: {auto_open}")
+            self.log_text(f"   [SPECS] Budget: R{min_price or 0}-R{max_price or 'Any'} | Beds: {beds_val} | Baths: {baths_val} | Pets: {pet_friendly} | Depth: {max_pages}p")
+        except Exception as err:
+            self.log_text(f"❌ Error preparing mission: {err}")
             return
-
-        source_id_map = {
-            "Huis Huis": "Lix5HlnnquOBb8KjEsCa", 
-            "Huis Huis Pet Friendly": "x8j0OMfg6xn5X9aPI2MI", 
-            "Sea Point Rentals": "BFqKlkZ1oTzkXpuJ9nQ3",
-            "FB Marketplace": "0JPElXlENPTODJGr8hU9", 
-            "Property24": "llLUh4dRz0mu7p2lHbtC"
-        }
-        source_id = source_id_map.get(source_name)
-        source_ids = [source_id] if source_id else None
-
-        # Parse Budget & Dimensions
-        min_p_raw = self.min_price_entry.get().strip().replace("R", "").replace(",", "")
-        max_p_raw = self.max_price_entry.get().strip().replace("R", "").replace(",", "")
-        min_sqm_raw = self.min_sqm_entry.get().strip().replace(",", "")
-
-        min_price = int(min_p_raw) if min_p_raw.isdigit() else None
-        max_price = int(max_p_raw) if max_p_raw.isdigit() else None
-        min_sqm = int(min_sqm_raw) if min_sqm_raw.isdigit() else None
-
-        # Parse Specs
-        beds_val = self.beds_var.get()
-        min_beds = None
-        if beds_val in ["1", "2", "3"]:
-            min_beds = int(beds_val)
-        elif beds_val == "4+":
-            min_beds = 4
-
-        baths_val = self.baths_var.get()
-        min_baths = None
-        if "1+" in baths_val: min_baths = 1
-        elif "2+" in baths_val: min_baths = 2
-        elif "3+" in baths_val: min_baths = 3
-
-        rental_type_map = {
-            "Any": None,
-            "Long Term": "long-term",
-            "Short Term": "short-term",
-            "Room Share": "room-share"
-        }
-        rental_type = rental_type_map.get(self.rental_type_var.get())
-
-        selected_terms = []
-        if self.term_m2m_var.get(): selected_terms.append("1")
-        if self.term_3m_var.get(): selected_terms.append("3")
-        if self.term_6m_var.get(): selected_terms.append("6")
-        if self.term_12m_var.get(): selected_terms.append("12")
-
-        lease_terms_disp = ", ".join([f"{t}m" if t != "1" else "1 (M2M)" for t in selected_terms]) if selected_terms else "Any"
-
-        layout_raw = self.layout_var.get()
-        layout = layout_raw if layout_raw != "Any Layout" else None
-
-        furn_raw = self.furnished_var.get()
-        furnished = furn_raw.lower() if furn_raw != "Any Furnishing" else None
-
-        no_agents = self.no_agents_var.get()
-        pet_friendly = self.pets_var.get()
-        auto_open = self.auto_open_var.get()
-
-        payload = {
-            "query": keyword,
-            "search_query": keyword,
-            "source_ids": source_ids,
-            "user_id": "taun_test_user",
-            "no_agents": no_agents,
-            "rental_type": rental_type,
-            "lease_term": selected_terms if selected_terms else None,
-            "lease_terms": selected_terms,
-            "auto_open_links": auto_open,
-            "min_price": min_price,
-            "max_price": max_price,
-            "min_bedrooms": min_beds,
-            "bathrooms": min_baths,
-            "layout": layout,
-            "property_sub_type": layout,
-            "furnished": furnished,
-            "pet_friendly": pet_friendly,
-            "min_sqm": min_sqm
-        }
-
-        self.log_text(f"🎯 MISSION DISPATCHED: {keyword} @ {source_name}")
-        self.log_text(f"   [FILTERS] NoAgents: {no_agents} | Terms: {lease_terms_disp} | Category: {self.rental_type_var.get()} | AutoOpen: {auto_open}")
-        self.log_text(f"   [SPECS] Budget: R{min_price or 0}-R{max_price or 'Any'} | Beds: {beds_val} | Baths: {baths_val} | Pets: {pet_friendly}")
 
         def _post():
             success = False

@@ -80,6 +80,8 @@ app.add_middleware(
 )
 
 # [TOOL] State Management
+from intelligence.evaluator import PropertyEvaluator
+evaluator = PropertyEvaluator()
 engine = SniperEngine()
 sniper_lock = asyncio.Lock()
 
@@ -365,6 +367,35 @@ async def deploy_sniper(mission: dict, background_tasks: BackgroundTasks):
 
     background_tasks.add_task(run_unified_scan, query, [], task_id, all_subs)
     return {"status": "deployed", "task_id": task_id}
+
+class EvaluationRequest(BaseModel):
+    listing: dict
+    must_include: Optional[List[str]] = []
+    must_exclude: Optional[List[str]] = []
+    lifestyle_signals: Optional[List[str]] = []
+    strict_mode: Optional[bool] = False
+    require_verified_sea_view: Optional[bool] = False
+    min_agency_rating: Optional[float] = None
+    exclude_low_rated_agencies: Optional[bool] = False
+    allow_direct_landlords: Optional[bool] = True
+    commute_anchors: Optional[List[Dict[str, Any]]] = []
+
+@app.post("/evaluate-listing")
+async def evaluate_listing_endpoint(req: EvaluationRequest):
+    """Generates comprehensive Pros, Cons & Hidden Costs, and Viewing Checklist using Gemini 3.8 Flash."""
+    try:
+        report = await evaluator.evaluate_property(
+            listing=req.listing,
+            must_include=req.must_include or [],
+            must_exclude=req.must_exclude or [],
+            lifestyle_signals=req.lifestyle_signals or [],
+            strict_mode=req.strict_mode or False,
+            commute_anchors=req.commute_anchors or []
+        )
+        return {"status": "success", "report": report.dict()}
+    except Exception as e:
+        print_safe(f"[EVALUATION ERROR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def get_health():
@@ -793,6 +824,46 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                             # [AREA GUARD] 🛡️ Precision Multiplexing: Ensure listing matches requested neighborhood
                             if not is_mission_match(l_dict, config): continue
 
+                            # [AGENCY GUARD] 🛡️ Agency Google Rating Gate
+                            min_agency_rating = config.get("min_agency_rating")
+                            exclude_low_agency = config.get("exclude_low_rated_agencies", False)
+                            allow_direct = config.get("allow_direct_landlords", True)
+                            
+                            is_direct = l_dict.get("is_direct_landlord", False)
+                            agency_rating = l_dict.get("agency_rating")
+                            
+                            if exclude_low_agency and min_agency_rating and not (is_direct and allow_direct):
+                                if agency_rating is not None and agency_rating < float(min_agency_rating):
+                                    print_safe(f"[AGENCY GUARD] Dropping listing '{l_dict.get('title')}' - Agency rating {agency_rating}★ < Required {min_agency_rating}★")
+                                    continue
+
+                            # [AI CRITERIA] 🧠 Evaluate Must Include / Must Exclude / Lifestyle
+                            ai_must_inc = config.get("must_include") or []
+                            ai_must_exc = config.get("must_exclude") or []
+                            lifestyle_sigs = config.get("lifestyle_signals") or []
+                            strict_mode = config.get("strict_mode", False)
+                            
+                            ai_report = None
+                            if ai_must_inc or ai_must_exc or lifestyle_sigs:
+                                try:
+                                    eval_result = await evaluator.evaluate_property(
+                                        listing=l_dict,
+                                        must_include=ai_must_inc,
+                                        must_exclude=ai_must_exc,
+                                        lifestyle_signals=lifestyle_sigs,
+                                        strict_mode=strict_mode
+                                    )
+                                    if strict_mode and not eval_result.is_match:
+                                        print_safe(f"[STRICT FILTER] Dropping listing '{l_dict.get('title')}' - failed strict criteria.")
+                                        continue
+                                    ai_report = eval_result.dict()
+                                    l_dict['ai_report'] = ai_report
+                                    l_dict['match_score'] = eval_result.fit_score
+                                    if eval_result.verdict:
+                                        l_dict['match_reason'] = eval_result.verdict
+                                except Exception as eval_err:
+                                    print_safe(f"[EVALUATE SCAN ERROR] {eval_err}")
+
                             # Valid match!
                             doc_id = create_listing_id(l_dict)
                             user_seen = db.collection("users").document(user_id).collection("listings").document(doc_id).get().exists
@@ -820,7 +891,9 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                                     
                                     if whatsapp and len(str(whatsapp)) > 5 and should_wa:
                                         wa_client = EvolutionClient()
-                                        wa_msg = f"🏠 *HomeSeek Sniper Match*\n\n*{l_dict.get('title')}*\n💰 R{(l_dict.get('price') or 0):,}\n📍 {l_dict.get('address', 'Cape Town')}\n🏷️ {l_dict.get('property_type', 'Property')} ({l_dict.get('rental_type', 'long-term')})\n🔗 {l_dict.get('source_url')}"
+                                        score_txt = f" (🎯 {ai_report.get('fit_score')}% Fit)" if ai_report and ai_report.get('fit_score') else ""
+                                        verdict_txt = f"\n⚖️ *Verdict:* {ai_report.get('verdict')}\n" if ai_report and ai_report.get('verdict') else ""
+                                        wa_msg = f"🏠 *HomeSeek Sniper Match{score_txt}*\n\n*{l_dict.get('title')}*\n💰 R{(l_dict.get('price') or 0):,}\n📍 {l_dict.get('address', 'Cape Town')}\n🏷️ {l_dict.get('property_type', 'Property')} ({l_dict.get('rental_type', 'long-term')}){verdict_txt}\n🔗 {l_dict.get('source_url')}"
                                         asyncio.create_task(wa_client.send_whatsapp(whatsapp, wa_msg))
                                         print_safe(f"[SIGNAL] WhatsApp Alert Dispatched to {whatsapp}")
                                     else:

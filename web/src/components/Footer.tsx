@@ -1,35 +1,39 @@
 'use client';
 
 import React from 'react';
-import { Target, Mail, Smartphone } from 'lucide-react';
+import Link from 'next/link';
 
 export const Footer = () => {
   return (
-    <footer className="py-20 px-8 border-t border-white/5 bg-black">
-      <div className="max-w-7xl mx-auto flex flex-col items-center gap-12">
-        <div className="w-full flex flex-col md:flex-row justify-between items-center gap-12">
-          <div className="flex items-center gap-2">
-            <Target className="w-8 h-8 text-emerald-500" />
-            <span className="text-2xl font-black tracking-tighter text-white">Home<span className="text-emerald-500">Seek</span></span>
-          </div>
-          <div className="text-white/20 text-sm font-medium text-center md:text-left">
-            &copy; 2026 HomeSeek Protocol. All systems nominal.
-          </div>
-          <div className="flex gap-6">
-            <a href="#" className="p-3 bg-white/5 rounded-full hover:bg-emerald-500 transition-all group">
-              <Mail className="w-5 h-5 text-white/50 group-hover:text-black transition-colors" />
-            </a>
-            <a href="#" className="p-3 bg-white/5 rounded-full hover:bg-emerald-500 transition-all group">
-              <Smartphone className="w-5 h-5 text-white/50 group-hover:text-black transition-colors" />
-            </a>
-          </div>
-        </div>
+    <footer className="bg-white border-t border-zinc-200 py-12 px-6 sm:px-8 mt-auto">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
         
-        <div className="flex flex-wrap justify-center gap-8 border-t border-white/5 pt-12 w-full">
-          <a href="#" className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] hover:text-emerald-500 transition-all">Terms of Service</a>
-          <a href="#" className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] hover:text-emerald-500 transition-all">Privacy Policy</a>
-          <a href="/admin" className="text-[10px] font-bold text-white/10 uppercase tracking-[0.2em] hover:text-emerald-500 transition-all">Command Center</a>
+        {/* Brand */}
+        <div className="flex flex-col items-center md:items-start gap-1">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-zinc-950 text-white rounded-lg flex items-center justify-center font-bold text-sm">
+              H
+            </div>
+            <span className="text-base font-bold tracking-tight text-zinc-950">HomeSeek</span>
+          </div>
+          <p className="text-xs text-zinc-600 mt-1">
+            Real-time rental intelligence & proximity-driven property radar.
+          </p>
         </div>
+
+        {/* 4 Main Links */}
+        <div className="flex flex-wrap justify-center items-center gap-6 text-xs font-semibold text-zinc-700">
+          <Link href="/" className="hover:text-zinc-950 transition-colors">Home</Link>
+          <Link href="/search" className="hover:text-zinc-950 transition-colors">Search</Link>
+          <Link href="/properties" className="hover:text-zinc-950 transition-colors">Properties</Link>
+          <Link href="/contact" className="hover:text-zinc-950 transition-colors">Contact</Link>
+        </div>
+
+        {/* Copyright & Info */}
+        <div className="text-xs text-zinc-600 text-center md:text-right">
+          &copy; {new Date().getFullYear()} HomeSeek. All rights reserved.
+        </div>
+
       </div>
     </footer>
   );

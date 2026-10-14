@@ -18,6 +18,17 @@ class RentalListing(BaseModel):
     rental_type: Optional[str] = Field("long-term", description="long-term, short-term, or pet-sitting")
     lease_period: Optional[str] = Field(None, description="Lease duration, e.g. '6 months renewable'")
     is_direct_landlord: bool = Field(False, description="True if listed by private owner/landlord")
+    agency_name: Optional[str] = Field(None, description="Managing real estate agency (e.g. Watchprop, Rawson)")
+    agency_rating: Optional[float] = Field(None, description="Average Google review rating (e.g. 2.7, 4.0)")
+    agency_review_count: Optional[int] = Field(None, description="Total Google review count")
+    google_reviews_url: Optional[str] = Field(None, description="Direct URL to Google Reviews")
+    hellopeter_rating: Optional[float] = Field(None, description="Hello Peter rating out of 5")
+    hellopeter_review_count: Optional[int] = Field(None, description="Total reviews on Hello Peter")
+    hellopeter_url: Optional[str] = Field(None, description="Direct URL to Hello Peter agency profile")
+    web_reviews: List[dict] = Field(default_factory=list, description="Aggregated 'Reviews from the web' (e.g. Facebook, HelloPeter)")
+    agency_risk_level: Optional[str] = Field("neutral", description="Tenant risk classification: low, moderate, high, neutral")
+    agency_flags: List[str] = Field(default_factory=list, description="Common tenant complaints or reputation red flags")
+    agency_complaint_sample: Optional[str] = Field(None, description="Representative tenant review snippet")
     is_furnished: Optional[bool] = Field(None)
     amenities: List[str] = Field(default_factory=list)
     parking_slots: Optional[int] = Field(None)
@@ -26,6 +37,13 @@ class RentalListing(BaseModel):
     available_date: Optional[str] = Field(None, description="Immediate, 1 May, etc.")
     contact_info: Optional[str] = Field(None, description="Extracted contact details")
     published_at: Optional[str] = Field(None, description="When it was posted")
+    
+    # Privacy & Autonomy Dimensions
+    dwelling_privacy: Optional[str] = Field("independent", description="independent, garden_cottage, attached_flatlet, room_shared")
+    has_shared_entrance: Optional[bool] = Field(False)
+    has_shared_garden: Optional[bool] = Field(False)
+    has_shared_pool: Optional[bool] = Field(False)
+    is_landlord_on_site: Optional[bool] = Field(False)
     
     # Flags & Scoring
     is_pet_friendly: Optional[bool] = Field(description="Whether pets are allowed (True/False/null)")

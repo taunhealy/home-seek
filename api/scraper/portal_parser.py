@@ -68,7 +68,7 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
     # 2. Price Extraction
     price_str = str(card.get("priceStr") or card.get("price") or "")
     price = 0
-    price_match = re.search(r"R\s*([0-9][0-9\xa0 ,]*)", price_str or full_text)
+    price_match = re.search(r"R\s*([0-9]{1,3}(?:[ \xa0,][0-9]{3})+|[0-9]+)", price_str or full_text)
     if price_match:
         digits = re.sub(r"[\s,\xa0]+", "", price_match.group(1))
         if digits.isdigit():
@@ -79,15 +79,27 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
 
     # 3. Bedroom Extraction
     bedrooms = None
-    bed_match = re.search(r"(\d+)\s*(?:bed|bedroom)", f"{title} {full_text}", re.IGNORECASE)
-    if bed_match:
-        bedrooms = float(bed_match.group(1))
+    beds_raw = str(card.get("bedsStr") or "").strip()
+    if beds_raw and re.search(r"^\d+(?:\.\d+)?$", beds_raw):
+        try: bedrooms = float(beds_raw)
+        except: pass
+    if bedrooms is None:
+        bed_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:bed|bedroom)", f"{title} {full_text}", re.IGNORECASE)
+        if bed_match:
+            try: bedrooms = float(bed_match.group(1))
+            except: pass
 
     # 4. Bathroom Extraction
     bathrooms = None
-    bath_match = re.search(r"(\d+)\s*(?:bath|bathroom)", full_text, re.IGNORECASE)
-    if bath_match:
-        bathrooms = float(bath_match.group(1))
+    baths_raw = str(card.get("bathsStr") or "").strip()
+    if baths_raw and re.search(r"^\d+(?:\.\d+)?$", baths_raw):
+        try: bathrooms = float(baths_raw)
+        except: pass
+    if bathrooms is None:
+        bath_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:bath|bathroom)", full_text, re.IGNORECASE)
+        if bath_match:
+            try: bathrooms = float(bath_match.group(1))
+            except: pass
 
     # 4b. Size (Square Meters) Extraction
     sqm = None
@@ -143,12 +155,57 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
     if re.search(r"\b(?:room to let|flatshare|digs|shared apartment|single room)\b", f"{title} {full_text}", re.I):
         sub_type = "Shared"
 
+    # 11b. Privacy & Living Setup Detection
+    dwelling_privacy = "independent"
+    has_shared_entrance = False
+    has_shared_garden = False
+    has_shared_pool = False
+    is_landlord_on_site = False
+
+    combined_text = f"{title} {excerpt} {full_text}".lower()
+
+    if re.search(r"\b(?:room to let|flatshare|digs|shared house|shared apartment|single room)\b", combined_text):
+        dwelling_privacy = "room_shared"
+    elif re.search(r"\b(?:separate entrance|attached flatlet|wing of the house|attached granny flat)\b", combined_text):
+        dwelling_privacy = "attached_flatlet"
+    elif re.search(r"\b(?:cottage|garden cottage|nutec cottage|granny flat|part of a larger property|behind the main house|set back from the main house|dual living)\b", combined_text):
+        dwelling_privacy = "garden_cottage"
+
+    if re.search(r"\b(?:shared entrance|shared driveway|shared gate|driveway shared|communal entrance)\b", combined_text) or dwelling_privacy in ["garden_cottage", "attached_flatlet"]:
+        has_shared_entrance = True
+
+    if (re.search(r"\b(?:shared garden|communal garden|shared yard|communal yard|shared grounds|part of a larger property)\b", combined_text) or "garden" in combined_text) and dwelling_privacy in ["garden_cottage", "attached_flatlet"]:
+        has_shared_garden = True
+
+    if re.search(r"\b(?:shared pool|communal pool|heated pool|pool.*(?:owners? discretion|shared|utilized))\b", combined_text):
+        has_shared_pool = True
+
+    if re.search(r"\b(?:owner lives|landlord lives|owners? discretion|main house|suit quiet tenant)\b", combined_text) and dwelling_privacy in ["garden_cottage", "attached_flatlet"]:
+        is_landlord_on_site = True
+
     # 12. View Category
     view_cat = "Other"
     if re.search(r"\b(?:sea|ocean|beach|atlantic|seaview|coast)\b", full_text, re.I):
         view_cat = "Sea"
     elif re.search(r"\b(?:mountain|table mountain|peak)\b", full_text, re.I):
         view_cat = "Mountain"
+
+    # 13. Agency & Landlord Intelligence
+    agency_raw = (
+        card.get("agencyName") 
+        or card.get("agency") 
+        or card.get("branch")
+        or ""
+    )
+    if not agency_raw and not is_landlord:
+        # Check text signatures for known agencies
+        for ag in ["watchprop", "trafalgar", "rawson", "seeff", "pam golding", "re/max", "jawitz", "chas everitt", "tyson", "remax"]:
+            if re.search(rf"\b{re.escape(ag)}\b", f"{title} {excerpt} {full_text}", re.I):
+                agency_raw = ag.capitalize()
+                break
+
+    from services.agency_reputation import lookup_agency_reputation
+    rep = lookup_agency_reputation(None if is_landlord else agency_raw, area=clean_address)
 
     # Canonical Link
     if link.startswith("/"):
@@ -166,10 +223,26 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
         platform=platform_str,
         property_type=p_type,
         property_sub_type=sub_type,
+        is_direct_landlord=is_landlord,
+        agency_name=rep.get("canonical_name"),
+        agency_rating=rep.get("google_rating"),
+        agency_review_count=rep.get("google_review_count"),
+        google_reviews_url=rep.get("google_reviews_url"),
+        hellopeter_rating=rep.get("hellopeter_rating"),
+        hellopeter_review_count=rep.get("hellopeter_review_count"),
+        hellopeter_url=rep.get("hellopeter_url"),
+        web_reviews=rep.get("web_reviews", []),
+        agency_risk_level=rep.get("risk_level"),
+        agency_flags=rep.get("flags", []),
+        agency_complaint_sample=rep.get("recent_complaint_sample"),
         rental_type=rental_type,
         lease_period=lease_period,
-        is_direct_landlord=is_landlord,
         view_category=view_cat,
+        dwelling_privacy=dwelling_privacy,
+        has_shared_entrance=has_shared_entrance,
+        has_shared_garden=has_shared_garden,
+        has_shared_pool=has_shared_pool,
+        is_landlord_on_site=is_landlord_on_site,
         is_furnished=is_furnished,
         is_pet_friendly=is_pet_friendly,
         sqm=sqm,

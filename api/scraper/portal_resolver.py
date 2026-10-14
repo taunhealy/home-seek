@@ -115,10 +115,20 @@ def get_areas_index() -> Dict[str, list]:
         
     return {}
 
-def resolve_p24_url(area_query: str, is_pet_friendly: bool = False) -> Optional[str]:
+def _append_params(base_url: str, is_pet_friendly: bool = False, sort_newest: bool = True) -> str:
+    url = base_url
+    sep = "&" if "?" in url else "?"
+    if sort_newest and "so%3d" not in url and "so=" not in url:
+        url = f"{url}{sep}sp=so%3dNewest"
+        sep = "&"
+    if is_pet_friendly and "ptf" not in url:
+        url = f"{url}{sep}sp=ptf%3dTrue"
+    return url
+
+def resolve_p24_url(area_query: str, is_pet_friendly: bool = False, sort_newest: bool = True) -> Optional[str]:
     """
     Dynamically resolves any user input (e.g. 'George', 'Sea Point', 'Plettenberg Bay')
-    into its canonical Property24 URL, appending pet filter if requested.
+    into its canonical Property24 URL, appending newest sort & pet filter if requested.
     """
     if not area_query:
         return None
@@ -131,19 +141,14 @@ def resolve_p24_url(area_query: str, is_pet_friendly: bool = False) -> Optional[
     if not clean:
         return None
         
-    pet_suffix = "?sp=ptf%3dTrue" if is_pet_friendly else ""
-    
     # 1. Check instant static registry
     if clean in CANONICAL_P24_URLS:
-        base_url = CANONICAL_P24_URLS[clean]
-        sep = "&" if "?" in base_url else "?"
-        return f"{base_url}{sep}sp=ptf%3dTrue" if is_pet_friendly and "ptf" not in base_url else base_url
+        return _append_params(CANONICAL_P24_URLS[clean], is_pet_friendly=is_pet_friendly, sort_newest=sort_newest)
 
     # Check partial match in static registry (e.g. 'George Central' -> 'George')
     for name, base_url in CANONICAL_P24_URLS.items():
         if name in clean or clean in name:
-            sep = "&" if "?" in base_url else "?"
-            return f"{base_url}{sep}sp=ptf%3dTrue" if is_pet_friendly and "ptf" not in base_url else base_url
+            return _append_params(base_url, is_pet_friendly=is_pet_friendly, sort_newest=sort_newest)
 
     # 2. Dynamic lookup in Property24 index
     index = get_areas_index()
@@ -192,7 +197,4 @@ def resolve_p24_url(area_query: str, is_pet_friendly: bool = False) -> Optional[
         # It's a suburb under a town/city (e.g. Heatherlands under George)
         resolved = f"https://www.property24.com/to-rent/{name_slug}/{parent_slug}/western-cape/{item_id}"
         
-    if is_pet_friendly:
-        resolved += pet_suffix
-        
-    return resolved
+    return _append_params(resolved, is_pet_friendly=is_pet_friendly, sort_newest=sort_newest)
