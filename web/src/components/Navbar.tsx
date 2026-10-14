@@ -14,7 +14,8 @@ import {
   ChatCircleDots,
   List,
   X,
-  Check
+  Check,
+  Bell
 } from '@phosphor-icons/react';
 
 interface NavbarProps {
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
   { label: 'Home', href: '/', icon: House },
   { label: 'Search', href: '/search', icon: MagnifyingGlass },
   { label: 'Properties', href: '/properties', icon: Buildings },
+  { label: 'Alerts', href: '/alerts', icon: Bell },
   { label: 'Contact', href: '/contact', icon: ChatCircleDots },
 ];
 
@@ -149,6 +151,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
 
                     <div className="p-2 space-y-1">
+                      {/* Manage Alerts Link */}
+                      <Link
+                        href="/alerts"
+                        onClick={() => setIsOpen(false)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-zinc-800 hover:bg-zinc-100 text-xs font-semibold transition-colors"
+                      >
+                        <Bell size={16} weight="bold" className="text-zinc-900" />
+                        <span>Manage Radar Alerts</span>
+                      </Link>
                       {/* WhatsApp Routing */}
                       <div className="p-2 space-y-1.5 bg-zinc-50 rounded-xl mb-1.5">
                         <label className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">Alert WhatsApp</label>

@@ -46,7 +46,7 @@ os.environ["https_proxy"] = ""
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Any
 from pydantic import BaseModel
 from services.templates import get_match_template, get_subscription_template, get_invoice_template, build_alert_subject
 import json
@@ -401,6 +401,26 @@ async def deploy_sniper(mission: dict, background_tasks: BackgroundTasks):
     background_tasks.add_task(run_local_scan, query, [], task_id, all_subs)
     return {"status": "deployed", "task_id": task_id}
 
+@app.post("/save-alert")
+async def save_alert_endpoint(mission: dict, background_tasks: BackgroundTasks):
+    user_id = mission.get("user_id", "taun_test_user")
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+    effective_id = get_effective_user_id(user_id, dummy_uid)
+    query = mission.get("target_area") or mission.get("search_query", "")
+    mission["alert_enabled"] = True
+    mission["is_active"] = mission.get("is_active", True)
+    
+    from services.database import save_search
+    search_id = await save_search(effective_id, mission)
+    
+    task_id = None
+    if mission.get("trigger_initial_scan", False) and query:
+        task_id = await create_task(effective_id, query)
+        subscribers = [{"user_id": effective_id, "config": mission, "is_initiator": True}]
+        background_tasks.add_task(run_local_scan, query, [], task_id, subscribers)
+        
+    return {"status": "saved", "search_id": search_id, "task_id": task_id}
+
 class EvaluationRequest(BaseModel):
     listing: dict
     must_include: Optional[List[str]] = []
@@ -417,6 +437,7 @@ class EvaluationRequest(BaseModel):
     require_private_garden: Optional[bool] = False
     exclude_landlord_on_site: Optional[bool] = False
     exclude_shared_house: Optional[bool] = True
+    require_no_one_above: Optional[bool] = False
 
 @app.post("/evaluate-listing")
 async def evaluate_listing_endpoint(req: EvaluationRequest):
@@ -433,7 +454,8 @@ async def evaluate_listing_endpoint(req: EvaluationRequest):
             require_private_entrance=req.require_private_entrance or False,
             require_private_garden=req.require_private_garden or False,
             exclude_landlord_on_site=req.exclude_landlord_on_site or False,
-            exclude_shared_house=req.exclude_shared_house if req.exclude_shared_house is not None else True
+            exclude_shared_house=req.exclude_shared_house if req.exclude_shared_house is not None else True,
+            require_no_one_above=req.require_no_one_above or False
         )
         return {"status": "success", "report": report.dict()}
     except Exception as e:
@@ -510,14 +532,18 @@ async def get_admin_stats(user_id: str):
 
 @app.delete("/delete-alert/{user_id}/{search_id}")
 async def remove_alert(user_id: str, search_id: str):
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+    effective_id = get_effective_user_id(user_id, dummy_uid)
     db = get_db()
-    db.collection("users").document(user_id).collection("alerts").document(search_id).delete()
+    db.collection("users").document(effective_id).collection("alerts").document(search_id).delete()
     return {"status": "ok"}
 
 @app.post("/update-alert/{user_id}/{search_id}")
 async def update_alert(user_id: str, search_id: str, payload: dict):
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+    effective_id = get_effective_user_id(user_id, dummy_uid)
     db = get_db()
-    db.collection("users").document(user_id).collection("alerts").document(search_id).set(payload, merge=True)
+    db.collection("users").document(effective_id).collection("alerts").document(search_id).set(payload, merge=True)
     return {"status": "ok"}
 
 @app.post("/update-profile")
@@ -670,9 +696,23 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
         
         if not source_ids:
             all_sources = await get_sources()
-            source_ids = [s['id'] for s in all_sources]
+            req_sources = set()
+            for s in (subscribers or []):
+                for src in s.get("config", {}).get("sources", []):
+                    req_sources.add(str(src).lower())
+            
+            if req_sources:
+                source_ids = [
+                    s['id'] for s in all_sources 
+                    if str(s.get('name', '')).lower() in req_sources 
+                    or str(s.get('id', '')).lower() in req_sources
+                    or any(r in str(s.get('name', '')).lower() for r in req_sources)
+                ]
+            if not source_ids:
+                source_ids = [s['id'] for s in all_sources]
 
         valid_matches_count = 0
+        scanned_urls = set()
         for sid in source_ids:
             if check_scan_cancelled():
                 print_safe(f"[ABORT] 🛑 Scan aborted by user before evaluating source {sid}.")
@@ -758,6 +798,11 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                     if resolved_url:
                         target_url = resolved_url
                         print_safe(f"[PORTAL] 🎯 Dynamic URL resolved for '{clean_query}': {target_url}")
+                
+                if target_url in scanned_urls:
+                    print_safe(f"[PORTAL] Skipping duplicate portal URL already scanned in this mission: {target_url}")
+                    continue
+                scanned_urls.add(target_url)
                 
                 # Determine mission page depth (default: 3 pages for rich harvest, 1 for pulse)
                 mission_max_pages = 1 if is_pulse else 3
@@ -849,7 +894,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 # If the user's search_query mentions an area, ensure the listing is in it.
                                 # This prevents 'Observatory' listings from hitting 'Sea Point' subscribers 
                                 # when scanning Global sources.
-                                req_area = str(config.get("search_query", "")).lower()
+                                req_area = str(config.get("target_area") or config.get("search_query", "")).lower()
                                 listing_addr = str(l_dict.get("address", "")).lower()
                                 
                                 is_province_search = any(p in req_area for p in ["western cape", "all", "any"]) or not req_area
@@ -951,6 +996,18 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                     target_layout = req_layout.lower()
                                     if target_layout not in p_type and target_layout not in p_sub:
                                         continue
+                                
+                                # [PROPERTY TYPE GUARD]
+                                req_prop_type = config.get("property_type")
+                                if req_prop_type and req_prop_type not in ["all", "any"]:
+                                    if str(l_dict.get("property_type", "")).lower() != str(req_prop_type).lower():
+                                        print_safe(f"[RECON] [REJECT] Property type mismatch ({l_dict.get('property_type')} vs {req_prop_type})")
+                                        continue
+
+                                # [SEA VIEW GUARD]
+                                if config.get("require_verified_sea_view") and l_dict.get("view_category") != "Sea":
+                                    print_safe(f"[RECON] [REJECT] Sea view required, but view_category is '{l_dict.get('view_category')}'")
+                                    continue
                                 
                                 # [BEDROOM FILTER] If no beds assigned, treat as 'Any' (v97.0)
                                 min_b = config.get("min_bedrooms")
@@ -1175,10 +1232,14 @@ async def autonomous_pulse_heartbeat():
                 if not alerts: continue
                 
                 for a in alerts:
-                    query = a.get("search_query", "").strip()
+                    if a.get("is_active") is False or a.get("alert_enabled") is False:
+                        continue
+                    query = (a.get("target_area") or a.get("search_query", "")).strip()
+                    if query.startswith("AI Radar:"):
+                        query = query.replace("AI Radar:", "").split("(")[0].strip()
                     if not query: continue
                     if query not in mission_map: mission_map[query] = []
-                    mission_map[query].append({"user_id": user_id, "config": a})
+                    mission_map[query].append({"user_id": user_id, "config": {**a, "is_pulse": True}})
 
             # 🚀 EXECUTE MULTIPLEX MISSIONS
             for query, subs in mission_map.items():
@@ -1211,14 +1272,14 @@ async def shutdown_event():
     await engine.stop()
 
 @app.post("/force-pulse")
-async def force_pulse():
+async def force_pulse(target_query: Optional[str] = None):
     """Manual trigger to bypass the 30-minute timer for testing."""
     print_safe("[MANUAL OVERDRIVE] Force-triggering autonomous heartbeat cycle...")
-    # This just runs the logic once in the background
-    asyncio.create_task(autonomous_pulse_heartbeat_once())
+    # This runs the logic in the background
+    asyncio.create_task(autonomous_pulse_heartbeat_once(target_query=target_query))
     return {"status": "pulse_triggered_manually"}
 
-async def autonomous_pulse_heartbeat_once():
+async def autonomous_pulse_heartbeat_once(target_query: Optional[str] = None):
     """Run the heartbeat logic exactly once (helper for force-pulse)."""
     try:
         from services.database import (get_user_alerts, get_db)
@@ -1237,16 +1298,22 @@ async def autonomous_pulse_heartbeat_once():
             if not alerts: continue
             
             for a in alerts:
-                query = a.get("search_query", "").strip()
+                if a.get("is_active") is False or a.get("alert_enabled") is False:
+                    continue
+                query = (a.get("target_area") or a.get("search_query", "")).strip()
+                if query.startswith("AI Radar:"):
+                    query = query.replace("AI Radar:", "").split("(")[0].strip()
                 if not query: continue
+                if target_query and query.lower() != target_query.lower():
+                    continue
                 if query not in mission_map: mission_map[query] = []
-                mission_map[query].append({"user_id": user_id, "config": a})
+                mission_map[query].append({"user_id": user_id, "config": {**a, "is_pulse": True}})
 
         # 🚀 EXECUTE MISSIONS
         for query, subs in mission_map.items():
             print_safe(f"[MANUAL] Triggering Aggregated Scan: '{query}'")
             task_id = await create_task(subs[0]['user_id'], query)
-            asyncio.create_task(run_local_scan(query, [], task_id, subs))
+            await run_local_scan(query, [], task_id, subs)
             
     except Exception as e:
         print_safe(f"[MANUAL] Pulse Error: {e}")

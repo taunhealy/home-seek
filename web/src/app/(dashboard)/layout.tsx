@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context';
 import { Navbar } from '@/components/Navbar';
-import { redirect } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 export default function DashboardLayout({
@@ -10,13 +10,14 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const { user, profile, loading, logout, login, refreshProfile } = useAuth();
 
   useEffect(() => {
     if (!loading && !user) {
-      redirect('/');
+      router.push('/');
     }
-  }, [user, loading]);
+  }, [user, loading, router]);
 
   const handleUpdateProfile = async (updates: any) => {
     // This logic can be moved to auth-context later if preferred

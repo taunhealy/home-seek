@@ -257,6 +257,12 @@ export default function Home() {
             >
               Browse Properties Feed
             </Link>
+            <Link
+              href="/alerts"
+              className="px-6 py-3 bg-white border border-zinc-200 text-zinc-900 rounded-xl text-xs font-bold hover:bg-zinc-50 transition-colors"
+            >
+              Manage Radar Alerts
+            </Link>
           </div>
         </div>
       </section>

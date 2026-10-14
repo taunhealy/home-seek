@@ -40,6 +40,7 @@ class PrivacyIntel(BaseModel):
     has_shared_garden: bool = False
     has_shared_pool: bool = False
     is_landlord_on_site: bool = False
+    has_no_one_above: bool = False
     privacy_score: int = 100  # 0 to 100
     privacy_flags: List[str] = Field(default_factory=list)
     privacy_summary: Optional[str] = None
@@ -140,6 +141,19 @@ class PropertyEvaluator:
         if is_landlord_on_site:
             privacy_flags.append("Landlord / Owner resides on property")
 
+        # Overhead stomping / Top Floor detection
+        has_no_one_above = False
+        if any(k in full_text for k in ["top floor", "penthouse", "top level", "upper floor", "top-floor", "freestanding", "detached house", "standalone house", "cottage"]):
+            has_no_one_above = True
+        elif any(k in full_text for k in ["ground floor", "ground level", "under main house", "basement"]):
+            has_no_one_above = False
+        elif dwelling_type in ["garden_cottage", "independent"]:
+            if "apartment" not in title and "flat" not in title:
+                has_no_one_above = True
+
+        if has_no_one_above:
+            privacy_flags.append("No upstairs neighbors (top floor / standalone)")
+
         score = 100
         if dwelling_type == "garden_cottage": score -= 25
         elif dwelling_type == "attached_flatlet": score -= 30
@@ -159,6 +173,7 @@ class PropertyEvaluator:
             has_shared_garden=has_shared_garden,
             has_shared_pool=has_shared_pool,
             is_landlord_on_site=is_landlord_on_site,
+            has_no_one_above=has_no_one_above,
             privacy_score=score,
             privacy_flags=privacy_flags,
             privacy_summary=summary
@@ -176,7 +191,8 @@ class PropertyEvaluator:
         require_private_entrance: bool = False,
         require_private_garden: bool = False,
         exclude_landlord_on_site: bool = False,
-        exclude_shared_house: bool = True
+        exclude_shared_house: bool = True,
+        require_no_one_above: bool = False
     ) -> PropertyEvaluationResult:
         """
         Evaluates a property listing using Gemini 3.8 Flash to generate:
@@ -251,7 +267,8 @@ class PropertyEvaluator:
                 require_private_entrance=require_private_entrance,
                 require_private_garden=require_private_garden,
                 exclude_landlord_on_site=exclude_landlord_on_site,
-                exclude_shared_house=exclude_shared_house
+                exclude_shared_house=exclude_shared_house,
+                require_no_one_above=require_no_one_above
             )
 
         system_prompt = (
@@ -382,7 +399,8 @@ class PropertyEvaluator:
                 require_private_entrance=require_private_entrance,
                 require_private_garden=require_private_garden,
                 exclude_landlord_on_site=exclude_landlord_on_site,
-                exclude_shared_house=exclude_shared_house
+                exclude_shared_house=exclude_shared_house,
+                require_no_one_above=require_no_one_above
             )
 
     def _generate_heuristic_report(
@@ -399,7 +417,8 @@ class PropertyEvaluator:
         require_private_entrance: bool = False,
         require_private_garden: bool = False,
         exclude_landlord_on_site: bool = False,
-        exclude_shared_house: bool = True
+        exclude_shared_house: bool = True,
+        require_no_one_above: bool = False
     ) -> PropertyEvaluationResult:
         """Heuristic fallback to guarantee a rich Pros & Cons report even if LLM is offline."""
         title = listing.get("title", "Unit")
@@ -593,6 +612,14 @@ class PropertyEvaluator:
             if exclude_shared_house:
                 triggered.append("Room / House Share (Digs)")
                 cons.append("⚠️ Dealbreaker: Shared room / house living.")
+
+        if require_no_one_above:
+            if privacy_intel.has_no_one_above:
+                pros.append("🔇 Top Floor / Standalone: Zero upstairs neighbors stomping overhead.")
+            else:
+                unmet.append("Top Floor / No Upstairs Neighbors")
+                cons.append("⚠️ Potential Overhead Footstep Noise: Unit is not a top floor or standalone dwelling.")
+                checklist.append("Ceiling Soundproofing: Test impact noise from the upstairs floor during your in-person visit.")
 
         is_match = True
         fit_score = 85

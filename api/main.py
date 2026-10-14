@@ -1,12 +1,14 @@
 import os
 import asyncio
 import sys
-from pathlib import Path
-from dotenv import load_dotenv
+import random
 
 # [STABILITY] Windows Subprocess Patch (v24.1)
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+from pathlib import Path
+from dotenv import load_dotenv
+import sys
 
 # [STABILITY] Windows Terminal ASCII Scrubber
 def print_safe(msg):
@@ -18,6 +20,10 @@ def print_safe(msg):
     except:
         pass
 
+# [SHIELD] LOCAL ELITE NODE (v24.0)
+# Force-configured for high-trust residential operation
+os.environ["LOCAL_SNIPER"] = "true"
+
 # [SHIELD] SMART ENV LOADER
 current_dir = Path(__file__).resolve().parent
 project_root = current_dir.parent
@@ -26,7 +32,7 @@ env_paths = [current_dir / ".env", project_root / ".env"]
 for path in env_paths:
     if path.exists():
         load_dotenv(path)
-        print_safe(f"SUCCESS: Loaded .env from: {path}")
+        print_safe(f"SUCCESS: Loaded Local Node .env from: {path}")
         break
 
 # [NETWORK] Surgical Proxy Isolation (v126.1)
@@ -38,16 +44,19 @@ os.environ["HTTPS_PROXY"] = ""
 os.environ["http_proxy"] = ""
 os.environ["https_proxy"] = ""
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends
+from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Any
 from pydantic import BaseModel
-from services.templates import get_match_template, get_subscription_template, get_invoice_template
+from services.templates import get_match_template, get_subscription_template, get_invoice_template, build_alert_subject
 import json
+import asyncio
 import time
 import hashlib
 import datetime as dt
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
+import sys
 from scraper.engine import SniperEngine
 from services.database import (
     get_db, 
@@ -62,18 +71,12 @@ from services.database import (
 )
 from services.notifications import EvolutionClient, MailerSendClient, ResendEmailClient
 
-app = FastAPI(title="HomeSeek Unified Intelligence Core", version="1.0.0")
+app = FastAPI(title="HomeSeek Local Elite Node", version="24.0.0")
 
 # Enable CORS (Production Lockdown v126.0)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://homeseekza.web.app", 
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-    ],
+    allow_origins=["https://homeseekza.web.app", "http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -85,69 +88,62 @@ evaluator = PropertyEvaluator()
 engine = SniperEngine()
 sniper_lock = asyncio.Lock()
 
+# [ABORT CONTROLLER] Scan Cancellation Flags
+IS_SCAN_CANCELLED = False
+
+def request_scan_stop():
+    global IS_SCAN_CANCELLED
+    IS_SCAN_CANCELLED = True
+
+def reset_scan_stop():
+    global IS_SCAN_CANCELLED
+    IS_SCAN_CANCELLED = False
+
+def check_scan_cancelled():
+    global IS_SCAN_CANCELLED
+    return IS_SCAN_CANCELLED
+
+def verify_user_match(requested_id: str, uid: str = None):
+    """Ensures that the developer owner is only accessing their own data (v45.0)."""
+    # [IDENTITY BRIDGE] Universal Mapping
+    aliased_ids = ["taunhealy", "taun_test_user"]
+    if uid == "R4R2k7z2XAQGgRjB57ctZcOkEbp2" and requested_id in aliased_ids:
+        return
+        
+    if uid and requested_id != uid:
+        raise HTTPException(
+            status_code=403, 
+            detail="Forbidden: Identity mismatch."
+        )
+
 def get_effective_user_id(requested_id: str, uid: str = "R4R2k7z2XAQGgRjB57ctZcOkEbp2") -> str:
     """Translates incoming requests to the primary identity (v45.0)."""
-    # [IDENTITY BRIDGE] Universal Mapping for master tester
-    if uid == "R4R2k7z2XAQGgRjB57ctZcOkEbp2" or requested_id in ["taunhealy", "taun_test_user"]:
+    if uid == "R4R2k7z2XAQGgRjB57ctZcOkEbp2":
         return "taun_test_user"
     return requested_id
 
-def is_mission_match(listing: dict, alert: dict) -> bool:
-    """Checks if a listing matches the area requested in the alert (v127.0)."""
-    # 1. Gather all requested areas from the alert configuration
-    raw_areas = []
-    if alert.get("target_area"): raw_areas.append(alert.get("target_area"))
-    if alert.get("search_query"): raw_areas.append(alert.get("search_query"))
-    
-    # 2. Flatten and clean requested areas (handle commas and whitespace)
-    interest_areas = []
-    for raw in raw_areas:
-        # Strip common AI markers and clean separators
-        clean_raw = raw.replace("(MUST BE PET FRIENDLY)", "").replace("PET FRIENDLY", "")
-        parts = [p.strip().lower() for p in clean_raw.split(",") if p.strip()]
-        interest_areas.extend(parts)
-    
-    if not interest_areas:
-        return True # Default to match if no specific area filter exists
-        
-    # 3. Check Listing Content
-    l_address = str(listing.get("address", "")).lower()
-    l_title = str(listing.get("title", "")).lower()
-    l_content = f"{l_address} {l_title}"
-    
-    # 4. Strict Suburb Matching
-    from core.geofence import MY_FAVOURITES_SUBURBS, DEEP_SOUTH_SUBURBS
-    for area in interest_areas:
-        if any(k in area for k in ["favourite", "favorite"]):
-            if any(sub in l_content for sub in MY_FAVOURITES_SUBURBS):
-                return True
-        elif any(k in area for k in ["deep south", "south peninsula"]):
-            if any(sub in l_content for sub in DEEP_SOUTH_SUBURBS):
-                return True
-        elif area in l_content:
-            return True
-            
-    return False
-
 @app.get("/user-profile/{user_id}")
 async def fetch_user_profile(user_id: str):
-    effective_id = get_effective_user_id(user_id)
+    # LOCAL: We default to the master tester UID for dev convenience
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2" 
+    effective_id = get_effective_user_id(user_id, dummy_uid)
     profile = await get_user_profile(effective_id)
     return {**profile, "id": user_id}
 
 @app.get("/listings/{user_id}")
-async def fetch_user_listings(user_id: str, page: int = 1):
-    effective_id = get_effective_user_id(user_id)
+async def fetch_user_listings(user_id: str):
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+    effective_id = get_effective_user_id(user_id, dummy_uid)
     db = get_db()
-    limit = 50 * page # [HYBRID] Expand-as-you-go pagination for user feeds
     docs = db.collection("users").document(effective_id).collection("listings")\
              .order_by("created_at", direction=firestore.Query.DESCENDING)\
-             .limit(limit).stream()
+             .limit(50).stream()
     return [{"id": d.id, **d.to_dict()} for d in docs]
 
 @app.get("/searches/{user_id}")
 async def fetch_user_alerts(user_id: str):
-    effective_id = get_effective_user_id(user_id)
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+    effective_id = get_effective_user_id(user_id, dummy_uid)
     alerts = await get_user_alerts(effective_id)
     return alerts
 
@@ -173,8 +169,9 @@ async def fetch_explore_listings(
     no_agents: Optional[bool] = None,
     lease_term: Optional[str] = None
 ):
-    """Global Feed for the Explore Page with Semantic Vista & Pet Filters."""
+    """Global Feed for the Explore Page with Semantic Vista & Pet Filters (v56.0)."""
     db = get_db()
+    # For Semantic Vista/Pet filtering, we use the Memory-Sort logic to scan
     docs = db.collection("listings").limit(1000).stream()
     all_hits = [{"id": d.id, **d.to_dict()} for d in docs]
     
@@ -186,6 +183,7 @@ async def fetch_explore_listings(
         elif intent == 'seekers':
             if h.get("is_looking_for") is not True: continue
 
+        # 1. Standard Filters
         if rental_type == 'long-term':
             if h.get("rental_type") not in ['long-term', None]: continue
         elif rental_type == 'pet-sitting':
@@ -198,9 +196,9 @@ async def fetch_explore_listings(
             if not is_petsit: continue
         elif rental_type and h.get("rental_type") != rental_type: continue
         
-        # [LAYOUT] 🛡️ Surgical Shield: Distinguish between Whole units and Shared rooms
+        # [LAYOUT] Whole units vs Shared rooms
         if layout and h.get("property_sub_type") != layout: continue
-        
+
         price = h.get("price") or 0
         if min_price and price < min_price: continue
         if max_price and price > max_price: continue
@@ -244,11 +242,10 @@ async def fetch_explore_listings(
         if furnished and furnished != 'any':
             if furnished.lower() == 'furnished' and not h.get("is_furnished"): continue
             if furnished.lower() == 'unfurnished' and h.get("is_furnished") is True: continue
-        if platform:
-            p_val = str(h.get("platform", "")).lower()
-            s_val = str(h.get("source_name", "")).lower()
-            if platform.lower() not in p_val and platform.lower() not in s_val: continue
+
+        if platform and platform.lower() not in str(h.get("platform", "")).lower() and platform.lower() not in str(h.get("source_name", "")).lower(): continue
         
+        # Area Check (Fuzzy)
         area_hit = False
         if not area: area_hit = True
         else:
@@ -256,7 +253,10 @@ async def fetch_explore_listings(
             if area.lower() in search_str: area_hit = True
         if not area_hit: continue
 
+        # [PETS] 2. PET FILTER (v56.0)
         if pets and not h.get("is_pet_friendly"): continue
+            
+        # [VIEW] 3. VISTA SEMANTIC FILTER
         if view:
             content = (str(h.get("title", "")) + " " + str(h.get("description", ""))).lower()
             if view == "seaview":
@@ -309,19 +309,50 @@ async def fetch_explore_listings(
         res.append(h)
         
     res.sort(key=lambda x: str(x.get('created_at', '')), reverse=True)
-    
-    # [PAGINATION] Slice results for the UI
     per_page = 100
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
-    
     return res[start_idx:end_idx]
+
+@app.get("/system/stats")
+async def get_system_stats():
+    """Diagnostic endpoint to verify local-cloud bridge."""
+    try:
+        db = get_db()
+        users = db.collection("users").get()
+        alerts_count = 0
+        active_users = []
+        
+        for u in users:
+            # Group missions by target area to enable MULTIPLEX scans
+            alerts = db.collection("users").document(u.id).collection("alerts").stream()
+            for a in alerts:
+                mission = a.to_dict()
+                # [GATE] Only process ACTIVE missions
+                if not mission.get("is_active", True): continue
+                
+                target = mission.get("target_area") or mission.get("query")
+                if not target: continue
+                alerts_count += 1
+                if u.id not in active_users:
+                    active_users.append(u.id)
+        
+        return {
+            "node_status": "Operational (Forensic Stealth v1.0.9)",
+            "monitored_alerts": alerts_count,
+            "active_user_missions": active_users,
+            "database_sync": "Verified (Firestore Global Registry)",
+            "timestamp": dt.datetime.now().strftime("%H:%M:%S")
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 @app.post("/deploy-sniper")
 async def deploy_sniper(mission: dict, background_tasks: BackgroundTasks):
     user_id = mission.get("user_id", "taun_test_user")
-    effective_id = get_effective_user_id(user_id)
-    
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+    effective_id = get_effective_user_id(user_id, dummy_uid)
     query = mission.get("target_area") or mission.get("search_query", "")
     is_alert_save = mission.get("alert_enabled", False)
     
@@ -336,7 +367,7 @@ async def deploy_sniper(mission: dict, background_tasks: BackgroundTasks):
         tier = profile.get("tier", "free").lower()
         
         # Canonical Tier Limits (Backend Mirror)
-        BACKEND_LIMITS = {"free": 0, "bronze": 5, "silver": 5, "gold": 30}
+        BACKEND_LIMITS = {"free": 0, "bronze": 1, "silver": 10, "gold": 100}
         tier_limit = BACKEND_LIMITS.get(tier, 0)
         
         from services.database import get_user_alerts, save_search
@@ -352,21 +383,43 @@ async def deploy_sniper(mission: dict, background_tasks: BackgroundTasks):
         
     task_id = await create_task(effective_id, query)
     
-    # Multiplex: Always fetch all related subscribers
+    # Multiplex: Always fetch all related subscribers so one scan hits many
     from services.database import get_user_alerts
     all_subs = await get_user_alerts(query)
     
+    # [TARGET] Mark the initiator (The one who triggered the scan)
     initiator_found = False
     for s in all_subs:
         if s.get('user_id') == effective_id:
             s['is_initiator'] = True
             initiator_found = True
     
+    # Ensure current user is in the list even if they didn't 'Save' the alert (Quick Search mode)
     if not initiator_found:
         all_subs.append({"user_id": effective_id, "config": mission, "is_initiator": True})
 
-    background_tasks.add_task(run_unified_scan, query, [], task_id, all_subs)
+    background_tasks.add_task(run_local_scan, query, [], task_id, all_subs)
     return {"status": "deployed", "task_id": task_id}
+
+@app.post("/save-alert")
+async def save_alert_endpoint(mission: dict, background_tasks: BackgroundTasks):
+    user_id = mission.get("user_id", "taun_test_user")
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+    effective_id = get_effective_user_id(user_id, dummy_uid)
+    query = mission.get("target_area") or mission.get("search_query", "")
+    mission["alert_enabled"] = True
+    mission["is_active"] = mission.get("is_active", True)
+    
+    from services.database import save_search
+    search_id = await save_search(effective_id, mission)
+    
+    task_id = None
+    if mission.get("trigger_initial_scan", False) and query:
+        task_id = await create_task(effective_id, query)
+        subscribers = [{"user_id": effective_id, "config": mission, "is_initiator": True}]
+        background_tasks.add_task(run_local_scan, query, [], task_id, subscribers)
+        
+    return {"status": "saved", "search_id": search_id, "task_id": task_id}
 
 class EvaluationRequest(BaseModel):
     listing: dict
@@ -379,6 +432,12 @@ class EvaluationRequest(BaseModel):
     exclude_low_rated_agencies: Optional[bool] = False
     allow_direct_landlords: Optional[bool] = True
     commute_anchors: Optional[List[Dict[str, Any]]] = []
+    require_independent_living: Optional[bool] = False
+    require_private_entrance: Optional[bool] = False
+    require_private_garden: Optional[bool] = False
+    exclude_landlord_on_site: Optional[bool] = False
+    exclude_shared_house: Optional[bool] = True
+    require_no_one_above: Optional[bool] = False
 
 @app.post("/evaluate-listing")
 async def evaluate_listing_endpoint(req: EvaluationRequest):
@@ -390,7 +449,13 @@ async def evaluate_listing_endpoint(req: EvaluationRequest):
             must_exclude=req.must_exclude or [],
             lifestyle_signals=req.lifestyle_signals or [],
             strict_mode=req.strict_mode or False,
-            commute_anchors=req.commute_anchors or []
+            commute_anchors=req.commute_anchors or [],
+            require_independent_living=req.require_independent_living or False,
+            require_private_entrance=req.require_private_entrance or False,
+            require_private_garden=req.require_private_garden or False,
+            exclude_landlord_on_site=req.exclude_landlord_on_site or False,
+            exclude_shared_house=req.exclude_shared_house if req.exclude_shared_house is not None else True,
+            require_no_one_above=req.require_no_one_above or False
         )
         return {"status": "success", "report": report.dict()}
     except Exception as e:
@@ -401,15 +466,19 @@ async def evaluate_listing_endpoint(req: EvaluationRequest):
 async def get_health():
     return {
         "status": "Healthy",
-        "node": "Production API Core",
+        "pulse_count": PULSE_COUNT,
+        "uptime_node": "Local Sniper Core",
         "timestamp": dt.datetime.now().isoformat()
     }
 
 @app.get("/analytics/active-snipers")
 async def get_active_snipers():
     db = get_db()
+    # Fetch all alerts across all users (Collection Group)
+    # Note: Requires a Firestore Index for 'alerts' collection group
     try:
-        alerts = db.collection_group("alerts").where("is_active", "==", True).stream()
+        from google.cloud.firestore_v1.base_query import FieldFilter
+        alerts = db.collection_group("alerts").where(filter=FieldFilter("is_active", "==", True)).stream()
         counts = {}
         for a in alerts:
             data = a.to_dict()
@@ -417,9 +486,10 @@ async def get_active_snipers():
             counts[area] = counts.get(area, 0) + 1
         return counts
     except Exception as e:
+        # Fallback for local dev if index isn't ready
         return {"Muizenberg": 12, "Sea Point": 8, "Kalk Bay": 5}
 
-@app.get("/task/{task_id}")
+@app.get("/tasks/{task_id}")
 async def fetch_task_status(task_id: str):
     db = get_db()
     doc = db.collection("tasks").document(task_id).get()
@@ -440,47 +510,40 @@ async def get_admin_stats(user_id: str):
     for u in users_ref:
         users_list.append({**u.to_dict(), "id": u.id})
     
-    # 1. Growth Metrics
     total_users = len(users_list)
     recent_user = sorted(users_list, key=lambda x: str(x.get('created_at', '')), reverse=True)[0] if users_list else None
-    
-    # 2. Revenue/Sub Metrics
     subs = [u for u in users_list if u.get('tier', 'free') != 'free']
     recent_sub = sorted(subs, key=lambda x: str(x.get('updated_at', '')), reverse=True)[0] if subs else None
     
-    # 3. Tactical Metrics
-    # Note: Requires collection group index
     try:
-        active_snipers = db.collection_group("alerts").where("is_active", "==", True).get()
+        from google.cloud.firestore_v1.base_query import FieldFilter
+        active_snipers = db.collection_group("alerts").where(filter=FieldFilter("is_active", "==", True)).get()
         sniper_count = len(active_snipers)
     except:
         sniper_count = 0
         
-    listings_count = 0
-    try:
-        listings = db.collection("global_scout").limit(1).get() # Just check if exists
-        listings_count = 1000 # Placeholder for large set
-    except: pass
-    
     return {
         "total_users": total_users,
         "recent_user": recent_user,
         "recent_sub": recent_sub,
         "active_snipers": sniper_count,
-        "total_listings_found": listings_count,
         "timestamp": dt.datetime.now().isoformat()
     }
 
 @app.delete("/delete-alert/{user_id}/{search_id}")
 async def remove_alert(user_id: str, search_id: str):
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+    effective_id = get_effective_user_id(user_id, dummy_uid)
     db = get_db()
-    db.collection("users").document(user_id).collection("alerts").document(search_id).delete()
+    db.collection("users").document(effective_id).collection("alerts").document(search_id).delete()
     return {"status": "ok"}
 
 @app.post("/update-alert/{user_id}/{search_id}")
 async def update_alert(user_id: str, search_id: str, payload: dict):
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+    effective_id = get_effective_user_id(user_id, dummy_uid)
     db = get_db()
-    db.collection("users").document(user_id).collection("alerts").document(search_id).set(payload, merge=True)
+    db.collection("users").document(effective_id).collection("alerts").document(search_id).set(payload, merge=True)
     return {"status": "ok"}
 
 @app.post("/update-profile")
@@ -494,26 +557,22 @@ async def update_profile(payload: dict):
         "updated_at": firestore.SERVER_TIMESTAMP
     }, merge=True)
     return {"status": "ok"}
-
-@app.post("/webhook/wa")
-async def whatsapp_webhook(payload: dict):
-    """Handles incoming WhatsApp commands like STOP or UNSUBSCRIBE."""
+    
+@app.post("/listings/manual")
+async def manual_post_listing(listing: dict):
+    """Allows users to manually submit a listing via the local API."""
     try:
-        data = payload.get("data", {})
-        msg = data.get("message", {})
-        text = (msg.get("conversation") or "").strip().upper()
-        sender = data.get("key", {}).get("remoteJid", "").split("@")[0] # Strip @s.whatsapp.net
+        from services.database import save_listing
+        # Standardize listing
+        listing["rental_type"] = listing.get("rental_type", "long-term")
+        listing["platform"] = "HomeSeek"
+        listing["discovery_method"] = "manual_submission"
         
-        if text in ["STOP", "UNSUBSCRIBE", "TERMINATE"]:
-            db = get_db()
-            # Find user by WhatsApp number (normalized search)
-            users = db.collection("users").where("whatsapp", "==", sender).limit(1).stream()
-            for u in users:
-                db.collection("users").document(u.id).update({"notify_whatsapp": False})
-                print_safe(f"[WEBHOOK] User {u.id} unsubscribed from WhatsApp via 'STOP' command.")
+        # Save to Global Community Feed
+        await save_listing("community_manual", listing)
+        return {"status": "success", "message": "Intel shared with the community!"}
     except Exception as e:
-        print_safe(f"[WEBHOOK ERROR] {e}")
-    return {"status": "ok"}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/update-tier")
 async def update_user_tier(payload: dict):
@@ -525,30 +584,24 @@ async def update_user_tier(payload: dict):
         return {"status": "error", "message": "Missing user_id or tier"}
         
     db = get_db()
-    # 1. Update Profile
     db.collection("users").document(user_id).set({
         "tier": tier.lower(),
         "subscription_id": sub_id,
         "updated_at": firestore.SERVER_TIMESTAMP
     }, merge=True)
     
-    # 2. Fetch profile for email/name
     from services.database import get_user_profile
     profile = await get_user_profile(user_id)
     email = profile.get("email")
     name = profile.get("name", "Hunter")
     
-    # 3. Send Welcome Email & Invoice
     if email:
         from services.notifications import ResendEmailClient
         email_client = ResendEmailClient()
-        
-        # Welcome Template
         welcome_html = get_subscription_template(tier, name)
         asyncio.create_task(email_client.send_email(email, f"🏹 Welcome to the {tier.title()} Elite", welcome_html))
         
-        # Invoice Template
-        amounts = {"bronze": 149, "gold": 299}
+        amounts = {"bronze": 149, "silver": 299, "gold": 499}
         amount = amounts.get(tier.lower(), 0)
         if amount > 0:
             invoice_html = get_invoice_template(email, tier, amount)
@@ -564,117 +617,33 @@ async def unsubscribe_user(user_id: str):
         "updated_at": firestore.SERVER_TIMESTAMP
     }, merge=True)
     return {"status": "ok", "message": "You have been unsubscribed from property alerts."}
+
 @app.get("/geofence/suburbs")
 async def get_elite_suburbs():
-    """Exposes the PREMIUM_SUBURBS list for frontend autocomplete."""
+    """Exposes the PREMIUM_SUBURBS list with presets for frontend autocomplete."""
     from core.geofence import PREMIUM_SUBURBS
-    # Return as sorted title-case list for the UI
-    return sorted([s.title() for s in PREMIUM_SUBURBS])
+    suburbs = sorted([s.title() for s in PREMIUM_SUBURBS])
+    presets = [
+        "⭐ My Favourites (Deep South + Constantia/Tokai)",
+        "🏖️ Deep South (Noordhoek, Kommetjie, Fish Hoek, Kalk Bay)"
+    ]
+    return presets + suburbs
 
-@app.post("/listings/manual")
-async def manual_post_listing(listing: dict):
-    """Allows users to manually submit a listing via the unified API."""
-    try:
-        from services.database import save_listing
-        # Standardize listing
-        listing["rental_type"] = listing.get("rental_type", "long-term")
-        listing["platform"] = "HomeSeek"
-        listing["discovery_method"] = "manual_submission"
-        
-        # Save to Global Community Feed
-        await save_listing("community_manual", listing)
-        return {"status": "success", "message": "Intel shared with the community!"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/trigger-re-match")
-async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
-    user_id = payload.get("user_id", "taun_test_user")
-    effective_id = get_effective_user_id(user_id)
+@app.post("/trigger-snipe")
+async def trigger_targeted_snipe(data: dict, background_tasks: BackgroundTasks):
+    query = data.get("query") or data.get("search_query") or ""
+    source_ids = data.get("source_ids")
+    user_id = data.get("user_id") or "taun_test_user"
+    data["search_query"] = query
+    data["query"] = query
     
-    from services.database import get_user_alerts
-    alerts = await get_user_alerts(effective_id)
-    if not alerts: return {"status": "error", "message": "No active alerts found."}
-        
-    db = get_db()
-    docs = db.collection("listings").order_by("created_at", direction=firestore.Query.DESCENDING).limit(500).stream()
-    global_intel = [{"id": d.id, **d.to_dict()} for d in docs]
+    task_id = await create_task(user_id, query)
     
-    async def _match_task():
-        match_count = 0
-        for l_dict in global_intel:
-            for alert in alerts:
-                # Check Price/Beds/Pets
-                l_price = l_dict.get("price") or 0
-                if alert.get("max_price") and l_price > alert.get("max_price"): continue
-                if alert.get("pet_friendly") and not l_dict.get("is_pet_friendly"): continue
-                
-                # [AREA GUARD] 🛡️ Ensure historical re-match respects neighborhood boundaries
-                if not is_mission_match(l_dict, alert): continue
-                
-                doc_id = hashlib.sha256(f"{l_dict.get('source_url')}-{l_dict.get('title')}".encode()).hexdigest()
-                user_seen = db.collection("users").document(effective_id).collection("listings").document(doc_id).get().exists
-                
-                if not user_seen:
-                    match_count += 1
-                    db.collection("users").document(effective_id).collection("listings").document(doc_id).set(l_dict, merge=True)
-                    
-                    # [SIGNAL] 📡 Synchronized Alert Dispatch
-                    profile = await get_user_profile(effective_id)
-                    user_email = profile.get("email")
-                    whatsapp = profile.get("whatsapp")
-                    should_wa = profile.get("notify_whatsapp", True)
-                    should_email = profile.get("notify_email", True)
-
-                    # 📱 Channel Alpha: WhatsApp
-                    if whatsapp and len(str(whatsapp)) > 5 and should_wa:
-                        wa_client = EvolutionClient()
-                        wa_msg = f"🧠 *HomeSeek Intel Match (Archive)*\n\n*{l_dict.get('title')}*\n💰 R{(l_dict.get('price') or 0):,}\n📍 {l_dict.get('address')}\n🏷️ {l_dict.get('property_type', 'Property')} ({l_dict.get('rental_type', 'long-term')})\n\n🔗 {l_dict.get('source_url')}"
-                        asyncio.create_task(wa_client.send_whatsapp(whatsapp, wa_msg))
-                        print_safe(f"[SIGNAL] WhatsApp Archive Alert Dispatched to {whatsapp}")
-
-                    # 📧 Channel Beta: Branded Email
-                    if user_email and should_email:
-                        email_client = ResendEmailClient()
-                        subject = f"🧠 Historical Discovery: {l_dict.get('title')}"
-                        body = f"""
-                        <div style="background-color: #050505; color: #ffffff; font-family: 'Inter', sans-serif; padding: 40px; border-radius: 24px; border: 1px solid #10b9811a;">
-                            <div style="text-align: center; margin-bottom: 30px;">
-                                <span style="color: #10b981; font-weight: 900; letter-spacing: 0.3em; font-size: 10px; text-transform: uppercase;">HomeSeek Intelligence (Retro)</span>
-                            </div>
-                            <h1 style="font-size: 24px; font-weight: 800; margin-bottom: 10px; tracking: -0.02em;">{l_dict.get('title')}</h1>
-                            <p style="color: #10b981; font-size: 20px; font-weight: 800; margin-bottom: 16px;">R{(l_dict.get('price') or 0):,}</p>
-                            
-                            <div style="text-align: center; margin-bottom: 30px;">
-                                <a href="{l_dict.get('source_url')}" style="background-color: #10b981; color: #000000; padding: 18px 40px; border-radius: 12px; font-weight: 900; text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; display: inline-block;">View Property</a>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px;">
-                                <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 15px; border-radius: 12px;">
-                                    <p style="color: rgba(255,255,255,0.4); font-size: 9px; font-weight: 700; text-transform: uppercase; margin-bottom: 5px;">Neighborhood</p>
-                                    <p style="margin: 0; font-size: 13px;">{l_dict.get('address', 'Cape Town')}</p>
-                                </div>
-                                <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 15px; border-radius: 12px;">
-                                    <p style="color: rgba(255,255,255,0.4); font-size: 9px; font-weight: 700; text-transform: uppercase; margin-bottom: 5px;">Category</p>
-                                    <p style="margin: 0; font-size: 13px;">{l_dict.get('property_type', 'Residential')} ({l_dict.get('rental_type', 'long-term')})</p>
-                                </div>
-                            </div>
-                            <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 30px; text-align: center;">
-                                <p style="color: rgba(255,255,255,0.2); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3em;">homeseekza.web.app</p>
-                                <p style="color: rgba(255,255,255,0.2); font-size: 10px; margin-top: 10px;">
-                                    This was discovered via a historical re-match pulse. To terminate mission, visit your 
-                                    <a href="https://home-seek.vercel.app/discover" style="color: #10b981; text-decoration: none;">Discovery Dashboard</a>.
-                                </p>
-                            </div>
-                        </div>
-                        """
-                        asyncio.create_task(email_client.send_email(user_email, subject, body))
-                        print_safe(f"[SIGNAL] Branded Historical Alert Dispatched to {user_email}")
-
-        print_safe(f"[INTEL] Re-match complete. Found {match_count} new historical hits.")
-
-    background_tasks.add_task(_match_task)
-    return {"status": "success", "intel_pool": len(global_intel)}
+    # Wrap standard manual missions in a single-subscriber list for multiplex compatibility
+    manual_sub = [{"user_id": user_id, "config": data}]
+    
+    background_tasks.add_task(run_local_scan, query, source_ids, task_id, manual_sub)
+    return {"status": "local_node_dispatched", "task_id": task_id}
 
 @app.post("/trigger-full-scan")
 async def trigger_full_scan(payload: dict, background_tasks: BackgroundTasks):
@@ -689,65 +658,182 @@ async def trigger_full_scan(payload: dict, background_tasks: BackgroundTasks):
     source_ids = payload.get("source_ids") or [s['id'] for s in sources]
     
     for alert in alerts:
-        query = alert.get("search_query")
+        query = alert.get("search_query") or alert.get("query")
         if not query: continue
         task_id = await create_task(effective_id, query)
         subscribers = [{"user_id": effective_id, "config": alert, "is_initiator": True}]
-        background_tasks.add_task(run_unified_scan, query, source_ids, task_id, subscribers)
+        background_tasks.add_task(run_local_scan, query, source_ids, task_id, subscribers)
         
     return {"status": "success", "mission_count": len(alerts)}
 
-async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subscribers: List[dict] = None, is_pulse: bool = False):
-    """ELITE MULTIPLEX SCAN: Scans a neighborhood ONCE and broadcasts to many."""
+@app.post("/trigger-re-match")
+async def trigger_re_match(payload: dict, background_tasks: BackgroundTasks):
+    user_id = payload.get("user_id", "taun_test_user")
+    effective_id = get_effective_user_id(user_id)
+    db = get_db()
+    global_docs = db.collection("users").document("global_scout").collection("listings").limit(100).stream()
+    listings = [d.to_dict() for d in global_docs]
+    return {"status": "success", "intel_pool": len(listings)}
+
+@app.post("/stop-scan")
+@app.post("/cancel-scan")
+async def stop_scan():
+    request_scan_stop()
+    print_safe("[ABORT] 🛑 Scan cancellation requested via API.")
+    return {"status": "cancelled", "message": "Scraping cancellation initiated."}
+
+async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscribers: List[dict] = None):
+    """
+    ELITE MULTIPLEX SCAN (v81.1): 
+    Scans a neighborhood ONCE and broadcasts to many.
+    - Global Pool: Saves ALL residential results.
+    - Tiered Broadcast: Only saves to specific users if they match filters.
+    """
     async with sniper_lock:
-        print_safe(f"[UNIFIED] MULTIPLEX SCAN: {query} for {len(subscribers or [])} sub(s)")
+        reset_scan_stop()
+        print_safe(f"[LOCAL NODE] MULTIPLEX SCAN: {query} for {len(subscribers or [])} sub(s)")
         db = get_db()
         
         if not source_ids:
             all_sources = await get_sources()
-            source_ids = [s['id'] for s in all_sources]
+            req_sources = set()
+            for s in (subscribers or []):
+                for src in s.get("config", {}).get("sources", []):
+                    req_sources.add(str(src).lower())
+            
+            if req_sources:
+                source_ids = [
+                    s['id'] for s in all_sources 
+                    if str(s.get('name', '')).lower() in req_sources 
+                    or str(s.get('id', '')).lower() in req_sources
+                    or any(r in str(s.get('name', '')).lower() for r in req_sources)
+                ]
+            if not source_ids:
+                source_ids = [s['id'] for s in all_sources]
 
+        valid_matches_count = 0
+        scanned_urls = set()
         for sid in source_ids:
+            if check_scan_cancelled():
+                print_safe(f"[ABORT] 🛑 Scan aborted by user before evaluating source {sid}.")
+                await update_task(task_id, "Cancelled", "Mission cancelled by user.", completed=True)
+                return
             source_doc = db.collection("sources").document(sid).get()
             if not source_doc.exists: continue
             source = source_doc.to_dict()
             source_name = source.get('name', '')
             source_type = source.get('type', 'long-term') 
 
-            # [ZONAL] Precision Dispatch
+            # [ZONAL] [FILTER] Precision Dispatch (v85.1)
+            # Avoid searching irrelevant groups (e.g., searching "Big Bay" in "Sea Point" feeds).
+            # This kills 'Something went wrong' errors by reducing bot-like behavior.
             from core.geofence import get_zone_for_area
             mission_zone = get_zone_for_area(query)
             source_zone = get_zone_for_area(source_name)
+            
             is_compatible_zone = (
                 source_zone == "global" or 
                 source_zone == mission_zone or 
                 (mission_zone in ["my-favourites", "deep-south"] and source_zone in ["south", "deep-south", "my-favourites"])
             )
-            if not is_compatible_zone: continue
+            if not is_compatible_zone:
+                print_safe(f"[ZONAL] Skipping irrelevant source: '{source_name}' for mission '{query}'")
+                continue
 
-            # [SOURCE IQ] Global Search Broadening
-            clean_query = query
+            # [INFO] [SOURCE IQ] Global Search Broadening (v82.0)
+            # Remove literal markers from the search bar to prevent "Zerio-Match" on strict queries.
+            # The AI Extractor and Subscriber Config still enforce the pet-policy internally.
+            clean_query = str(query or "")
             for marker in ["(MUST BE PET FRIENDLY)", "PET FRIENDLY", "(PET FRIENDLY)"]:
-                 clean_query = clean_query.replace(marker, "").replace(marker.lower(), "")
+                clean_query = clean_query.replace(marker, "").replace(marker.lower(), "")
             clean_query = clean_query.strip()
 
-            await update_task(task_id, "Scouting", f"Analyzing: {source_name}")
-            result = await engine.scrape_url(source.get('url'), task_id=task_id, search_area=clean_query, is_pulse=is_pulse)
+            is_p24 = "property24.com" in source.get('url', '') or "property24" in source_name.lower()
+            is_fav = any(k in clean_query.lower() for k in ["my favourites", "my favorites", "favourites", "favorites"])
+            is_deep_south = any(k in clean_query.lower() for k in ["deep south", "south peninsula"])
+
+            is_pet_req = any(s.get("config", {}).get("pet_friendly") for s in (subscribers or [])) or any(x in str(query).lower() for x in ["pet", "dog", "cat"])
+            pet_param = "?sp=ptf%3dTrue" if is_pet_req else ""
+            is_pulse = any(s.get("config", {}).get("is_pulse", False) for s in (subscribers or []))
+
+            if is_p24 and is_fav:
+                favourite_targets = [
+                    # Southern Peninsula parent covers all Deep South: Fish Hoek, Noordhoek, Kommetjie, Scarborough, Simon's Town, Muizenberg, Kalk Bay, etc.
+                    ("Southern Peninsula (Deep South)", f"https://www.property24.com/to-rent/southern-peninsula/cape-town/western-cape/24{pet_param}"),
+                    # User Additions: Constantia, Hout Bay, Llandudno, Bergvliet, Meadowridge
+                    ("Constantia", f"https://www.property24.com/to-rent/constantia/cape-town/western-cape/11742{pet_param}"),
+                    ("Hout Bay", f"https://www.property24.com/to-rent/hout-bay/western-cape/615{pet_param}"),
+                    ("Llandudno", f"https://www.property24.com/to-rent/llandudno/cape-town/western-cape/9118{pet_param}"),
+                    ("Bergvliet", f"https://www.property24.com/to-rent/bergvliet/cape-town/western-cape/10189{pet_param}"),
+                    ("Meadowridge", f"https://www.property24.com/to-rent/meadowridge/cape-town/western-cape/10052{pet_param}")
+                ]
+                all_fav_listings = []
+                for idx, (sub_name, sub_url) in enumerate(favourite_targets):
+                    if check_scan_cancelled():
+                        print_safe(f"[ABORT] 🛑 P24 Favourites scan halted by user before '{sub_name}'.")
+                        break
+                    if idx > 0:
+                        # [STEALTH] Human-paced jitter (6.0s - 10.0s) between major regions
+                        await asyncio.sleep(random.uniform(6.0, 10.0))
+                    await update_task(task_id, "Scouting", f"Node analyzing: Property24 ({sub_name}) [{idx+1}/{len(favourite_targets)}]")
+                    sub_res = await engine.scrape_url(sub_url, task_id=task_id, search_area=sub_name, is_pulse=is_pulse, max_pages=1)
+                    if sub_res and (sub_res.confidence_score == 0 and any(w in (sub_res.raw_summary or "").lower() for w in ["bot challenge", "503", "429", "blocked", "server unavailable"])):
+                        print_safe(f"[SHIELD] 🛑 Throttling P24: Server returned block/cooldown ({sub_res.raw_summary}). Halting immediately to protect IP.")
+                        await update_task(task_id, "Throttled", f"Property24 cooldown ({sub_res.raw_summary}). Halting to protect IP.")
+                        break
+                    if sub_res and sub_res.listings:
+                        all_fav_listings.extend(sub_res.listings)
+                from models.listing import ExtractionResult
+                result = ExtractionResult(listings=all_fav_listings, confidence_score=100.0, raw_summary=f"Parsed {len(all_fav_listings)} listings from Property24 Favourites")
+            elif is_p24 and is_deep_south:
+                # [OPTIMIZED] Southern Peninsula parent region URL covers all Deep South with automated 2-page pagination
+                deep_url = f"https://www.property24.com/to-rent/southern-peninsula/cape-town/western-cape/24{pet_param}"
+                await update_task(task_id, "Scouting", "Node analyzing: Property24 (Southern Peninsula - Deep South)")
+                result = await engine.scrape_url(deep_url, task_id=task_id, search_area="Southern Peninsula", is_pulse=is_pulse, max_pages=2)
+            else:
+                target_url = source.get('url')
+                if is_p24 and clean_query:
+                    from scraper.portal_resolver import resolve_p24_url
+                    resolved_url = resolve_p24_url(clean_query, is_pet_friendly=is_pet_req)
+                    if resolved_url:
+                        target_url = resolved_url
+                        print_safe(f"[PORTAL] 🎯 Dynamic URL resolved for '{clean_query}': {target_url}")
+                
+                if target_url in scanned_urls:
+                    print_safe(f"[PORTAL] Skipping duplicate portal URL already scanned in this mission: {target_url}")
+                    continue
+                scanned_urls.add(target_url)
+                
+                # Determine mission page depth (default: 3 pages for rich harvest, 1 for pulse)
+                mission_max_pages = 1 if is_pulse else 3
+                if subscribers:
+                    sub_pages = [s.get("config", {}).get("max_pages") for s in subscribers if s.get("config", {}).get("max_pages")]
+                    if sub_pages:
+                        mission_max_pages = max(sub_pages)
+
+                await update_task(task_id, "Scouting", f"Node analyzing: {source_name} ({clean_query})")
+                result = await engine.scrape_url(target_url, task_id=task_id, search_area=clean_query, is_pulse=is_pulse, max_pages=mission_max_pages)
             
             if result:
                 all_raw = []
+                # [MATCH] Part A: Fresh AI Extractions
                 for listing in result.listings:
                     l_dict = listing.dict() if hasattr(listing, 'dict') else listing
+                    
+                    # [CATEGORY HEAL] If AI identified as 'Wanted', force the rental_type (v120.1)
                     if l_dict.get("is_looking_for"):
                         l_dict['rental_type'] = "looking-for"
                     else:
                         l_dict['rental_type'] = l_dict.get("rental_type") or source_type
+                        
                     all_raw.append(l_dict)
                 
+                # [RECALL] Part B: Memory Retrieval (Recall cached data for matching)
                 if result.cached_hashes:
                     from services.database import get_listings_by_keys
+                    print_safe(f"[MEMORY] Recalling {len(result.cached_hashes)} listings from registry...")
                     cached_data = await get_listings_by_keys([], result.cached_hashes)
-                    all_raw.extend(cached_data if isinstance(cached_data, list) else [cached_data] if cached_data else [])
+                    all_raw.append(cached_data) if isinstance(cached_data, dict) else all_raw.extend(cached_data)
 
                 # [DEDUPE] Surgically clean any overlapping cycle captures (v125.0)
                 # Now with Cross-Platform Similarity Guard
@@ -778,233 +864,461 @@ async def run_unified_scan(query: str, source_ids: List[str], task_id: str, subs
                 
                 all_raw = deduped_raw
 
-                for l_dict in all_raw:
-                    # [GEOFENCE] 🛡️ Area Logic (v108.2)
-                    from core.geofence import is_area_elite
-                    is_elite = is_area_elite(l_dict.get("address", "") or l_dict.get("title", ""))
-                    if not is_elite and l_dict.get("address") == "Cape Town":
-                        if any(s.lower() in query.lower() for s in ["muizenberg", "sea point", "green point", "kalk bay", "camps bay"]):
-                            is_elite = True
-                    if not is_elite: continue
+                if all_raw:
+                    print_safe(f"[MULTIPLEX] Processing {len(all_raw)} total hits for Mission Subscribers (Fresh Search Feed)...")
+                    from services.database import save_listing
+                    
+                    valid_matches_count = 0
+                    for l_dict in all_raw:
+                        # [LINK FIDELITY] Enforce Proper URLs (v81.0)
+                        extracted_url = str(l_dict.get("source_url", ""))
+                        is_malformed = any(bad in extracted_url for bad in ["example.com", "missing_url"]) or not extracted_url
+                        
+                        if is_malformed:
+                            continue
+                        
+                        # [FILTER] RIGOROUS SUPPRESSION: Skip "Looking For" (Wanted) posts unless opted-in (v115.1)
+                        is_wanted = l_dict.get("is_looking_for")
+                        
+                        # [GLOBAL] Always save to global pool if NOT a wanted ad (keep global feed clean)
+                        if not is_wanted:
+                            await save_listing("global_scout", l_dict) 
 
-                    # [GLOBAL] Save to global pool
-                    await save_listing("global_scout", l_dict) 
+                        # [TARGET] BROADCAST: Check individual mission filters
+                        if subscribers:
+                            for sub in subscribers:
+                                user_id = sub['user_id']
+                                config = sub['config']
+                                
+                                # [AREA GUARD] (v160.0)
+                                # If the user's search_query mentions an area, ensure the listing is in it.
+                                # This prevents 'Observatory' listings from hitting 'Sea Point' subscribers 
+                                # when scanning Global sources.
+                                req_area = str(config.get("target_area") or config.get("search_query", "")).lower()
+                                listing_addr = str(l_dict.get("address", "")).lower()
+                                
+                                is_province_search = any(p in req_area for p in ["western cape", "all", "any"]) or not req_area
+                                if not is_province_search:
+                                    # Extract actual suburb from the query (e.g. "Sea Point", "My Favourites")
+                                    from core.geofence import PREMIUM_SUBURBS, MY_FAVOURITES_SUBURBS, DEEP_SOUTH_SUBURBS
+                                    if any(k in req_area for k in ["favourite", "favorite"]):
+                                        matched_suburbs = list(MY_FAVOURITES_SUBURBS)
+                                    elif any(k in req_area for k in ["deep south", "south peninsula"]):
+                                        matched_suburbs = list(DEEP_SOUTH_SUBURBS)
+                                    else:
+                                        matched_suburbs = [s for s in PREMIUM_SUBURBS if s in req_area]
+                                        if not matched_suburbs and req_area:
+                                            clean_q = req_area.replace("(must be pet friendly)", "").replace("(pet friendly)", "").strip()
+                                            if clean_q and clean_q != "any":
+                                                matched_suburbs = [clean_q]
+                                    
+                                    if matched_suburbs:
+                                        listing_url = str(l_dict.get("source_url", "")).lower()
+                                        from core.geofence import get_zone_for_area
+                                        req_zone = get_zone_for_area(req_area)
+                                        listing_zone = get_zone_for_area(listing_addr)
 
-                    # [TARGET] Check individual mission filters
-                    if subscribers:
-                        for sub in subscribers:
-                            user_id = sub['user_id']
-                            config = sub['config']
-                            
-                            l_price = l_dict.get("price") or 0
-                            if config.get("max_price") and l_price > config.get("max_price"): continue
-                            if config.get("pet_friendly") and not l_dict.get("is_pet_friendly"): continue
-                            
-                            req_type = config.get("rental_type")
-                            if req_type and req_type != "all" and l_dict.get("rental_type") != req_type: continue
-                            
-                            req_layout = config.get("property_sub_type")
-                            if req_layout and req_layout != "all" and l_dict.get("property_sub_type") != req_layout: continue
-                            
-                            min_b = config.get("min_bedrooms")
-                            listing_beds = l_dict.get("bedrooms")
-                            if min_b and listing_beds is not None:
-                                min_val = min(min_b) if isinstance(min_b, list) else min_b
-                                if listing_beds < min_val: continue
-                            
-                            min_s = config.get("min_sqm") or config.get("min_size")
-                            listing_sqm = l_dict.get("sqm")
-                            if min_s and listing_sqm is not None:
-                                if listing_sqm < min_s: continue
-                            
-                            max_s = config.get("max_sqm") or config.get("max_size")
-                            if max_s and listing_sqm is not None:
-                                if listing_sqm > max_s: continue
-                            
-                            # [AREA GUARD] 🛡️ Precision Multiplexing: Ensure listing matches requested neighborhood
-                            if not is_mission_match(l_dict, config): continue
-
-                            # [AGENCY GUARD] 🛡️ Agency Google Rating Gate
-                            min_agency_rating = config.get("min_agency_rating")
-                            exclude_low_agency = config.get("exclude_low_rated_agencies", False)
-                            allow_direct = config.get("allow_direct_landlords", True)
-                            
-                            is_direct = l_dict.get("is_direct_landlord", False)
-                            agency_rating = l_dict.get("agency_rating")
-                            
-                            if exclude_low_agency and min_agency_rating and not (is_direct and allow_direct):
-                                if agency_rating is not None and agency_rating < float(min_agency_rating):
-                                    print_safe(f"[AGENCY GUARD] Dropping listing '{l_dict.get('title')}' - Agency rating {agency_rating}★ < Required {min_agency_rating}★")
+                                        matches_suburb = (
+                                            any(s in listing_addr for s in matched_suburbs) or
+                                            any(f"/{s}/" in listing_url or f"/{s}-" in listing_url or f"-{s}/" in listing_url or f"/{s.replace(' ', '-')}/" in listing_url for s in matched_suburbs) or
+                                            (req_zone != "global" and req_zone == listing_zone)
+                                        )
+                                        if not matches_suburb:
+                                            continue
+                                
+                                # Apply Specific Filters (Price, Beds, Pets, Landlord, Lease, Furnished, Specs)
+                                l_price = l_dict.get("price") or 0
+                                if config.get("min_price") and l_price > 0 and l_price < config.get("min_price"): 
+                                    print_safe(f"[RECON] [REJECT] Price R{l_price} < Min R{config.get('min_price')}")
+                                    continue
+                                if config.get("max_price") and l_price > config.get("max_price"): 
+                                    print_safe(f"[RECON] [REJECT] Price R{l_price} > Max R{config.get('max_price')}")
+                                    continue
+                                if config.get("pet_friendly") and not l_dict.get("is_pet_friendly"): 
                                     continue
 
-                            # [AI CRITERIA] 🧠 Evaluate Must Include / Must Exclude / Lifestyle
-                            ai_must_inc = config.get("must_include") or []
-                            ai_must_exc = config.get("must_exclude") or []
-                            lifestyle_sigs = config.get("lifestyle_signals") or []
-                            strict_mode = config.get("strict_mode", False)
-                            
-                            ai_report = None
-                            if ai_must_inc or ai_must_exc or lifestyle_sigs:
-                                try:
-                                    eval_result = await evaluator.evaluate_property(
-                                        listing=l_dict,
-                                        must_include=ai_must_inc,
-                                        must_exclude=ai_must_exc,
-                                        lifestyle_signals=lifestyle_sigs,
-                                        strict_mode=strict_mode
-                                    )
-                                    if strict_mode and not eval_result.is_match:
-                                        print_safe(f"[STRICT FILTER] Dropping listing '{l_dict.get('title')}' - failed strict criteria.")
+                                # [NO AGENTS / DIRECT LANDLORD]
+                                if config.get("no_agents") and not l_dict.get("is_direct_landlord"):
+                                    print_safe(f"[RECON] [REJECT] Filtered out agent listing (No-Agents policy active)")
+                                    continue
+                                
+                                # [LEASE TERM] (Multi-Term Compatible)
+                                req_lease = config.get("lease_terms") or config.get("lease_term")
+                                has_explicit_lease_terms = bool(req_lease and req_lease != "any" and req_lease != ["any"])
+                                if has_explicit_lease_terms:
+                                    req_terms = req_lease if isinstance(req_lease, list) else [req_lease]
+                                    lease_str = str(l_dict.get("lease_period", "")).lower()
+                                    desc_str = str(l_dict.get("description", "")).lower()
+                                    combined_lease = f"{lease_str} {desc_str}"
+                                    
+                                    term_keywords = {
+                                        "1": ["month to month", "month-to-month", "m2m", "monthly", "1 month", "flexible"],
+                                        "3": ["3 month", "3-month", "3 months", "short-term", "short term", "flexible"],
+                                        "6": ["6 month", "6-month", "6 months", "half year", "flexible"],
+                                        "12": ["12 month", "1-year", "1 year", "long-term", "long term", "annual", "yearly"]
+                                    }
+                                    
+                                    matched_any_term = False
+                                    for t in req_terms:
+                                        t_key = str(t).lower().replace(" (m2m)", "").replace("m", "").strip()
+                                        keywords = term_keywords.get(t_key, [str(t).lower()])
+                                        if any(k in combined_lease for k in keywords):
+                                            matched_any_term = True
+                                            break
+                                            
+                                    if not matched_any_term:
+                                        print_safe(f"[RECON] [REJECT] Lease term mismatch (Requested: {req_terms})")
                                         continue
-                                    ai_report = eval_result.dict()
-                                    l_dict['ai_report'] = ai_report
-                                    l_dict['match_score'] = eval_result.fit_score
-                                    if eval_result.verdict:
-                                        l_dict['match_reason'] = eval_result.verdict
-                                except Exception as eval_err:
-                                    print_safe(f"[EVALUATE SCAN ERROR] {eval_err}")
 
-                            # Valid match!
-                            doc_id = create_listing_id(l_dict)
-                            user_seen = db.collection("users").document(user_id).collection("listings").document(doc_id).get().exists
-                            await save_listing(user_id, l_dict)
-                            
-                            # [SIGNAL]
-                            user_profile = await get_user_profile(user_id)
-                            if not user_profile: continue
-                            
-                            # [FILTER] Skip "Looking For" posts for alerts to reduce noise (v115.0)
-                            if l_dict.get("is_looking_for"): continue
-                            
-                            is_initiator = sub.get("is_initiator", False)
-                            tier = user_profile.get("tier", "free").lower()
-                            can_multiplex = tier in ['gold', 'bronze']
-                            
-                            if not is_initiator and not can_multiplex: continue
+                                # [CATEGORY FILTER] Filter by rental type if specified
+                                req_type = config.get("rental_type")
+                                
+                                # [WANTED GUARD] If it's a wanted ad, ONLY deliver if specifically requested (v120.1)
+                                if is_wanted and req_type != "looking-for":
+                                    continue
+                                
+                                # [WANTED SUPPRESSION] If user wants standard rentals, skip wanted ads
+                                if not is_wanted and req_type == "looking-for":
+                                    continue
 
-                            if not user_seen:
-                                try:
-                                    print_safe(f"[SIGNAL] Match is NEW ({doc_id[:8]}). Preparing dispatch...")
-                                    whatsapp = user_profile.get("whatsapp")
-                                    # [GATE] Check User Preference
-                                    should_wa = user_profile.get("notify_whatsapp", True)
-                                    
-                                    if whatsapp and len(str(whatsapp)) > 5 and should_wa:
-                                        wa_client = EvolutionClient()
-                                        score_txt = f" (🎯 {ai_report.get('fit_score')}% Fit)" if ai_report and ai_report.get('fit_score') else ""
-                                        verdict_txt = f"\n⚖️ *Verdict:* {ai_report.get('verdict')}\n" if ai_report and ai_report.get('verdict') else ""
-                                        wa_msg = f"🏠 *HomeSeek Sniper Match{score_txt}*\n\n*{l_dict.get('title')}*\n💰 R{(l_dict.get('price') or 0):,}\n📍 {l_dict.get('address', 'Cape Town')}\n🏷️ {l_dict.get('property_type', 'Property')} ({l_dict.get('rental_type', 'long-term')}){verdict_txt}\n🔗 {l_dict.get('source_url')}"
-                                        asyncio.create_task(wa_client.send_whatsapp(whatsapp, wa_msg))
-                                        print_safe(f"[SIGNAL] WhatsApp Alert Dispatched to {whatsapp}")
-                                    else:
-                                        print_safe(f"[SIGNAL] WhatsApp skipped (Disabled or No Number) for {user_id}")
-                                    
-                                    user_email = user_profile.get("email")
-                                    # [GATE] Check User Preference
-                                    should_email = user_profile.get("notify_email", True)
-                                    
-                                    if user_email and should_email:
-                                        email_client = ResendEmailClient()
-                                        subject = f"🏹 Match: {l_dict.get('title')}"
-                                        body = get_match_template(l_dict)
-                                        asyncio.create_task(email_client.send_email(user_email, subject, body))
-                                        print_safe(f"[SIGNAL] Branded Email Alert Dispatched to {user_email}")
-                                        print_safe(f"[SIGNAL] Branded Email Dispatched to {user_email}")
-                                    else:
-                                        print_safe(f"[SIGNAL] Email skipped (Disabled or No Email) for {user_id}")
-                                except Exception as e:
-                                    print_safe(f"[SIGNAL ERROR] {e}")
+                                # If explicit lease terms (M2M, 3m, 6m) are active, do not let generic category
+                                # mismatch drop listings that meet the requested duration.
+                                if req_type and req_type not in ["all", "any"] and req_type != "looking-for":
+                                    if not has_explicit_lease_terms and l_dict.get("rental_type") != req_type:
+                                        print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
+                                        continue
+                                
+                                # [LAYOUT FILTER] Whole vs Shared or Property Type (v90.0)
+                                req_layout = config.get("property_sub_type") or config.get("layout")
+                                if req_layout and req_layout not in ["all", "any", "any layout"]:
+                                    p_type = str(l_dict.get("property_type", "")).lower()
+                                    p_sub = str(l_dict.get("property_sub_type", "")).lower()
+                                    target_layout = req_layout.lower()
+                                    if target_layout not in p_type and target_layout not in p_sub:
+                                        continue
+                                
+                                # [PROPERTY TYPE GUARD]
+                                req_prop_type = config.get("property_type")
+                                if req_prop_type and req_prop_type not in ["all", "any"]:
+                                    if str(l_dict.get("property_type", "")).lower() != str(req_prop_type).lower():
+                                        print_safe(f"[RECON] [REJECT] Property type mismatch ({l_dict.get('property_type')} vs {req_prop_type})")
+                                        continue
+
+                                # [SEA VIEW GUARD]
+                                if config.get("require_verified_sea_view") and l_dict.get("view_category") != "Sea":
+                                    print_safe(f"[RECON] [REJECT] Sea view required, but view_category is '{l_dict.get('view_category')}'")
+                                    continue
+                                
+                                # [BEDROOM FILTER] If no beds assigned, treat as 'Any' (v97.0)
+                                min_b = config.get("min_bedrooms")
+                                listing_beds = l_dict.get("bedrooms")
+                                
+                                if min_b and listing_beds is not None:
+                                    min_val = min(min_b) if isinstance(min_b, list) else min_b
+                                    if listing_beds < min_val:
+                                        print_safe(f"[RECON] [REJECT] Beds {listing_beds} < Required {min_val}")
+                                        continue
+                                elif min_b and listing_beds is None:
+                                    print_safe(f"[RECON] [PARTIAL] Partial Match: No beds assigned, treating as 'Any'")
+                                
+                                # [BATHROOM FILTER]
+                                min_baths = config.get("bathrooms")
+                                listing_baths = l_dict.get("bathrooms")
+                                if min_baths and listing_baths is not None:
+                                    if listing_baths < min_baths:
+                                        print_safe(f"[RECON] [REJECT] Baths {listing_baths} < Required {min_baths}")
+                                        continue
+
+                                # [FURNISHED FILTER]
+                                req_furn = config.get("furnished")
+                                if req_furn and req_furn not in ["any", "any furnishing", "all"]:
+                                    is_f = l_dict.get("is_furnished")
+                                    if "unfurnished" in req_furn.lower() and is_f is True:
+                                        continue
+                                    elif "furnished" in req_furn.lower() and "unfurnished" not in req_furn.lower() and is_f is False:
+                                        continue
+
+                                min_s = config.get("min_sqm") or config.get("min_size")
+                                listing_sqm = l_dict.get("sqm")
+                                if min_s and listing_sqm is not None:
+                                    if listing_sqm < min_s:
+                                        print_safe(f"[RECON] [REJECT] Size {listing_sqm}m² < Required {min_s}m²")
+                                        continue
+                                
+                                max_s = config.get("max_sqm") or config.get("max_size")
+                                if max_s and listing_sqm is not None:
+                                    if listing_sqm > max_s:
+                                        print_safe(f"[RECON] [REJECT] Size {listing_sqm}m² > Max {max_s}m²")
+                                        continue
+                                
+                                # [AGENCY GUARD] 🛡️ Agency Google Rating Gate
+                                min_agency_rating = config.get("min_agency_rating")
+                                exclude_low_agency = config.get("exclude_low_rated_agencies", False)
+                                allow_direct = config.get("allow_direct_landlords", True)
+                                
+                                is_direct = l_dict.get("is_direct_landlord", False)
+                                agency_rating = l_dict.get("agency_rating")
+                                
+                                if exclude_low_agency and min_agency_rating and not (is_direct and allow_direct):
+                                    if agency_rating is not None and agency_rating < float(min_agency_rating):
+                                        print_safe(f"[AGENCY GUARD] Dropping listing '{l_dict.get('title')}' - Agency rating {agency_rating}★ < Required {min_agency_rating}★")
+                                        continue
+
+                                # [AI CRITERIA] 🧠 Evaluate Must Include / Must Exclude / Lifestyle
+                                ai_must_inc = config.get("must_include") or []
+                                ai_must_exc = config.get("must_exclude") or []
+                                lifestyle_sigs = config.get("lifestyle_signals") or []
+                                strict_mode = config.get("strict_mode", False)
+                                
+                                ai_report = None
+                                if ai_must_inc or ai_must_exc or lifestyle_sigs:
+                                    try:
+                                        eval_result = await evaluator.evaluate_property(
+                                            listing=l_dict,
+                                            must_include=ai_must_inc,
+                                            must_exclude=ai_must_exc,
+                                            lifestyle_signals=lifestyle_sigs,
+                                            strict_mode=strict_mode
+                                        )
+                                        if strict_mode and not eval_result.is_match:
+                                            print_safe(f"[STRICT FILTER] Dropping listing '{l_dict.get('title')}' - failed strict criteria.")
+                                            continue
+                                        ai_report = eval_result.dict()
+                                        l_dict['ai_report'] = ai_report
+                                        l_dict['match_score'] = eval_result.fit_score
+                                        if eval_result.verdict:
+                                            l_dict['match_reason'] = eval_result.verdict
+                                    except Exception as eval_err:
+                                        print_safe(f"[EVALUATE SCAN ERROR] {eval_err}")
+
+                                # [DEDUPE] Check if this is a fresh discovery for this user
+                                doc_id = create_listing_id(l_dict)
+                                user_seen = db.collection("users").document(user_id).collection("listings").document(doc_id).get().exists
+
+                                # Valid match for this user!
+                                valid_matches_count += 1
+                                print_safe(f"\n" + "="*50)
+                                print_safe(f"🏠 [HIT #{valid_matches_count}] {l_dict.get('title')}")
+                                print_safe(f"💰 Price:    R {l_price:,}")
+                                print_safe(f"📍 Area:     {l_dict.get('address')}")
+                                print_safe(f"🛡️ Landlord: {'Direct Landlord (No Agents)' if l_dict.get('is_direct_landlord') else 'Agent'}")
+                                if l_dict.get('bedrooms'): print_safe(f"🛏️ Beds:     {l_dict.get('bedrooms')}")
+                                if l_dict.get('lease_period'): print_safe(f"⏱️ Lease:    {l_dict.get('lease_period')}")
+                                print_safe(f"🔗 Link:     {l_dict.get('source_url')}")
+                                print_safe("="*50 + "\n")
+                                await save_listing(user_id, l_dict)
+
+                                # [AUTO-LAUNCH] Open matched listing in web browser
+                                if config.get("auto_open_links", True):
+                                    source_url = l_dict.get("source_url")
+                                    if source_url and str(source_url).startswith("http"):
+                                        import webbrowser
+                                        try:
+                                            webbrowser.open_new_tab(source_url)
+                                            print_safe(f"[BROWSER] 🚀 Launched matched listing in browser: {source_url}")
+                                        except Exception as b_err:
+                                            print_safe(f"[BROWSER] Could not open browser: {b_err}")
+                                
+                                # --- [SIGNAL BURST] INSTANT NOTIFICATION (v103.5) ---
+                                user_profile = await get_user_profile(user_id)
+                                if not user_profile: continue
+                                
+                                # [GATE] TIER GATE (v106.0)
+                                is_initiator = sub.get("is_initiator", False)
+                                tier = user_profile.get("tier", "free").lower()
+                                can_multiplex = tier in ['gold', 'silver', 'bronze']
+                                
+                                if not is_initiator and not can_multiplex:
+                                    print_safe(f"[RECON] [LOCKED] Retention Only: User '{user_id}' ({tier}) is riding along, but no instant alert fired.")
+                                    continue
+
+                                if not user_seen:
+                                    try:
+                                        whatsapp_number = user_profile.get("whatsapp")
+                                        if whatsapp_number:
+                                            wa_client = EvolutionClient()
+                                            
+                                            price_val = l_dict.get('price')
+                                            price_display = f"R{price_val:,}" if price_val and price_val > 0 else "Price on Request"
+
+                                            # Extract upfront privacy tags
+                                            priv_flags = []
+                                            if l_dict.get('dwelling_privacy') == 'garden_cottage': priv_flags.append('Shared Erf / Cottage')
+                                            if l_dict.get('has_shared_entrance'): priv_flags.append('Shared Driveway')
+                                            if l_dict.get('has_shared_pool'): priv_flags.append('Shared Pool')
+                                            if l_dict.get('is_landlord_on_site'): priv_flags.append('Landlord on Erf')
+
+                                            wa_msg = f"🏠 *HomeSeek Sniper: New Discovery*\n\n"
+                                            wa_msg += f"*{l_dict.get('title')}*\n"
+                                            wa_msg += f"💰 *Price:* {price_display}\n"
+                                            wa_msg += f"📍 *Area:* {l_dict.get('address', 'Cape Town')}\n"
+                                            wa_msg += f"🛏️ *Specs:* {l_dict.get('bedrooms', 'N/A')} Beds | {l_dict.get('property_sub_type', 'Whole')}\n"
+                                            if priv_flags:
+                                                wa_msg += f"⚠️ *Privacy:* {', '.join(priv_flags)}\n"
+                                            wa_msg += f"\n--- \n"
+                                            wa_msg += f"🧠 *AI INSIGHT:*\n"
+                                            wa_msg += f"_{l_dict.get('ai_summary', 'Fresh listing matching your alert criteria.')}_\n\n"
+                                            wa_msg += f"✅ *INTEL:*\n"
+                                            wa_msg += f"• *View:* {l_dict.get('view_category', 'Other')}\n"
+                                            wa_msg += f"• *Pet Friendly:* {'Yes' if l_dict.get('is_pet_friendly') else 'No'}\n\n"
+                                            wa_msg += f"--- \n"
+                                            wa_msg += f"🔗 *ACTION:*\n"
+                                            wa_msg += f"{l_dict.get('source_url')}\n\n"
+                                            wa_msg += f"---"
+
+                                            asyncio.create_task(wa_client.send_whatsapp(whatsapp_number, wa_msg))
+                                            print_safe(f"[SIGNAL] WhatsApp Alert Dispatched to {whatsapp_number}")
+                                        
+                                        user_email = user_profile.get("email")
+                                        if user_email:
+                                            email_client = ResendEmailClient()
+                                            subject = build_alert_subject(l_dict, report=l_dict.get('ai_report'))
+                                            body = get_match_template(l_dict, report=l_dict.get('ai_report'))
+                                            asyncio.create_task(email_client.send_email(user_email, subject, body))
+                                            print_safe(f"[SIGNAL] Email Alert Dispatched to {user_email} with Subject: '{subject}'")
+                                    except Exception as notify_err:
+                                        print_safe(f"[SIGNAL ERROR] Alert Dispatch Failed: {notify_err}")
         
-        await update_task(task_id, "Complete", f"Scan finished for {query}.", completed=True)
+        if check_scan_cancelled():
+            print_safe(f"\n🛑 [MISSION ABORTED] Task {task_id} halted by user.")
+            await update_task(task_id, "Cancelled", f"Mission cancelled by user for {query}.", completed=True)
+            return
 
-# [PULSE] HEARTBEAT
-PULSE_COUNT = 0
+        print_safe(f"\n🎯 [MISSION COMPLETE] Harvested {valid_matches_count} matching listings for '{query}'.")
+        print_safe(f"🌐 View all live results in Explore: http://localhost:3000/explore\n")
+        await update_task(task_id, "Complete", f"Aggregated scan finished for {query}.", completed=True)
+
+# [PULSE] AUTONOMOUS HEARTBEAT: The 24/7 Tiered Sniper Pulse
+PULSE_COUNT = 0 # Tracks how many 30-min cycles have passed
+
 async def autonomous_pulse_heartbeat():
+    """Background loop that executes tiered user alerts."""
     global PULSE_COUNT
-    print_safe("[HEARTBEAT] Local Node Pulse Engine ACTIVE (1h cycles).")
+    print_safe("[HEARTBEAT] Local Node Multiplex Pulse Engine initialized (30m cycles).")
+    
     while True:
         try:
             PULSE_COUNT += 1
+            print_safe(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [HEARTBEAT] Cycle #{PULSE_COUNT} starting...")
+            
             db = get_db()
-            
-            # [TIME GATE] Check South African Time (SA is UTC+2)
-            # Default to local machine time for simplicity in Local Sniper mode
-            current_hour = dt.datetime.now().hour 
-            is_night_silence = (current_hour >= 23 or current_hour < 5)
-            
-            users = [{"id": u.id, **u.to_dict()} for u in db.collection("users").stream()]
+            all_users = db.collection("users").stream()
+            users = [{"id": u.id, **u.to_dict()} for u in all_users]
+
+            # [TARGET] AGGREGATION HUB: Group alerts by Neighborhood (Multiplex v109.5)
             mission_map = {} 
+            
             for user in users:
                 tier = user.get("tier", "free").lower()
-                user_id = get_effective_user_id(user["id"])
                 
-                # Dynamic Tier Logic (30-min Pulse)
+                # [IDENTITY BRIDGE] Ensure heartbeat recognizes the aliased ID
+                raw_id = user["id"]
+                user_id = get_effective_user_id(raw_id)
+                
+                alerts = await get_user_alerts(user_id)
+                if not alerts: continue
+                
+                # --- [COST GUARD] TIER FREQUENCY (30m Base Pulse) ---
                 is_due = False
-                if tier == "gold":
-                    is_due = True # Every 30m
-                elif tier == "silver":
-                    if PULSE_COUNT % 8 == 0: # Every 4h (8 * 30m)
-                        is_due = True
-                elif tier == "bronze":
-                    if PULSE_COUNT % 48 == 0: # Every 24h
-                        is_due = True
-                elif PULSE_COUNT == 1: # Initial boot catch-all
-                    is_due = True
-
+                if PULSE_COUNT == 1: is_due = True # First pulse always runs
+                elif tier == "gold": is_due = True # Every 30m
+                elif tier == "silver": is_due = True # Every 30m
+                elif tier == "bronze" or tier == "free":
+                    if PULSE_COUNT % 48 == 0: is_due = True # Every 24h
+                
                 if not is_due: continue
                 
                 alerts = await get_user_alerts(user_id)
+                if not alerts: continue
+                
                 for a in alerts:
-                    q = a.get("search_query", "").strip()
-                    if q:
-                        if q not in mission_map: mission_map[q] = []
-                        mission_map[q].append({"user_id": user_id, "config": a})
+                    if a.get("is_active") is False or a.get("alert_enabled") is False:
+                        continue
+                    query = (a.get("target_area") or a.get("search_query", "")).strip()
+                    if query.startswith("AI Radar:"):
+                        query = query.replace("AI Radar:", "").split("(")[0].strip()
+                    if not query: continue
+                    if query not in mission_map: mission_map[query] = []
+                    mission_map[query].append({"user_id": user_id, "config": {**a, "is_pulse": True}})
 
-            for q, subs in mission_map.items():
-                task_id = await create_task(subs[0]['user_id'], q)
-                await run_unified_scan(q, [], task_id, subs, is_pulse=True)
+            # 🚀 EXECUTE MULTIPLEX MISSIONS
+            for query, subs in mission_map.items():
+                print_safe(f"[MULTIPLEX] Starting Aggregated Scan: '{query}' for {len(subs)} users...")
+                task_id = await create_task(subs[0]['user_id'], query)
+                await run_local_scan(query, [], task_id, subs)
+                print_safe(f"[MULTIPLEX] Aggregated Scan complete for '{query}'.")
+
+            print_safe(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [HEARTBEAT] Cycle complete. Resting for 30 minutes...")
+            await asyncio.sleep(30 * 60)
             
-            await asyncio.sleep(1800) # 30 min pulse
-            if PULSE_COUNT >= 48: PULSE_COUNT = 0
+            if PULSE_COUNT >= 48: PULSE_COUNT = 0 # Full daily cycle reset
         except Exception as e:
             print_safe(f"[HEARTBEAT] Error: {e}")
             await asyncio.sleep(300)
 
 @app.on_event("startup")
 async def startup_event():
-    if os.getenv("LOCAL_SNIPER", "true").lower() == "true":
-        await engine.start()
-        asyncio.create_task(autonomous_pulse_heartbeat())
+    # [BOOT] SINGLETON BOOT: Launch persistent browser
+    await engine.start()
+    
+    # [SILENT] AUTOMATIC PULSE DISABLED (v46.0)
+    # Background scraping only occurs when manually triggered via Sniper Hub GUI.
+    print_safe("[HEARTBEAT] Local Node started in SILENT MODE. Waiting for manual mission triggers...")
+    # asyncio.create_task(autonomous_pulse_heartbeat())
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    # 🛑 GRACEFUL EXIT: Close persistent browser
     await engine.stop()
 
 @app.post("/force-pulse")
-async def force_pulse():
-    asyncio.create_task(autonomous_pulse_heartbeat_once())
+async def force_pulse(target_query: Optional[str] = None):
+    """Manual trigger to bypass the 30-minute timer for testing."""
+    print_safe("[MANUAL OVERDRIVE] Force-triggering autonomous heartbeat cycle...")
+    # This runs the logic in the background
+    asyncio.create_task(autonomous_pulse_heartbeat_once(target_query=target_query))
     return {"status": "pulse_triggered_manually"}
 
-async def autonomous_pulse_heartbeat_once():
+async def autonomous_pulse_heartbeat_once(target_query: Optional[str] = None):
+    """Run the heartbeat logic exactly once (helper for force-pulse)."""
     try:
+        from services.database import (get_user_alerts, get_db)
         db = get_db()
-        users = [{"id": u.id, **u.to_dict()} for u in db.collection("users").stream()]
+        all_users = db.collection("users").stream()
+        users = [{"id": u.id, **u.to_dict()} for u in all_users]
+
+        # [TARGET] AGGREGATION HUB: Group alerts by Neighborhood
         mission_map = {} 
         for user in users:
-            uid = get_effective_user_id(user["id"])
-            alerts = await get_user_alerts(uid)
+            raw_id = user["id"]
+            # [IDENTITY BRIDGE] Ensure manual pulse finds aliased alerts
+            user_id = get_effective_user_id(raw_id)
+            
+            alerts = await get_user_alerts(user_id)
+            if not alerts: continue
+            
             for a in alerts:
-                q = a.get("search_query", "").strip()
-                if q:
-                    if q not in mission_map: mission_map[q] = []
-                    mission_map[q].append({"user_id": uid, "config": a})
-        for q, subs in mission_map.items():
-            task_id = await create_task(subs[0]['user_id'], q)
-            asyncio.create_task(run_unified_scan(q, [], task_id, subs))
+                if a.get("is_active") is False or a.get("alert_enabled") is False:
+                    continue
+                query = (a.get("target_area") or a.get("search_query", "")).strip()
+                if query.startswith("AI Radar:"):
+                    query = query.replace("AI Radar:", "").split("(")[0].strip()
+                if not query: continue
+                if target_query and query.lower() != target_query.lower():
+                    continue
+                if query not in mission_map: mission_map[query] = []
+                mission_map[query].append({"user_id": user_id, "config": {**a, "is_pulse": True}})
+
+        # 🚀 EXECUTE MISSIONS
+        for query, subs in mission_map.items():
+            print_safe(f"[MANUAL] Triggering Aggregated Scan: '{query}'")
+            task_id = await create_task(subs[0]['user_id'], query)
+            await run_local_scan(query, [], task_id, subs)
+            
     except Exception as e:
         print_safe(f"[MANUAL] Pulse Error: {e}")
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Local Node usually runs on 8000 to match the frontend expectations
+    uvicorn.run(app, host="0.0.0.0", port=8000)

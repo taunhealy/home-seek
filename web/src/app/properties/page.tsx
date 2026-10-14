@@ -305,13 +305,12 @@ export default function PropertiesPage() {
   const { user, profile, loading, login, logout, refreshProfile } = useAuth();
   
   // State
-  const [properties, setProperties] = useState(INITIAL_PROPERTIES);
+  const [properties, setProperties] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [anchors, setAnchors] = useState<ProximityAnchor[]>(DEFAULT_ANCHORS);
   const [searchQuery, setSearchQuery] = useState('');
   const [onlyFavorites, setOnlyFavorites] = useState(false);
-  const [favorites, setFavorites] = useState<Record<string, boolean>>({
-    'prop-elm-street': true,
-  });
+  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
 
   // Filters
   const [minBedrooms, setMinBedrooms] = useState<number | 'all'>('all');
@@ -320,11 +319,11 @@ export default function PropertiesPage() {
   const [activeRegion, setActiveRegion] = useState<'all' | 'za' | 'au'>('all');
 
   // Selected State
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(properties[0]?.id || null);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [selectedAnchorId, setSelectedAnchorId] = useState<string | null>(anchors[0]?.id || null);
-  const [modalProperty, setModalProperty] = useState<typeof INITIAL_PROPERTIES[0] | null>(null);
+  const [modalProperty, setModalProperty] = useState<any | null>(null);
 
-  // Load favorites from localStorage
+  // Load favorites and URL query parameters
   useEffect(() => {
     try {
       const saved = localStorage.getItem('homeseek_favorites');
@@ -334,7 +333,73 @@ export default function PropertiesPage() {
     } catch (e) {
       // fallback
     }
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const query = params.get('search');
+      if (query) {
+        setSearchQuery(query);
+      }
+    }
   }, []);
+
+  // Fetch real scanned properties from backend
+  useEffect(() => {
+    async function loadBackendListings() {
+      setIsLoading(true);
+      try {
+        const uid = user?.uid || 'taun_test_user';
+        const res = await fetchWithAuth(`/listings/${uid}`);
+        if (res && res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            const mapped = data.map((d: any, idx: number) => {
+              const isHoutBay = (d.title || '').toLowerCase().includes('hout bay') || 
+                                (d.suburb || '').toLowerCase().includes('hout bay') || 
+                                (d.area || '').toLowerCase().includes('hout bay');
+              const isSeaView = d.view_category === 'Sea' || (d.title || '').toLowerCase().includes('sea view');
+              
+              return {
+                id: d.id || `backend-listing-${idx}`,
+                title: d.title || 'Apartment in Cape Town',
+                address: d.address || (isHoutBay ? 'Hout Bay Central, Cape Town' : 'Cape Town, Western Cape'),
+                price: typeof d.price === 'number' ? d.price : (parseInt(String(d.price || '').replace(/[^0-9]/g, '')) || 10500),
+                currency: 'ZAR',
+                bedrooms: d.bedrooms || 1,
+                bathrooms: d.bathrooms || 1,
+                sqm: d.sqm || 65,
+                image: d.images?.[0] || d.image || (isSeaView 
+                  ? 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80'
+                  : 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80'),
+                lat: d.lat || (isHoutBay ? -34.0450 : -33.9249),
+                lng: d.lng || (isHoutBay ? 18.3580 : 18.4241),
+                timeAgo: d.time_ago || 'Scanned recently',
+                sourceDomain: d.platform === 'Property24' ? 'property24.com' : (d.source_name || 'property24.com'),
+                isSuggested: isSeaView,
+                privacyVerified: isSeaView || (d.privacy_score && d.privacy_score > 60),
+                privacyDetails: {
+                  independentLiving: true,
+                  privateEntrance: true,
+                  privateGarden: false,
+                  noLandlordOnSite: true,
+                  privateHouse: d.property_type === 'House',
+                },
+                description: d.description || `${d.title} • View: ${d.view_category || 'Standard'} • Scanned via HomeSeek Radar`,
+                commuteNotes: isSeaView ? '🌊 Verified Sea View Property in Hout Bay' : undefined,
+                url: d.link || undefined,
+              };
+            });
+            setProperties(mapped);
+          }
+        }
+      } catch (err) {
+        console.warn('Backend listings unreachable:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadBackendListings();
+  }, [user]);
 
   const toggleFavorite = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -388,6 +453,16 @@ export default function PropertiesPage() {
       return true;
     });
   }, [properties, searchQuery, onlyFavorites, favorites, minBedrooms, maxPrice, onlyPrivacyShield, activeRegion]);
+
+  // Auto-sync selected property to first filtered property so map immediately centers on matching search
+  useEffect(() => {
+    if (filteredProperties.length > 0) {
+      const exists = filteredProperties.some(p => p.id === selectedPropertyId);
+      if (!exists || !selectedPropertyId) {
+        setSelectedPropertyId(filteredProperties[0].id);
+      }
+    }
+  }, [filteredProperties, selectedPropertyId]);
 
   const selectedProp = properties.find(p => p.id === selectedPropertyId) || filteredProperties[0] || null;
 
@@ -551,7 +626,36 @@ export default function PropertiesPage() {
 
           {/* Listings Scroll Area */}
           <div className="flex-1 overflow-y-auto divide-y divide-zinc-100 custom-scrollbar">
-            {filteredProperties.length === 0 ? (
+            {isLoading ? (
+              <div className="p-12 text-center space-y-3">
+                <div className="w-8 h-8 border-2 border-zinc-900 border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-xs font-medium text-zinc-500">Checking property radar...</p>
+              </div>
+            ) : properties.length === 0 ? (
+              <div className="p-12 text-center space-y-3">
+                <div className="w-12 h-12 bg-zinc-100 rounded-full flex items-center justify-center mx-auto text-zinc-500">
+                  <MagnifyingGlass size={22} />
+                </div>
+                <h3 className="font-bold text-zinc-900 text-base">Database is Empty</h3>
+                <p className="text-xs text-zinc-500 max-w-sm mx-auto leading-relaxed">
+                  All previous property records have been removed. Your radar will now only discover listings that are verified and currently active on Property24.
+                </p>
+                <div className="pt-2 flex justify-center gap-3">
+                  <a
+                    href="/alerts"
+                    className="px-4 py-2 bg-zinc-900 text-white rounded-xl text-xs font-semibold hover:bg-black transition-colors shadow-sm"
+                  >
+                    Pulse Scan from Alerts
+                  </a>
+                  <a
+                    href="/search"
+                    className="px-4 py-2 bg-white text-zinc-700 border border-zinc-200 rounded-xl text-xs font-semibold hover:bg-zinc-50 transition-colors"
+                  >
+                    Configure Radar Search
+                  </a>
+                </div>
+              </div>
+            ) : filteredProperties.length === 0 ? (
               <div className="p-12 text-center space-y-3">
                 <div className="w-12 h-12 bg-zinc-100 rounded-full flex items-center justify-center mx-auto text-zinc-400">
                   <MagnifyingGlass size={24} />

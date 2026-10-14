@@ -683,7 +683,7 @@ class SniperEngine:
                             let candidate = l?.getAttribute('href') || "";
                             
                             // 🎯 [v90.0] Deep Fidelity Filter: Ensure it's a DIRECT POST (has many digits at the end)
-                            const hasPostId = /\\/posts\\/\\d+/.test(candidate) || /\\/permalink\\/\\d+/.test(candidate) || /\\/user\\/\\d+\\/.+/.test(candidate);
+                            const hasPostId = (new RegExp('/posts/\\\\d+')).test(candidate) || (new RegExp('/permalink/\\\\d+')).test(candidate) || (new RegExp('/user/\\\\d+')).test(candidate);
                             
                             if (candidate && hasPostId) {
                                 link = candidate;
@@ -695,7 +695,7 @@ class SniperEngine:
                         
                         // 2. Property24 / Generic fallback
                         const isP24 = window.location.hostname.includes('property24.com');
-                        const linkReg = isP24 ? /\\/\\d{8,}/ : /\\/.+/;
+                        const linkReg = isP24 ? new RegExp('/\\\\d{8,}') : new RegExp('/.+');
                         if (link === window.location.href || link.includes('/search/?q=') || !linkReg.test(link)) {
                             const trickyLink = f.classList.contains('tricky_link') ? f : f.querySelector('.tricky_link');
                             let candidate = trickyLink?.getAttribute('href') || "";
@@ -734,7 +734,7 @@ class SniperEngine:
                             if (link.includes('/cape-town/')) {
                                 link = link.replace('/cape-town/', '/cape-town/western-cape/');
                             } else {
-                                link = link.replace(/\/to-rent\/([^\/]+)\//, "/to-rent/$1/cape-town/western-cape/");
+                                link = link.replace(new RegExp('/to-rent/([^/]+)/'), "/to-rent/$1/cape-town/western-cape/");
                             }
                         }
                         
@@ -745,8 +745,8 @@ class SniperEngine:
                 }
                 
                 // Fallback to plain text if no cards found
-                const bodyText = document.body.innerText.replace(/\s+/g, ' ').trim();
-                const isDirectP24 = window.location.href.includes('property24.com/to-rent/') && /\/\d{8,}/.test(window.location.href);
+                const bodyText = document.body.innerText.replace(/\\s+/g, ' ').trim();
+                const isDirectP24 = window.location.href.includes('property24.com/to-rent/') && (new RegExp('/\\\\d{8,}')).test(window.location.href);
                 const isDirectFB = window.location.href.includes('facebook.com') && (window.location.href.includes('/posts/') || window.location.href.includes('/permalink/'));
                 
                 if (isDirectP24 || isDirectFB) {

@@ -9,6 +9,7 @@ service-account.json
 !firebase.json
 !.firebaserc
 api/cookies.json
+local_session/
 api/local_session/
 api/debug/
 api/artifacts/
