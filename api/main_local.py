@@ -186,6 +186,22 @@ async def fetch_explore_listings(
         # 1. Standard Filters
         if rental_type == 'long-term':
             if h.get("rental_type") not in ['long-term', None]: continue
+        elif rental_type in ['month-to-month', 'm2m']:
+            is_m2m = h.get("rental_type") in ['month-to-month', 'm2m']
+            if not is_m2m:
+                content = (str(h.get("title", "")) + " " + str(h.get("description", "")) + " " + str(h.get("lease_period", "")) + " " + str(h.get("rental_type", ""))).lower()
+                from scraper.portal_parser import M2M_KEYWORDS
+                if any(k in content for k in M2M_KEYWORDS):
+                    is_m2m = True
+            if not is_m2m: continue
+        elif rental_type == 'short-term':
+            is_st = h.get("rental_type") in ['short-term', 'month-to-month', 'm2m']
+            if not is_st:
+                content = (str(h.get("title", "")) + " " + str(h.get("description", "")) + " " + str(h.get("lease_period", ""))).lower()
+                from scraper.portal_parser import M2M_KEYWORDS
+                if any(k in content for k in M2M_KEYWORDS + ["short term", "short-term", "holiday", "airbnb"]):
+                    is_st = True
+            if not is_st: continue
         elif rental_type == 'pet-sitting':
             # [PET-SIT] 🐾 Specialized Logic: Identify rentals with pet-care obligations
             is_petsit = h.get("rental_type") == 'pet-sitting'
@@ -287,8 +303,9 @@ async def fetch_explore_listings(
             if selected_terms:
                 term_hit = False
                 for term_str in selected_terms:
-                    if term_str == '1':
-                        if any(k in content for k in ["month to month", "month-to-month", "month/month", "monthly", "1 month", "1-month", "flexible", "short-term", "short term"]):
+                    if term_str in ['1', 'm2m', 'month-to-month']:
+                        from scraper.portal_parser import M2M_KEYWORDS
+                        if h.get("rental_type") in ['month-to-month', 'm2m'] or any(k in content for k in M2M_KEYWORDS):
                             term_hit = True
                             break
                     elif term_str == '3':
@@ -909,6 +926,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                         matched_suburbs = [s for s in PREMIUM_SUBURBS if s in req_area]
                                         if not matched_suburbs and req_area:
                                             clean_q = req_area.replace("(must be pet friendly)", "").replace("(pet friendly)", "").strip()
+                                            clean_q = re.sub(r"\b(m2m|month[\s-]to[\s-]month|flexible)\b", "", clean_q, flags=re.I).strip()
                                             if clean_q and clean_q != "any":
                                                 matched_suburbs = [clean_q]
                                     
@@ -947,14 +965,18 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 has_explicit_lease_terms = bool(req_lease and req_lease != "any" and req_lease != ["any"])
                                 if has_explicit_lease_terms:
                                     req_terms = req_lease if isinstance(req_lease, list) else [req_lease]
+                                    title_str = str(l_dict.get("title", "")).lower()
                                     lease_str = str(l_dict.get("lease_period", "")).lower()
                                     desc_str = str(l_dict.get("description", "")).lower()
-                                    combined_lease = f"{lease_str} {desc_str}"
+                                    rental_type_str = str(l_dict.get("rental_type", "")).lower()
+                                    combined_lease = f"{title_str} {lease_str} {desc_str} {rental_type_str}"
                                     
+                                    from scraper.portal_parser import M2M_KEYWORDS
                                     term_keywords = {
-                                        "1": ["month to month", "month-to-month", "m2m", "monthly", "1 month", "flexible"],
-                                        "3": ["3 month", "3-month", "3 months", "short-term", "short term", "flexible"],
-                                        "6": ["6 month", "6-month", "6 months", "half year", "flexible"],
+                                        "1": M2M_KEYWORDS,
+                                        "m2m": M2M_KEYWORDS,
+                                        "3": ["3 month", "3-month", "3 months", "short-term", "short term", "flexible", "quarterly"],
+                                        "6": ["6 month", "6-month", "6 months", "half year", "flexible", "semi-annual"],
                                         "12": ["12 month", "1-year", "1 year", "long-term", "long term", "annual", "yearly"]
                                     }
                                     
@@ -962,6 +984,9 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                     for t in req_terms:
                                         t_key = str(t).lower().replace(" (m2m)", "").replace("m", "").strip()
                                         keywords = term_keywords.get(t_key, [str(t).lower()])
+                                        if l_dict.get("rental_type") in ["month-to-month", "m2m"] and t_key in ["1", "m2m"]:
+                                            matched_any_term = True
+                                            break
                                         if any(k in combined_lease for k in keywords):
                                             matched_any_term = True
                                             break
@@ -984,9 +1009,24 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 # If explicit lease terms (M2M, 3m, 6m) are active, do not let generic category
                                 # mismatch drop listings that meet the requested duration.
                                 if req_type and req_type not in ["all", "any"] and req_type != "looking-for":
-                                    if not has_explicit_lease_terms and l_dict.get("rental_type") != req_type:
-                                        print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
-                                        continue
+                                    if not has_explicit_lease_terms:
+                                        from scraper.portal_parser import M2M_KEYWORDS
+                                        title_str = str(l_dict.get("title", "")).lower()
+                                        lease_str = str(l_dict.get("lease_period", "")).lower()
+                                        desc_str = str(l_dict.get("description", "")).lower()
+                                        combined = f"{title_str} {lease_str} {desc_str} {str(l_dict.get('rental_type', '')).lower()}"
+
+                                        if req_type in ["month-to-month", "m2m"]:
+                                            if l_dict.get("rental_type") not in ["month-to-month", "m2m"] and not any(k in combined for k in M2M_KEYWORDS):
+                                                print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
+                                                continue
+                                        elif req_type == "short-term":
+                                            if l_dict.get("rental_type") not in ["short-term", "month-to-month", "m2m"] and not any(k in combined for k in M2M_KEYWORDS + ["short term", "short-term"]):
+                                                print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
+                                                continue
+                                        elif l_dict.get("rental_type") != req_type:
+                                            print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
+                                            continue
                                 
                                 # [LAYOUT FILTER] Whole vs Shared or Property Type (v90.0)
                                 req_layout = config.get("property_sub_type") or config.get("layout")

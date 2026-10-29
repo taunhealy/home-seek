@@ -593,15 +593,15 @@ class SniperEngine:
                             }
                         });
 
-                        // Extract Next page link
+                        // Extract Next page link from the main results pager
                         let nextPageUrl = '';
-                        const allPagerLinks = Array.from(document.querySelectorAll('.p24_pager a'));
-                        for (const a of allPagerLinks) {
-                            if (a.innerText.includes('Next') && !a.classList.contains('text-muted')) {
-                                const href = a.getAttribute('href');
+                        const mainPager = document.querySelector('.p24_tilesContainer .p24_pager') || document.querySelector('.p24_pager');
+                        if (mainPager) {
+                            const nextA = Array.from(mainPager.querySelectorAll('a')).find(a => a.innerText.includes('Next') && !a.classList.contains('text-muted'));
+                            if (nextA) {
+                                const href = nextA.getAttribute('href');
                                 if (href && !href.startsWith('javascript:')) {
                                     nextPageUrl = href.startsWith('/') ? 'https://www.property24.com' + href : href;
-                                    break;
                                 }
                             }
                         }

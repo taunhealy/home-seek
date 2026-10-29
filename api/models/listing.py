@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
 import datetime as dt
@@ -15,7 +16,7 @@ class RentalListing(BaseModel):
     # Professional Metadata
     property_type: Optional[str] = Field(None, description="Apartment, House, Studio, etc.")
     property_sub_type: str = Field("Whole", description="Whole vs Shared")
-    rental_type: Optional[str] = Field("long-term", description="long-term, short-term, or pet-sitting")
+    rental_type: Optional[str] = Field("long-term", description="long-term, short-term, month-to-month, or pet-sitting")
     lease_period: Optional[str] = Field(None, description="Lease duration, e.g. '6 months renewable'")
     is_direct_landlord: bool = Field(False, description="True if listed by private owner/landlord")
     agency_name: Optional[str] = Field(None, description="Managing real estate agency (e.g. Watchprop, Rawson)")

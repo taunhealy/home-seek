@@ -37,7 +37,7 @@ CANONICAL_P24_URLS = {
     "sunnydale": "https://www.property24.com/to-rent/sunnydale/noordhoek/western-cape/9090",
     
     # Southern Suburbs & City Bowl
-    "atlantic seaboard": "https://www.property24.com/to-rent/atlantic-seaboard/cape-town/western-cape/20",
+    "atlantic seaboard": "https://www.property24.com/to-rent/atlantic-seaboard/cape-town/western-cape/43",
     "city bowl": "https://www.property24.com/to-rent/city-bowl/cape-town/western-cape/22",
     "southern suburbs": "https://www.property24.com/to-rent/southern-suburbs/cape-town/western-cape/25",
     "cape town": "https://www.property24.com/to-rent/cape-town/western-cape/432",
@@ -60,7 +60,7 @@ CANONICAL_P24_URLS = {
     "durbanville": "https://www.property24.com/to-rent/durbanville/western-cape/439",
     "stellenbosch": "https://www.property24.com/to-rent/stellenbosch/western-cape/459",
     "paarl": "https://www.property24.com/to-rent/paarl/western-cape/440",
-    "somerset west": "https://www.property24.com/to-rent/somerset-west/western-cape/442",
+    "somerset west": "https://www.property24.com/to-rent/somerset-west/western-cape/390",
     "hermanus": "https://www.property24.com/to-rent/hermanus/western-cape/400",
 
     # Provinces
@@ -134,12 +134,13 @@ def resolve_p24_url(area_query: str, is_pet_friendly: bool = False, sort_newest:
         return None
         
     clean = str(area_query).strip()
-    for marker in ["(MUST BE PET FRIENDLY)", "PET FRIENDLY", "(PET FRIENDLY)"]:
+    for marker in ["(MUST BE PET FRIENDLY)", "PET FRIENDLY", "(PET FRIENDLY)", "(M2M)", "(MONTH TO MONTH)", "MONTH TO MONTH", "MONTH-TO-MONTH", "M2M"]:
         clean = clean.replace(marker, "").replace(marker.lower(), "")
     clean = clean.strip().lower()
     
-    if not clean:
-        return None
+    # If the user only typed "Month to Month" / "M2M", default search to Western Cape
+    if not clean or clean in ["m2m", "month to month", "month-to-month", "flexible"]:
+        clean = "western cape"
         
     # 1. Check instant static registry
     if clean in CANONICAL_P24_URLS:

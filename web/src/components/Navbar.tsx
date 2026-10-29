@@ -15,7 +15,9 @@ import {
   List,
   X,
   Check,
-  Bell
+  Bell,
+  Sparkle,
+  FileText
 } from '@phosphor-icons/react';
 
 interface NavbarProps {
@@ -29,9 +31,11 @@ interface NavbarProps {
 
 const NAV_ITEMS = [
   { label: 'Home', href: '/', icon: House },
-  { label: 'Search', href: '/search', icon: MagnifyingGlass },
-  { label: 'Properties', href: '/properties', icon: Buildings },
+  { label: 'AI Scout', href: '/discover', icon: Sparkle },
+  { label: 'Reports', href: '/reports', icon: FileText },
   { label: 'Alerts', href: '/alerts', icon: Bell },
+  { label: 'Properties', href: '/properties', icon: Buildings },
+  { label: 'Search', href: '/search', icon: MagnifyingGlass },
   { label: 'Contact', href: '/contact', icon: ChatCircleDots },
 ];
 

@@ -7,8 +7,37 @@ COMMERCIAL_KEYWORDS = [
     "parking", "garage", "storage", "shop", "factory", "business premises"
 ]
 
-SHORT_TERM_PATTERNS = [
+M2M_PATTERNS = [
     (r"\bmonth[\s-]to[\s-]month\b", "Month-to-month"),
+    (r"\bmonth[\s/]month\b", "Month-to-month"),
+    (r"\bm2m\b", "Month-to-month"),
+    (r"\bm[\s-]to[\s-]m\b", "Month-to-month"),
+    (r"\bmonth\s+by\s+month\b", "Month-to-month"),
+    (r"\bmonthly\s+(?:basis|lease|rental|tenancy|agreement|contract|let)\b", "Monthly lease"),
+    (r"\bpay\s+monthly\b", "Monthly lease"),
+    (r"\b1[\s-]month(?:\s+renewable)?\b", "1 Month renewable"),
+    (r"\bone[\s-]month(?:\s+renewable)?\b", "1 Month renewable"),
+    (r"\brolling\s+(?:lease|contract|tenancy|agreement)\b", "Rolling lease"),
+    (r"\bperiodic\s+(?:tenancy|lease)\b", "Periodic tenancy"),
+    (r"\bopen[\s-]ended\s+(?:lease|rental|contract)\b", "Open-ended lease"),
+    (r"\bflexi(?:ble)?\s+(?:lease|stay|terms?|duration|rental|let)\b", "Flexible lease"),
+    (r"\bwinter\s+(?:let|rental|lease|stay)\b", "Winter let (flexible)"),
+    (r"\btemporary\s+(?:stay|lease|rental|sublet|sub-let)\b", "Temporary stay"),
+    (r"\binterim\s+(?:stay|lease|rental)\b", "Interim lease"),
+    (r"\bno\s+long[\s-]term\s+(?:commitment|lease|contract)\b", "Flexible duration"),
+]
+
+M2M_KEYWORDS = [
+    "month to month", "month-to-month", "month/month", "m2m", "m-to-m",
+    "month by month", "monthly lease", "monthly rental", "monthly basis",
+    "monthly tenancy", "pay monthly", "1 month", "1-month", "one month",
+    "rolling lease", "periodic tenancy", "open-ended lease", "flexible lease",
+    "flexible duration", "flexible terms", "flexi lease", "winter let",
+    "winter rental", "winter lease", "temporary stay", "temporary lease",
+    "temporary rental", "interim rental", "sublet", "sub-let", "short-term", "short term"
+]
+
+SHORT_TERM_PATTERNS = [
     (r"\b(?:[1-6]|one|two|three|four|five|six)[\s-]months?(?:\s+renewable)?\b", "1-6 Months"),
     (r"\bavailable\s+(?:for\s+)?(?:only\s+)?(?:up\s+to\s+)?(?:[1-6]|one|two|three|four|five|six)\s+months?\b", "1-6 Months"),
     (r"\bwinter\s+(?:let|rental|lease|stay)\b", "Winter Rental"),
@@ -30,9 +59,17 @@ def is_commercial(title: str, text: str = "") -> bool:
 def extract_lease_term(text: str) -> tuple[str, Optional[str]]:
     """
     Returns (rental_type, lease_period_description).
-    rental_type is either 'short-term' or 'long-term'.
+    rental_type is 'month-to-month', 'short-term', or 'long-term'.
     """
     text_clean = text.lower()
+
+    # 1. First priority: Check for Month-to-Month & Flexible lease indicators
+    for pattern, label in M2M_PATTERNS:
+        match = re.search(pattern, text_clean)
+        if match:
+            return "month-to-month", label
+
+    # 2. Check general short-term patterns
     for pattern, label in SHORT_TERM_PATTERNS:
         match = re.search(pattern, text_clean)
         if match:
@@ -42,7 +79,7 @@ def extract_lease_term(text: str) -> tuple[str, Optional[str]]:
                 continue
             return "short-term", match.group(0).strip().capitalize()
             
-    # Explicit 12-month indicators
+    # 3. Explicit 12-month indicators
     if re.search(r"\b(?:12[\s-]months?|1[\s-]year|annual\s+lease|long[\s-]term)\b", text_clean):
         return "long-term", "12 months"
         

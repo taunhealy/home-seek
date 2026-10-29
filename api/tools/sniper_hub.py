@@ -138,7 +138,7 @@ class SniperHub(ctk.CTk):
         self.rental_type_var = ctk.StringVar(value="Any")
         self.rental_type_seg = ctk.CTkSegmentedButton(
             self.sidebar_frame, 
-            values=["Any", "Long Term", "Short Term", "Room Share"], 
+            values=["Any", "Month-to-Month", "Long Term", "Short Term", "Room Share"], 
             variable=self.rental_type_var
         )
         self.rental_type_seg.pack(fill="x", padx=15, pady=(0, 8))
@@ -151,7 +151,7 @@ class SniperHub(ctk.CTk):
         r1 = ctk.CTkFrame(lease_frame, fg_color="transparent")
         r1.pack(fill="x", pady=(0, 4))
         self.term_m2m_var = ctk.BooleanVar(value=False)
-        self.cb_m2m = ctk.CTkCheckBox(r1, text="M2M (1m)", variable=self.term_m2m_var, font=ctk.CTkFont(size=11))
+        self.cb_m2m = ctk.CTkCheckBox(r1, text="M2M (1m / Flex)", variable=self.term_m2m_var, font=ctk.CTkFont(size=11))
         self.cb_m2m.pack(side="left", expand=True, fill="x")
 
         self.term_3m_var = ctk.BooleanVar(value=False)
@@ -259,6 +259,16 @@ class SniperHub(ctk.CTk):
             hover_color="#db2777"
         )
         self.btn_quick_seapoint.pack(fill="x", padx=15, pady=(0, 6))
+
+        self.btn_quick_m2m = ctk.CTkButton(
+            self.sidebar_frame, 
+            text="🗓️ Snipe: Month-to-Month (M2M)", 
+            command=self.quick_m2m, 
+            fg_color="#06b6d4", 
+            hover_color="#0891b2",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        self.btn_quick_m2m.pack(fill="x", padx=15, pady=(0, 6))
 
         self.btn_force_hunt = ctk.CTkButton(
             self.sidebar_frame, 
@@ -624,6 +634,8 @@ if __name__ == '__main__':
 
             rental_type_map = {
                 "Any": None,
+                "Month-to-Month": "month-to-month",
+                "M2M": "month-to-month",
                 "Long Term": "long-term",
                 "Short Term": "short-term",
                 "Room Share": "room-share"
@@ -631,7 +643,7 @@ if __name__ == '__main__':
             rental_type = rental_type_map.get(self.rental_type_var.get())
 
             selected_terms = []
-            if self.term_m2m_var.get(): selected_terms.append("1")
+            if self.term_m2m_var.get() or rental_type == "month-to-month": selected_terms.append("1")
             if self.term_3m_var.get(): selected_terms.append("3")
             if self.term_6m_var.get(): selected_terms.append("6")
             if self.term_12m_var.get(): selected_terms.append("12")
@@ -680,6 +692,8 @@ if __name__ == '__main__':
 
             self.log_text(f"🎯 MISSION DISPATCHED: {keyword} @ {source_name} ({max_pages} pages)")
             self.log_text(f"   [FILTERS] NoAgents: {no_agents} | Terms: {lease_terms_disp} | Category: {self.rental_type_var.get()} | AutoOpen: {auto_open}")
+            if "1" in selected_terms or rental_type == "month-to-month":
+                self.log_text("   [M2M ACTIVE] Matching: month-to-month, m2m, monthly lease, 1-month renewable, flexible lease, rolling lease, winter let, temporary stay")
             self.log_text(f"   [SPECS] Budget: R{min_price or 0}-R{max_price or 'Any'} | Beds: {beds_val} | Baths: {baths_val} | Pets: {pet_friendly} | Depth: {max_pages}p")
         except Exception as err:
             self.log_text(f"❌ Error preparing mission: {err}")
@@ -730,6 +744,16 @@ if __name__ == '__main__':
         self.keyword_entry.delete(0, "end")
         self.keyword_entry.insert(0, "Sea Point")
         self.source_var.set("Huis Huis")
+        self.manual_snipe()
+
+    def quick_m2m(self):
+        """One-click mission for Month-to-Month / Flexible rentals."""
+        self.rental_type_var.set("Month-to-Month")
+        self.term_m2m_var.set(True)
+        if not self.keyword_entry.get().strip():
+            self._set_keyword("Western Cape")
+        self.log_text("🗓️ Configured mission for Month-to-Month (M2M) rentals.")
+        self.log_text("   [TARGET KEYWORDS] Scanning for: month-to-month, m2m, monthly lease, 1-month renewable, flexible lease, rolling lease, winter let, temporary stay")
         self.manual_snipe()
 
     def trigger_manual_heartbeat(self):

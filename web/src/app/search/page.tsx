@@ -66,6 +66,14 @@ export default function SearchPage() {
   const [bedrooms, setBedrooms] = useState('2');
   const [bathrooms, setBathrooms] = useState('1');
 
+  // AI Lifestyle & Desires State
+  const [aiPrompt, setAiPrompt] = useState(
+    "Remote web designer working from home. I enjoy mountain biking, trail running, walking on the beach, flying my FPV drone, and working from a cafe twice a week. I'd like to date and have spontaneous chats with interesting people, occasionally have a friend over, and listen to/make music."
+  );
+  const [aiPersonalTastes, setAiPersonalTastes] = useState(
+    "Acoustic privacy for music, safe storage for my mountain bike, unpretentious vibe, easy walk to lively Kloof Street cafes, decent natural light."
+  );
+
   // Load saved criteria from local storage on mount
   useEffect(() => {
     try {
@@ -190,6 +198,9 @@ export default function SearchPage() {
         require_no_one_above: requireNoOneAbove,
         pet_friendly: mustPets,
         commute_anchors: anchors,
+        prompt: aiPrompt,
+        personal_tastes: aiPersonalTastes,
+        areas: selectedAreas,
         alert_enabled: true,
         is_active: true,
         trigger_initial_scan: true,
@@ -364,7 +375,75 @@ export default function SearchPage() {
             </div>
           </section>
 
-          {/* 2. Living Autonomy & Privacy Shield */}
+          {/* 2. AI Lifestyle & Personalized Desires Input */}
+          <section className="bg-gradient-to-br from-white via-emerald-50/20 to-teal-50/30 border border-emerald-500/30 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 flex items-center justify-center font-bold">
+                    <Sparkle size={18} weight="fill" />
+                  </div>
+                  <h2 className="text-lg font-bold text-zinc-950">
+                    AI Personalized Desires & Lifestyle Ranking
+                  </h2>
+                </div>
+                <p className="text-xs text-zinc-600 mt-1 max-w-2xl">
+                  Tell the AI your real day-to-day habits (remote work, music acoustic needs, outdoor hobbies, cafe routines, dating). 
+                  Our daily 11:00 AM SAST cron uses this prompt to rank your Top 10 matches and deliver actionable insights.
+                </p>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                Gemini AI Advisor
+              </span>
+            </div>
+
+            <div className="space-y-4 pt-2">
+              <div>
+                <label className="block text-xs font-semibold text-zinc-800 uppercase tracking-wider mb-2">
+                  Your Desires & Lifestyle Prompt (Freeform Text)
+                </label>
+                <textarea
+                  rows={3}
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  placeholder="e.g. Remote web designer working from home. Mountain biking, trail running, walking on the beach, flying FPV drone, working from cafe twice a week, dating..."
+                  className="w-full bg-white border border-zinc-200 rounded-2xl px-4 py-3 text-sm text-zinc-900 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-zinc-400"
+                />
+                <span className="text-[11px] text-zinc-500 mt-1 block">Describe your weekly routine, hobbies, and social/dating desires.</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-800 uppercase tracking-wider mb-2">
+                  Personal Tastes & Hard Dealbreakers
+                </label>
+                <textarea
+                  rows={2}
+                  value={aiPersonalTastes}
+                  onChange={(e) => setAiPersonalTastes(e.target.value)}
+                  placeholder="e.g. Thick walls for making music, space for bike storage, secure parking, quiet street..."
+                  className="w-full bg-white border border-zinc-200 rounded-2xl px-4 py-3 text-sm text-zinc-900 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-zinc-400"
+                />
+                <span className="text-[11px] text-zinc-500 mt-1 block">Specific nuances used to score acoustic privacy and filter out flawed options.</span>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <span className="text-xs text-zinc-500 flex items-center gap-1.5">
+                  <CheckCircle size={14} className="text-emerald-600" weight="fill" />
+                  Included in your Daily 11:00 AM Top 10 Intelligence Reports
+                </span>
+                <button
+                  type="button"
+                  onClick={() => router.push('/discover')}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800 underline underline-offset-4 cursor-pointer"
+                >
+                  <span>Open Dedicated Live AI Scout View</span>
+                  <ArrowRight size={14} weight="bold" />
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* 3. Living Autonomy & Privacy Shield */}
           <section className="bg-white border border-zinc-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xs">
             <div className="flex items-center justify-between">
               <div>

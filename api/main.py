@@ -44,7 +44,7 @@ os.environ["HTTPS_PROXY"] = ""
 os.environ["http_proxy"] = ""
 os.environ["https_proxy"] = ""
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List, Union, Dict, Any
 from pydantic import BaseModel
@@ -122,6 +122,18 @@ def get_effective_user_id(requested_id: str, uid: str = "R4R2k7z2XAQGgRjB57ctZcO
         return "taun_test_user"
     return requested_id
 
+@app.on_event("startup")
+async def on_startup():
+    from services.scheduler import scheduler
+    scheduler.start()
+    print_safe("[STARTUP] HomeSeek Core & Daily 11:00 AM SAST Scheduler started.")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    from services.scheduler import scheduler
+    scheduler.stop()
+    print_safe("[SHUTDOWN] Scheduler safely stopped.")
+
 @app.get("/user-profile/{user_id}")
 async def fetch_user_profile(user_id: str):
     # LOCAL: We default to the master tester UID for dev convenience
@@ -186,6 +198,22 @@ async def fetch_explore_listings(
         # 1. Standard Filters
         if rental_type == 'long-term':
             if h.get("rental_type") not in ['long-term', None]: continue
+        elif rental_type in ['month-to-month', 'm2m']:
+            is_m2m = h.get("rental_type") in ['month-to-month', 'm2m']
+            if not is_m2m:
+                content = (str(h.get("title", "")) + " " + str(h.get("description", "")) + " " + str(h.get("lease_period", "")) + " " + str(h.get("rental_type", ""))).lower()
+                from scraper.portal_parser import M2M_KEYWORDS
+                if any(k in content for k in M2M_KEYWORDS):
+                    is_m2m = True
+            if not is_m2m: continue
+        elif rental_type == 'short-term':
+            is_st = h.get("rental_type") in ['short-term', 'month-to-month', 'm2m']
+            if not is_st:
+                content = (str(h.get("title", "")) + " " + str(h.get("description", "")) + " " + str(h.get("lease_period", ""))).lower()
+                from scraper.portal_parser import M2M_KEYWORDS
+                if any(k in content for k in M2M_KEYWORDS + ["short term", "short-term", "holiday", "airbnb"]):
+                    is_st = True
+            if not is_st: continue
         elif rental_type == 'pet-sitting':
             # [PET-SIT] 🐾 Specialized Logic: Identify rentals with pet-care obligations
             is_petsit = h.get("rental_type") == 'pet-sitting'
@@ -287,8 +315,9 @@ async def fetch_explore_listings(
             if selected_terms:
                 term_hit = False
                 for term_str in selected_terms:
-                    if term_str == '1':
-                        if any(k in content for k in ["month to month", "month-to-month", "month/month", "monthly", "1 month", "1-month", "flexible", "short-term", "short term"]):
+                    if term_str in ['1', 'm2m', 'month-to-month']:
+                        from scraper.portal_parser import M2M_KEYWORDS
+                        if h.get("rental_type") in ['month-to-month', 'm2m'] or any(k in content for k in M2M_KEYWORDS):
                             term_hit = True
                             break
                     elif term_str == '3':
@@ -488,6 +517,185 @@ async def get_active_snipers():
     except Exception as e:
         # Fallback for local dev if index isn't ready
         return {"Muizenberg": 12, "Sea Point": 8, "Kalk Bay": 5}
+
+@app.post("/ai-scout")
+async def run_ai_scout_endpoint(req: dict):
+    """
+    Scouts real-time listings on Property24/PrivateProperty and uses AI to rank
+    the best options based on freeform user desires, standard form options,
+    and personal tastes/hobbies.
+    """
+    try:
+        from services.ai_scout import scout_engine, ScoutPreferences
+        prefs = ScoutPreferences(
+            prompt=req.get("prompt"),
+            personal_tastes=req.get("personal_tastes"),
+            areas=req.get("areas", ["Gardens", "Tamboerskloof"]),
+            min_price=req.get("min_price"),
+            max_price=req.get("max_price", 18000),
+            min_bedrooms=req.get("min_bedrooms"),
+            max_bedrooms=req.get("max_bedrooms"),
+            bathrooms=req.get("bathrooms"),
+            is_furnished=req.get("is_furnished"),
+            property_type=req.get("property_type", "Apartment"),
+            must_have_parking=req.get("must_have_parking", False),
+            pet_friendly=req.get("pet_friendly")
+        )
+        result = await scout_engine.scout_and_rank(prefs)
+        return {"status": "success", "result": result.dict()}
+    except Exception as e:
+        print_safe(f"[AI SCOUT ERROR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/save-ai-alert")
+async def save_ai_alert_endpoint(req: dict, background_tasks: BackgroundTasks):
+    """
+    Saves a persistent AI Scout Alert with cron schedule (Daily at 11am SAST),
+    standard portal options, and freeform lifestyle tastes. Optionally triggers
+    an immediate first run so the user gets an instant report.
+    """
+    try:
+        user_id = req.get("user_id", "taun_test_user")
+        dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+        effective_id = get_effective_user_id(user_id, dummy_uid)
+        
+        db = get_db()
+        now_sast = dt.datetime.now(dt.timezone(dt.timedelta(hours=2)))
+        
+        # Determine alert ID
+        alert_title = req.get("title") or f"{', '.join(req.get('areas', ['Cape Town']))} Scout"
+        aid_seed = f"{effective_id}_{alert_title}".lower()
+        alert_id = req.get("id") or hashlib.md5(aid_seed.encode()).hexdigest()[:12]
+        
+        alert_payload = {
+            "id": alert_id,
+            "user_id": effective_id,
+            "title": alert_title,
+            "prompt": req.get("prompt", ""),
+            "personal_tastes": req.get("personal_tastes", ""),
+            "areas": req.get("areas", ["Gardens", "Tamboerskloof"]),
+            "min_price": req.get("min_price"),
+            "max_price": req.get("max_price", 18000),
+            "min_bedrooms": req.get("min_bedrooms"),
+            "property_type": req.get("property_type", "Apartment"),
+            "is_furnished": req.get("is_furnished"),
+            "must_have_parking": req.get("must_have_parking", False),
+            "is_active": req.get("is_active", True),
+            "frequency": req.get("frequency", "daily_11am"),
+            "notify_whatsapp": req.get("notify_whatsapp", True),
+            "notify_email": req.get("notify_email", True),
+            "whatsapp_number": req.get("whatsapp_number"),
+            "notification_email": req.get("notification_email"),
+            "updated_at": firestore.SERVER_TIMESTAMP,
+            "created_at": req.get("created_at") or now_sast.isoformat()
+        }
+        
+        db.collection("users").document(effective_id).collection("alerts").document(alert_id).set(alert_payload, merge=True)
+        print_safe(f"[API] Saved AI Scout Alert {alert_id} for user {effective_id}")
+        
+        # Trigger immediate execution in background if requested
+        if req.get("run_immediately", True):
+            from services.scheduler import scheduler
+            background_tasks.add_task(scheduler.generate_alert_report, effective_id, alert_payload)
+            
+        return {"status": "success", "alert_id": alert_id, "message": "Alert saved and scheduled for 11:00 AM SAST daily"}
+    except Exception as e:
+        print_safe(f"[SAVE AI ALERT ERROR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/reports/{user_id}")
+async def get_user_reports_endpoint(user_id: str):
+    """Fetches all generated AI reports and Top 10 rankings for a user."""
+    try:
+        dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+        effective_id = get_effective_user_id(user_id, dummy_uid)
+        db = get_db()
+        docs = db.collection("users").document(effective_id).collection("reports")\
+                 .order_by("created_at", direction=firestore.Query.DESCENDING)\
+                 .limit(30).stream()
+        reports = [{"id": d.id, **d.to_dict()} for d in docs]
+        return {"status": "success", "reports": reports}
+    except Exception as e:
+        print_safe(f"[GET REPORTS ERROR] {e}")
+        return {"status": "success", "reports": []}
+
+@app.post("/trigger-report/{user_id}/{alert_id}")
+async def trigger_report_now(user_id: str, alert_id: str, background_tasks: BackgroundTasks):
+    """Manually triggers an on-demand report generation for a specific alert."""
+    try:
+        dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+        effective_id = get_effective_user_id(user_id, dummy_uid)
+        db = get_db()
+        doc = db.collection("users").document(effective_id).collection("alerts").document(alert_id).get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Alert not found")
+            
+        alert_data = {"alert_id": alert_id, **doc.to_dict()}
+        from services.scheduler import scheduler
+        report = await scheduler.generate_alert_report(effective_id, alert_data)
+        return {"status": "success", "report": report}
+    except Exception as e:
+        print_safe(f"[TRIGGER REPORT ERROR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/realview/rectify")
+async def realview_rectify_endpoint(url: str, k1: float = -0.22, k2: float = 0.06, fov_crop: float = 1.25):
+    """RealView™ de-distortion: converts 0.5x ultra-wide photo to human eye natural perspective."""
+    try:
+        from services.lens_rectifier import fetch_image_bytes, rectify_image_bytes
+        raw_bytes = fetch_image_bytes(url)
+        if not raw_bytes:
+            raise HTTPException(status_code=400, detail="Could not fetch image")
+        rect_bytes = rectify_image_bytes(raw_bytes, k1=k1, k2=k2, fov_crop=fov_crop)
+        return Response(content=rect_bytes, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+    except Exception as e:
+        print_safe(f"[REALVIEW ERROR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class RealViewAnalyzeRequest(BaseModel):
+    image_url: str
+    room_type: str = "bedroom"
+
+@app.post("/api/realview/analyze")
+async def realview_analyze_endpoint(req: RealViewAnalyzeRequest):
+    """RealView™ Multimodal AI spatial reality check (Pro Feature)."""
+    try:
+        from services.lens_rectifier import analyze_spatial_reality_with_ai
+        analysis = await analyze_spatial_reality_with_ai(req.image_url, req.room_type)
+        return {"status": "success", "analysis": analysis}
+    except Exception as e:
+        print_safe(f"[REALVIEW ANALYZE ERROR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/listing-photos")
+async def get_listing_photos(url: str):
+    """Fetches all high-res photos for a listing detail page."""
+    try:
+        from services.lens_rectifier import fetch_image_bytes
+        import urllib.request
+        import re
+
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+                "Referer": "https://www.property24.com/"
+            }
+        )
+        html = urllib.request.urlopen(req, timeout=10).read().decode('utf-8', errors='ignore')
+        photos = re.findall(r'https://images\.prop24\.com/(\d+)/[^\s"\'<>]+', html)
+        
+        unique_urls = []
+        seen = set()
+        for pid in photos:
+            if pid not in seen:
+                seen.add(pid)
+                unique_urls.append(f"https://images.prop24.com/{pid}/Crop600x400")
+
+        return {"status": "success", "photos": unique_urls[:15]}
+    except Exception as e:
+        print_safe(f"[LISTING PHOTOS ERROR] {e}")
+        return {"status": "error", "photos": []}
 
 @app.get("/tasks/{task_id}")
 async def fetch_task_status(task_id: str):
@@ -909,6 +1117,7 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                         matched_suburbs = [s for s in PREMIUM_SUBURBS if s in req_area]
                                         if not matched_suburbs and req_area:
                                             clean_q = req_area.replace("(must be pet friendly)", "").replace("(pet friendly)", "").strip()
+                                            clean_q = re.sub(r"\b(m2m|month[\s-]to[\s-]month|flexible)\b", "", clean_q, flags=re.I).strip()
                                             if clean_q and clean_q != "any":
                                                 matched_suburbs = [clean_q]
                                     
@@ -947,14 +1156,18 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 has_explicit_lease_terms = bool(req_lease and req_lease != "any" and req_lease != ["any"])
                                 if has_explicit_lease_terms:
                                     req_terms = req_lease if isinstance(req_lease, list) else [req_lease]
+                                    title_str = str(l_dict.get("title", "")).lower()
                                     lease_str = str(l_dict.get("lease_period", "")).lower()
                                     desc_str = str(l_dict.get("description", "")).lower()
-                                    combined_lease = f"{lease_str} {desc_str}"
+                                    rental_type_str = str(l_dict.get("rental_type", "")).lower()
+                                    combined_lease = f"{title_str} {lease_str} {desc_str} {rental_type_str}"
                                     
+                                    from scraper.portal_parser import M2M_KEYWORDS
                                     term_keywords = {
-                                        "1": ["month to month", "month-to-month", "m2m", "monthly", "1 month", "flexible"],
-                                        "3": ["3 month", "3-month", "3 months", "short-term", "short term", "flexible"],
-                                        "6": ["6 month", "6-month", "6 months", "half year", "flexible"],
+                                        "1": M2M_KEYWORDS,
+                                        "m2m": M2M_KEYWORDS,
+                                        "3": ["3 month", "3-month", "3 months", "short-term", "short term", "flexible", "quarterly"],
+                                        "6": ["6 month", "6-month", "6 months", "half year", "flexible", "semi-annual"],
                                         "12": ["12 month", "1-year", "1 year", "long-term", "long term", "annual", "yearly"]
                                     }
                                     
@@ -962,6 +1175,9 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                     for t in req_terms:
                                         t_key = str(t).lower().replace(" (m2m)", "").replace("m", "").strip()
                                         keywords = term_keywords.get(t_key, [str(t).lower()])
+                                        if l_dict.get("rental_type") in ["month-to-month", "m2m"] and t_key in ["1", "m2m"]:
+                                            matched_any_term = True
+                                            break
                                         if any(k in combined_lease for k in keywords):
                                             matched_any_term = True
                                             break
@@ -984,9 +1200,24 @@ async def run_local_scan(query: str, source_ids: List[str], task_id: str, subscr
                                 # If explicit lease terms (M2M, 3m, 6m) are active, do not let generic category
                                 # mismatch drop listings that meet the requested duration.
                                 if req_type and req_type not in ["all", "any"] and req_type != "looking-for":
-                                    if not has_explicit_lease_terms and l_dict.get("rental_type") != req_type:
-                                        print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
-                                        continue
+                                    if not has_explicit_lease_terms:
+                                        from scraper.portal_parser import M2M_KEYWORDS
+                                        title_str = str(l_dict.get("title", "")).lower()
+                                        lease_str = str(l_dict.get("lease_period", "")).lower()
+                                        desc_str = str(l_dict.get("description", "")).lower()
+                                        combined = f"{title_str} {lease_str} {desc_str} {str(l_dict.get('rental_type', '')).lower()}"
+
+                                        if req_type in ["month-to-month", "m2m"]:
+                                            if l_dict.get("rental_type") not in ["month-to-month", "m2m"] and not any(k in combined for k in M2M_KEYWORDS):
+                                                print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
+                                                continue
+                                        elif req_type == "short-term":
+                                            if l_dict.get("rental_type") not in ["short-term", "month-to-month", "m2m"] and not any(k in combined for k in M2M_KEYWORDS + ["short term", "short-term"]):
+                                                print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
+                                                continue
+                                        elif l_dict.get("rental_type") != req_type:
+                                            print_safe(f"[RECON] [REJECT] Category Mismatch ({l_dict.get('rental_type')} vs {req_type})")
+                                            continue
                                 
                                 # [LAYOUT FILTER] Whole vs Shared or Property Type (v90.0)
                                 req_layout = config.get("property_sub_type") or config.get("layout")

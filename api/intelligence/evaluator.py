@@ -320,6 +320,7 @@ class PropertyEvaluator:
             "property_type": listing.get("property_type", "Apartment"),
             "property_sub_type": listing.get("property_sub_type", "Whole"),
             "rental_type": listing.get("rental_type", "long-term"),
+            "lease_period": listing.get("lease_period"),
             "is_direct_landlord": is_direct,
             "managing_agency": agency_name or ("Direct Landlord" if is_direct else "Unknown"),
             "agency_google_rating": f"{agency_rating}★" if agency_rating else "N/A",
@@ -449,6 +450,8 @@ class PropertyEvaluator:
         pros.append(f"Location Convenience: Walking distance to local cafes, groceries, and transit routes in {address}.")
         if "water included" in full_text:
             pros.append("Included Utilities: Water included in base rental price.")
+        if listing.get("rental_type") in ["month-to-month", "short-term"] or any(k in full_text for k in ["month to month", "month-to-month", "m2m", "flexible lease", "rolling lease", "winter let"]):
+            pros.append(f"Flexible Lease Duration: {listing.get('lease_period') or 'Month-to-month / flexible'} lease terms (low lock-in commitment).")
 
         # Cons & Genuine Hidden Costs
         # Only flag if EXPLICITLY stated in the listing or confirmed by property data
@@ -537,6 +540,17 @@ class PropertyEvaluator:
             if "fibre" in c or "fiber" in c:
                 has_fibre = any(k in full_text for k in ["fibre", "fiber", "high speed internet", "wifi"])
                 return has_fibre if target_present else (not has_fibre)
+
+            # Month-to-Month / Flexible Lease Check
+            if any(k in c for k in ["month to month", "month-to-month", "m2m", "flexible lease", "short term", "short-term"]):
+                from scraper.portal_parser import M2M_KEYWORDS
+                has_m2m = (listing.get("rental_type") in ["month-to-month", "short-term"]) or any(k in full_text for k in M2M_KEYWORDS)
+                return has_m2m if target_present else (not has_m2m)
+
+            # Strict 12-Month Check
+            if any(k in c for k in ["12 month", "12-month", "1 year", "long-term", "annual"]):
+                is_12m = (listing.get("rental_type") == "long-term") or any(k in full_text for k in ["12 month", "1-year", "annual", "12 months"])
+                return is_12m if target_present else (not is_12m)
 
             # Clean Fallback
             clean_k = re.sub(r"\(.*?\)", "", c).strip()
