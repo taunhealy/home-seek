@@ -1,3 +1,4 @@
+from services.building_reviews import extract_building_name, get_building_reviews
 import os
 import json
 import re
@@ -47,6 +48,58 @@ class ScoutListingRank(BaseModel):
     noise_reason: Optional[str] = None
     vision_audit_available: bool = False
     vision_audit: Optional[Dict[str, Any]] = None
+    agency_name: Optional[str] = None
+    agency_rating: Optional[float] = None
+    agency_review_count: Optional[int] = None
+    agency_risk_level: Optional[str] = "low"
+    agency_flags: List[str] = Field(default_factory=list)
+    agency_complaint_sample: Optional[str] = None
+    agency_url: Optional[str] = None
+    agency_hellopeter_rating: Optional[float] = None
+    price_value_pct: Optional[int] = Field(None, description="Percentage over or under fair market median (e.g. -12 for 12% underpriced)")
+    floor_number: Optional[str] = None
+    has_lift: Optional[str] = Field("unknown", description="'yes', 'no', 'unknown', or 'N/A (Ground)'")
+    building_name: Optional[str] = None
+    pro_report: Optional[Dict[str, Any]] = None
+
+AREA_MEDIAN_BASELINES: Dict[str, Dict[float, int]] = {
+    "gardens": {1.0: 16500, 2.0: 22000, 0.0: 13000},
+    "tamboerskloof": {1.0: 16800, 2.0: 23000, 0.0: 13500},
+    "sea point": {1.0: 17500, 2.0: 25000, 0.0: 14000},
+    "green point": {1.0: 17500, 2.0: 25000, 0.0: 14000},
+    "hout bay": {1.0: 12500, 2.0: 17000, 0.0: 9500},
+    "fish hoek": {1.0: 9500, 2.0: 13500, 0.0: 7500},
+    "capri": {1.0: 9500, 2.0: 13500, 0.0: 7500}
+}
+
+def calculate_price_value_pct(price: Optional[int], bedrooms: Optional[float], area: str, all_listings: Optional[List[Dict[str, Any]]] = None) -> Optional[int]:
+    """Calculates whether a rental is underpriced or overpriced compared to the area median."""
+    if not price or price <= 0:
+        return None
+    
+    beds = round(bedrooms or 1.0)
+    clean_area = area.lower().strip()
+    
+    # 1. Dynamic median from live candidate sample if available
+    if all_listings:
+        sample_prices = [
+            l["price"] for l in all_listings 
+            if l.get("price") and round(l.get("bedrooms") or 1.0) == beds
+        ]
+        if len(sample_prices) >= 3:
+            sample_prices.sort()
+            mid = len(sample_prices) // 2
+            median_price = sample_prices[mid]
+            return round(((price - median_price) / median_price) * 100)
+
+    # 2. Fallback to Cape Town market median baselines
+    for reg_area, bed_map in AREA_MEDIAN_BASELINES.items():
+        if reg_area in clean_area:
+            median_price = bed_map.get(beds, bed_map.get(1.0, 16500))
+            return round(((price - median_price) / median_price) * 100)
+
+    median_price = 16500
+    return round(((price - median_price) / median_price) * 100)
 
 # High-decibel arterial road corridors in Cape Town & general urban noise traps
 NOISE_TRAP_CORRIDORS: Dict[str, str] = {
@@ -62,7 +115,12 @@ NOISE_TRAP_CORRIDORS: Dict[str, str] = {
     "philip kgosana": "High-speed De Waal Drive freeway corridor",
     "de waal": "High-speed multi-lane transit arterial",
     "strand st": "High-decibel multi-lane CBD transit artery",
-    "somerset rd": "Major bus/taxi and nightlife arterial corridor"
+    "somerset rd": "Major bus/taxi and nightlife arterial corridor",
+    "scott": "Directly adjacent to the elevated Jutland Bridge / De Waal Drive freeway flyover with continuous high-decibel traffic roar",
+    "scotts": "Directly adjacent to the elevated Jutland Bridge / De Waal Drive freeway flyover with continuous high-decibel traffic roar",
+    "jutland": "High-speed 4-lane elevated freeway bridge connecting De Waal Drive to Mill Street",
+    "roeland": "Heavy transit artery connecting City Bowl to Philip Kgosana freeway",
+    "hatfield": "Immediate proximity to Mill St dual-carriageway and arterial transit corridor"
 }
 
 def analyze_acoustic_risk(address: str, description: str = "") -> Dict[str, Any]:
@@ -165,8 +223,15 @@ def scrape_portal_listings(area: str, max_price: Optional[int] = None, min_price
         baths_m = re.search(r'title="Bathrooms"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S)
         baths = float(baths_m.group(1)) if baths_m else None
 
-        park_m = re.search(r'title="Parking Spaces"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S)
+        park_m = re.search(r'title="Parking Spaces"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S) or \
+                 re.search(r'title="Garages"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S)
         park = int(park_m.group(1)) if park_m else None
+        
+        # Textual parking fallback
+        if park is None:
+            txt_lower = f"{title} {desc}".lower()
+            if any(k in txt_lower for k in ["undercover parking", "secure parking", "parking bay", "garage", "carport"]):
+                park = 1
 
         avail_m = re.search(r'class="p24_badgeSupplemental">([^<]+)</span>', b)
         avail = avail_m.group(1).strip() if avail_m else None
@@ -181,6 +246,16 @@ def scrape_portal_listings(area: str, max_price: Optional[int] = None, min_price
             furn = False
         elif "fully furnished" in lower_txt or "furnished" in lower_txt:
             furn = True
+
+        # Agency & Landlord reputation lookup
+        agency_m = re.search(r'title="Estate Agency profile for ([^"]+)"', b) or \
+                   re.search(r'class="p24_branding"[^>]*title="([^"]+)"', b) or \
+                   re.search(r'class="[^"]*p24_brandingImage[^"]*"[^>]*alt="([^"]+)"', b) or \
+                   re.search(r'title="Managed by ([^"]+)"', b)
+        agency_raw = agency_m.group(1).strip() if agency_m else None
+        
+        from services.agency_reputation import lookup_agency_reputation
+        rep = lookup_agency_reputation(agency_raw, area=area)
 
         listings.append({
             "id": f"p24-{lid}",
@@ -197,9 +272,82 @@ def scrape_portal_listings(area: str, max_price: Optional[int] = None, min_price
             "description": desc,
             "image": img,
             "url": link,
-            "area": area
+            "area": area,
+            "agency_name": rep.get("canonical_name"),
+            "agency_rating": rep.get("google_rating"),
+            "agency_review_count": rep.get("google_review_count"),
+            "agency_risk_level": rep.get("risk_level", "low"),
+            "agency_flags": rep.get("flags", []),
+            "agency_complaint_sample": rep.get("recent_complaint_sample"),
+            "agency_url": rep.get("google_reviews_url"),
+            "agency_hellopeter_rating": rep.get("hellopeter_rating")
         })
     return listings
+
+def enrich_candidate_listing(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Inspects listing detail page to extract exact parking spaces, security, and sqm if missing."""
+    url = item.get("url")
+    if not url:
+        return item
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": "https://www.property24.com/"}
+        )
+        html = urllib.request.urlopen(req, timeout=4).read().decode("utf-8", errors="ignore")
+        
+        # Check parking icons
+        park_m = re.search(r'title="Parking Spaces"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', html, re.S) or \
+                 re.search(r'title="Garages"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', html, re.S)
+        if park_m:
+            item["parking"] = int(park_m.group(1))
+
+        txt = html.lower()
+        if any(k in txt for k in ["undercover parking", "basement parking", "secure parking", "garage", "carport", "parking bay"]):
+            if not item.get("parking"):
+                item["parking"] = 1
+            item["has_secure_parking"] = True
+
+        if any(k in txt for k in ["24-hour security", "24hr security", "manned security"]):
+            item["has_24hr_security"] = True
+
+        if not item.get("sqm"):
+            schema_size = re.search(r'"floorSize"\s*:\s*\{[^}]*"value"\s*:\s*(\d+)', html)
+            if schema_size:
+                item["sqm"] = int(schema_size.group(1))
+            else:
+                size_m = re.search(r'class="p24_size"[^>]*>.*?<span>(\d+)\s*m²</span>', html, re.S) or \
+                         re.search(r'title="Floor Size"[^>]*>.*?<span>(\d+)\s*m²</span>', html, re.S) or \
+                         re.search(r'(\d+)\s*m²\s*(?:apartment|flat|unit|floor|property)', html, re.I)
+                if size_m:
+                    item["sqm"] = int(size_m.group(1))
+
+        # Check Agency Name & Reputation
+        if not item.get("agency_name"):
+            agency_schema = re.search(r'\{[^{}]*"@type"\s*:\s*"(?:RealEstateAgent|Organization)"[^{}]*"name"\s*:\s*"([^"]+)"', html)
+            if agency_schema:
+                item["agency_name"] = agency_schema.group(1).strip()
+            else:
+                m_agency = re.search(r'"agencyName"\s*:\s*"([^"]+)"', html) or \
+                           re.search(r'class="[^"]*p24_agencyLogoName[^"]*"[^>]*>\s*<span>([^<]+)</span>', html, re.S) or \
+                           re.search(r'alt="Property to rent by ([^"]+)"', html)
+                if m_agency:
+                    item["agency_name"] = m_agency.group(1).strip()
+
+        if item.get("agency_name") and not item.get("agency_rating"):
+            from services.agency_reputation import lookup_agency_reputation
+            rep = lookup_agency_reputation(item["agency_name"])
+            if rep:
+                item["agency_rating"] = rep.get("google_rating")
+                item["agency_review_count"] = rep.get("google_review_count")
+                item["agency_risk_level"] = rep.get("risk_level", "low")
+                item["agency_flags"] = rep.get("flags", [])
+                item["agency_complaint_sample"] = rep.get("recent_complaint_sample")
+                item["agency_url"] = rep.get("google_reviews_url")
+                item["agency_hellopeter_rating"] = rep.get("hellopeter_rating")
+    except Exception:
+        pass
+    return item
 
 class AIScoutEngine:
     def __init__(self):
@@ -254,6 +402,9 @@ class AIScoutEngine:
         candidates = filtered if len(filtered) >= 3 else (raw_listings or [])
         # Limit to top 12 candidates for the LLM
         candidates = candidates[:12]
+        for c in candidates:
+            if c.get("parking") is None or not c.get("sqm"):
+                enrich_candidate_listing(c)
 
         llm = self._get_llm()
         if not llm or not candidates:
@@ -382,7 +533,20 @@ Return strictly valid JSON matching this structure:
                         verdict=verdict_txt,
                         noise_risk=acoustic_audit["risk"],
                         noise_reason=acoustic_audit["reason"] if acoustic_audit["risk"] == "high" else None,
-                        vision_audit_available=(prefs.tier == "pro")
+                        vision_audit_available=(prefs.tier == "pro"),
+                        agency_name=base.get("agency_name"),
+                        agency_rating=base.get("agency_rating"),
+                        agency_review_count=base.get("agency_review_count"),
+                        agency_risk_level=base.get("agency_risk_level", "low"),
+                        agency_flags=base.get("agency_flags", []),
+                        agency_complaint_sample=base.get("agency_complaint_sample"),
+                        agency_url=base.get("agency_url"),
+                        agency_hellopeter_rating=base.get("agency_hellopeter_rating"),
+                        price_value_pct=calculate_price_value_pct(base.get("price"), base.get("bedrooms"), base.get("area", "Gardens"), candidates),
+                        floor_number=base.get("floor_number"),
+                        has_lift=base.get("has_lift", "unknown"),
+                        building_name=base.get("building_name"),
+                        pro_report=base.get("pro_report")
                     ))
 
             # Sort strictly by fit_score descending so noise traps drop to the bottom
@@ -418,11 +582,58 @@ Return strictly valid JSON matching this structure:
             if c.get("sqm") and c["sqm"] >= 55:
                 score += 6
 
+            pros_list = [f"Located in prime {c['area']}", f"Rent of R {price_val:,} pm is in target range"]
+            if c.get("has_secure_parking") or (c.get("parking") and c["parking"] > 0):
+                pros_list.append("Secure undercover parking bay included")
+            if c.get("has_24hr_security"):
+                pros_list.append("24-hour building security")
+
             cons_list = []
-            if not c.get("parking"):
-                cons_list.append("Street parking only - verify security")
+            if not c.get("parking") and not c.get("has_secure_parking"):
+                cons_list.append("Street parking only — verify on-street security")
+
+            # Aparthotel / Hotel Scheme Evaluation
+            combined_desc = f"{c.get('title', '')} {c.get('address', '')} {c.get('description', '')} {c.get('building_name', '')}".lower()
+            is_aparthotel = any(k in combined_desc for k in ["blackbrick", "aparthotel", "apartment hotel"])
+
+            # Realistic spatial & WFH sizing evaluation
+            sqm = c.get("sqm")
+            if sqm:
+                if sqm < 45:
+                    explanation = f"Compact {sqm} m² unit in {c['area']}. Clean starter flat, but cramped for dedicated remote work — fitting a workstation and gear will crowd the living space."
+                    cons_list.append(f"⚠️ Compact {sqm} m² footprint — constrained for full WFH desk and gear storage")
+                    score -= 8
+                elif sqm <= 52:
+                    explanation = f"Modest {sqm} m² 1-bedroom in {c['area']}. Functional living area, but tight for a dedicated music workstation or sports gear without multi-purpose furniture."
+                    cons_list.append(f"⚠️ Tight {sqm} m² floor plan — limited clearance for creative workstation and sports gear")
+                    score -= 4
+                elif sqm <= 65:
+                    explanation = f"Well-proportioned {sqm} m² 1-bedroom in {c['area']}. Generous floor plan with ample dedicated room for a full WFH desk setup and gear storage without cluttering the lounge."
+                    pros_list.append(f"Generous {sqm} m² layout with dedicated work-from-home space")
+                    score += 6
+                else:
+                    explanation = f"Expansive {sqm} m² layout in {c['area']}. Superior acoustic volume and abundant dedicated zones for music production, monitors, and gear."
+                    pros_list.append(f"Expansive {sqm} m² floor plan with dedicated zones for work and gear")
+                    score += 10
             else:
-                cons_list.append("Check parking bay access (tandem vs exclusive)")
+                explanation = f"Well-positioned {c.get('bedrooms', 1)} bedroom in {c['area']} at R {price_val:,} pm with easy access to cafes and trails."
+
+            if is_aparthotel:
+                c["building_name"] = "BlackBrick Gardens (Apartment Hotel)"
+                c["has_lift"] = "yes"
+                explanation = f"Design-led {sqm or 48} m² serviced suite in BlackBrick Gardens (Apartment Hotel). Outstanding on-site amenities (Rosetta coffee, co-working club, rooftop pool, 100% backup generator), but operates as a hybrid hotel with high transient tourist turnover, no private sports gear storage, and weekend rooftop social noise."
+                pros_list = [
+                    "100% Load shedding proof (industrial generator backup)",
+                    "On-site Rosetta Roastery, co-working club & rooftop pool",
+                    "Designer turnkey interior with 24/7 digital concierge"
+                ]
+                cons_list = [
+                    "⚠️ Hybrid apartment hotel — high transient tourist turnover & hallway noise",
+                    "⚠️ Compact hotel layout — zero private storage for MTB or sports gear",
+                    "Street parking only — no dedicated secure bay included",
+                    "Weekend social noise from rooftop bar and ground-floor restaurant"
+                ]
+                verdict_text = "Lifestyle Aparthotel: Great for networking & lock-up-and-go remote work, but unsuited for quiet acoustic isolation or bulky sports gear."
 
             # Zero-cost acoustic check
             acoustic = analyze_acoustic_risk(c.get("address", ""), c.get("description", ""))
@@ -452,13 +663,26 @@ Return strictly valid JSON matching this structure:
                 area=c["area"],
                 rank=idx + 1,
                 fit_score=score,
-                short_explanation=f"Well-positioned {c.get('bedrooms', 1)} bedroom in {c['area']} at R {price_val:,} pm with good space for work-from-home and gear.",
-                pros=[f"Located in {c['area']}", f"Rent of R {price_val:,} is within range", "Easy access to cafes & trails"],
+                short_explanation=explanation,
+                pros=pros_list,
                 cons=cons_list,
                 verdict=verdict_text,
                 noise_risk=acoustic["risk"],
                 noise_reason=acoustic["reason"] if acoustic["risk"] == "high" else None,
-                vision_audit_available=(prefs.tier == "pro")
+                vision_audit_available=(prefs.tier == "pro"),
+                agency_name=c.get("agency_name"),
+                agency_rating=c.get("agency_rating"),
+                agency_review_count=c.get("agency_review_count"),
+                agency_risk_level=c.get("agency_risk_level", "low"),
+                agency_flags=c.get("agency_flags", []),
+                agency_complaint_sample=c.get("agency_complaint_sample"),
+                agency_url=c.get("agency_url"),
+                agency_hellopeter_rating=c.get("agency_hellopeter_rating"),
+                price_value_pct=calculate_price_value_pct(c.get("price"), c.get("bedrooms"), c.get("area", "Gardens"), candidates),
+                floor_number=c.get("floor_number"),
+                has_lift=c.get("has_lift", "unknown"),
+                building_name=c.get("building_name"),
+                pro_report=c.get("pro_report")
             ))
 
         # Re-sort deterministically by score so noise-penalized listings drop to the bottom

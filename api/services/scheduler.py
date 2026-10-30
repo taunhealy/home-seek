@@ -74,14 +74,15 @@ class DailyScoutScheduler:
                 alerts_docs = db.collection("users").document(force_user_id).collection("alerts").where("is_active", "==", True).stream()
                 all_alerts = [{"user_id": force_user_id, "alert_id": d.id, **d.to_dict()} for d in alerts_docs]
             else:
-                # Collection group query across all users' alerts
-                alerts_docs = db.collection_group("alerts").where("is_active", "==", True).stream()
+                # Query across users' alerts collection without requiring composite indexes
                 all_alerts = []
-                for d in alerts_docs:
-                    data = d.to_dict()
-                    # extract user_id from document reference path: users/{uid}/alerts/{aid}
-                    parent_user_id = d.reference.parent.parent.id if d.reference.parent.parent else data.get("user_id")
-                    all_alerts.append({"user_id": parent_user_id, "alert_id": d.id, **data})
+                users = db.collection("users").stream()
+                for u in users:
+                    alerts_docs = db.collection("users").document(u.id).collection("alerts").stream()
+                    for d in alerts_docs:
+                        data = d.to_dict()
+                        if data.get("is_active") is not False:
+                            all_alerts.append({"user_id": u.id, "alert_id": d.id, **data})
 
             print_safe(f"[SCHEDULER] Found {len(all_alerts)} active alerts to scout.")
 
