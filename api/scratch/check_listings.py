@@ -1,39 +1,10 @@
-import firebase_admin
-from firebase_admin import credentials, firestore
-import os
-from pathlib import Path
-from dotenv import load_dotenv
+import sys
+sys.path.append('api')
+from main import get_db, get_effective_user_id
+from google.cloud import firestore
 
-# Load env
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(env_path)
-
-def get_db():
-    try:
-        firebase_admin.get_app()
-    except ValueError:
-        creds_path = os.path.join(os.path.dirname(__file__), '..', 'service-account.json')
-        if os.path.exists(creds_path):
-            cred = credentials.Certificate(creds_path)
-            firebase_admin.initialize_app(cred)
-        else:
-            firebase_admin.initialize_app()
-    return firestore.client()
-
-def check_recent_listings():
-    db = get_db()
-    user_id = "taun_test_user"
-    
-    print(f"Checking listings for user: {user_id}")
-    listings_ref = db.collection("users").document(user_id).collection("listings").order_by("created_at", direction=firestore.Query.DESCENDING).limit(10).stream()
-    
-    for l in listings_ref:
-        data = l.to_dict()
-        print(f"ID: {l.id}")
-        print(f"Title: {data.get('title')}")
-        print(f"Is Looking For: {data.get('is_looking_for')}")
-        print(f"Match Reason: {data.get('match_reason')}")
-        print("-" * 20)
-
-if __name__ == "__main__":
-    check_recent_listings()
+eff = get_effective_user_id('taun_test_user', 'R4R2k7z2XAQGgRjB57ctZcOkEbp2')
+docs = list(get_db().collection('users').document(eff).collection('reports').order_by('created_at', direction=firestore.Query.DESCENDING).limit(1).stream())
+if docs:
+    for x in docs[0].to_dict().get('ranked_listings', []):
+        print(f"Rank {x.get('rank')}: {x.get('title')} | {x.get('price')} | {x.get('address')} | {x.get('url')}")

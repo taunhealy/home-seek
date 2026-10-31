@@ -569,27 +569,19 @@ export default function PropertiesPage() {
                 <span>Privacy Shield Verified</span>
               </button>
 
-              <button
-                onClick={() => setMinBedrooms(minBedrooms === 2 ? 'all' : 2)}
-                className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap ${
-                  minBedrooms === 2
-                    ? 'bg-zinc-900 text-white border-zinc-900'
-                    : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                }`}
-              >
-                2+ Beds
-              </button>
-
-              <button
-                onClick={() => setMinBedrooms(minBedrooms === 4 ? 'all' : 4)}
-                className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap ${
-                  minBedrooms === 4
-                    ? 'bg-zinc-900 text-white border-zinc-900'
-                    : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                }`}
-              >
-                4+ Beds
-              </button>
+              {[1, 2, 3, 4].map((beds) => (
+                <button
+                  key={beds}
+                  onClick={() => setMinBedrooms(minBedrooms === beds ? 'all' : beds)}
+                  className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
+                    minBedrooms === beds
+                      ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs font-bold'
+                      : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                  }`}
+                >
+                  {beds}+ Beds
+                </button>
+              ))}
 
               <button
                 onClick={() => setActiveRegion(activeRegion === 'za' ? 'all' : 'za')}

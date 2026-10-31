@@ -226,19 +226,17 @@ async def fetch_explore_listings(
         if sqm_floor and (l_sqm is None or l_sqm < sqm_floor): continue
         if sqm_ceil and (l_sqm is not None and l_sqm > sqm_ceil): continue
 
-        # [BEDROOMS]
-        if bedrooms and bedrooms != 'any':
+        # [BEDROOMS] Always minimum-based (1+, 2+, 3+, etc.)
+        if bedrooms and str(bedrooms).lower() not in ['any', 'all', '']:
             l_beds = h.get("bedrooms")
             if l_beds is None:
                 continue
-            if bedrooms.endswith("+"):
-                try:
-                    if l_beds < float(bedrooms[:-1]): continue
-                except ValueError: pass
-            else:
-                try:
-                    if l_beds < float(bedrooms): continue
-                except ValueError: pass
+            try:
+                min_b = float(str(bedrooms).replace("+", "").strip())
+                if l_beds < min_b:
+                    continue
+            except (ValueError, TypeError):
+                pass
 
         # [BATHROOMS]
         if bathrooms and bathrooms != 'any':

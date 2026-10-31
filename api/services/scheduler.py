@@ -114,13 +114,24 @@ class DailyScoutScheduler:
             target_area = alert.get("target_area") or alert.get("search_query") or "Cape Town"
             areas = [a.strip() for a in target_area.split(",") if a.strip()]
 
+        raw_b = alert.get("min_bedrooms")
+        parsed_min_b = None
+        if raw_b:
+            if isinstance(raw_b, list):
+                parsed_min_b = float(raw_b[0]) if raw_b else None
+            else:
+                try:
+                    parsed_min_b = float(str(raw_b).replace("+", "").strip())
+                except Exception:
+                    parsed_min_b = None
+
         prefs = ScoutPreferences(
             prompt=alert.get("prompt") or alert.get("search_query") or "Looking for best rental matching my lifestyle",
             personal_tastes=alert.get("personal_tastes") or alert.get("lifestyle_prompt") or "",
             areas=areas,
             min_price=alert.get("min_price"),
             max_price=alert.get("max_price") or 20000,
-            min_bedrooms=float(alert.get("min_bedrooms")) if alert.get("min_bedrooms") else None,
+            min_bedrooms=parsed_min_b,
             property_type=alert.get("property_type", "Apartment"),
             is_furnished=alert.get("is_furnished"),
             must_have_parking=bool(alert.get("must_have_parking", False))
@@ -131,6 +142,18 @@ class DailyScoutScheduler:
 
         # Slice top 10 listings
         top_10 = scout_res.ranked_listings[:10]
+        ranked_dicts = [l.dict() for l in top_10]
+        
+        # Populate commute & location proximities if anchors are set
+        anchors = alert.get("commute_anchors") or alert.get("location_anchors") or []
+        if anchors:
+            try:
+                from services.commute_service import calculate_listing_proximities
+                for item in ranked_dicts:
+                    addr = item.get("address") or item.get("location") or item.get("title") or "Cape Town"
+                    item["location_proximity"] = await calculate_listing_proximities(addr, anchors)
+            except Exception as e:
+                print_safe(f"[SCHEDULER PROXIMITY ERROR] {e}")
 
         report_id = f"rep_{now_sast.strftime('%Y%m%d_%H%M%S')}_{alert.get('alert_id', 'gen')[:8]}"
         report_data = {
@@ -139,14 +162,16 @@ class DailyScoutScheduler:
             "alert_id": alert.get("alert_id"),
             "alert_title": alert.get("title") or f"{', '.join(prefs.areas)} Daily Scout",
             "created_at": now_sast.isoformat(),
-            "created_at_timestamp": firestore.SERVER_TIMESTAMP,
+            "created_at_timestamp": int(now_sast.timestamp()),
             "areas_scouted": prefs.areas,
             "total_found": scout_res.total_found,
             "overall_summary": scout_res.overall_summary,
             "user_prompt": prefs.prompt,
             "personal_tastes": prefs.personal_tastes,
             "max_price": prefs.max_price,
-            "ranked_listings": [l.dict() for l in top_10]
+            "ranked_listings": ranked_dicts,
+            "commute_anchors": anchors,
+            "location_anchors": anchors
         }
 
         # 1. Save Report in User's Private Subcollection

@@ -355,9 +355,10 @@ def lookup_agency_reputation(agency_name: Optional[str], area: Optional[str] = N
       3. If no API key or network error, fallback to curated offline registry.
       4. If unlisted, return dynamic Google Search URL with neutral baseline.
     """
-    if not agency_name or str(agency_name).strip() == "" or "direct landlord" in str(agency_name).lower():
+    lower_name = str(agency_name or "").lower().strip()
+    if not agency_name or lower_name in ["", "none", "null"] or any(k in lower_name for k in ["direct landlord", "private listing", "private landlord", "private owner", "private", "landlord", "owner"]):
         return {
-            "canonical_name": "Direct Landlord (Private Owner)",
+            "canonical_name": "Direct Landlord",
             "google_rating": None,
             "google_review_count": 0,
             "google_reviews_url": None,
@@ -367,7 +368,7 @@ def lookup_agency_reputation(agency_name: Optional[str], area: Optional[str] = N
             "web_reviews": [],
             "is_direct_landlord": True,
             "flags": ["No agent lease administration fees. Deal directly with property owner."],
-            "risk_level": "neutral",
+            "risk_level": "direct_landlord",
             "source": "direct_landlord"
         }
 

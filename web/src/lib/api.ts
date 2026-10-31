@@ -1,14 +1,28 @@
 import { auth } from './firebase';
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_CLOUD_API || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+export function getApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_CLOUD_API) {
+    return process.env.NEXT_PUBLIC_CLOUD_API.replace(/\/$/, '');
+  }
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    return 'http://localhost:8000';
+  }
+  return 'http://127.0.0.1:8000';
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 export async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
   const user = auth.currentUser;
   const token = user ? await user.getIdToken() : null;
 
-  // Normalize endpoint and construct URL
+  // Dynamically resolve base URL matching current browser origin
+  const base = getApiBaseUrl();
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${cleanEndpoint}`;
+  const url = endpoint.startsWith('http') ? endpoint : `${base}${cleanEndpoint}`;
 
   // Robust Header Merging (v128.1)
   const headers = new Headers(options.headers);
@@ -17,7 +31,6 @@ export async function fetchWithAuth(endpoint: string, options: RequestInit = {})
   }
 
   try {
-    console.log(`[DEBUG] Fetching: ${url}`);
     const response = await fetch(url, {
       ...options,
       headers,
@@ -31,7 +44,7 @@ export async function fetchWithAuth(endpoint: string, options: RequestInit = {})
     return response;
   } catch (error: any) {
     if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      console.warn(`[API] Backend unreachable at ${url}. Is the backend API running on ${API_BASE_URL}?`);
+      console.warn(`[API] Backend unreachable at ${url}. Is the backend API running on port 8000?`);
     } else {
       console.error(`[API ERROR] Failed to fetch from ${url}:`, error);
     }

@@ -322,9 +322,10 @@ export default function DiscoverPage() {
                     onChange={(e) => setBedrooms(e.target.value)}
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm text-zinc-900 focus:outline-none focus:border-zinc-900 focus:bg-white transition-all"
                   >
-                    <option value="1">1 Bedroom (or Bachelor)</option>
-                    <option value="2">2 Bedrooms</option>
+                    <option value="1">1+ Bedrooms (or Bachelor)</option>
+                    <option value="2">2+ Bedrooms</option>
                     <option value="3">3+ Bedrooms</option>
+                    <option value="4">4+ Bedrooms</option>
                   </select>
                 </div>
 

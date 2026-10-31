@@ -156,12 +156,13 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
         clean_address = clean_address.split(",")[0].strip()
 
     # 6. Direct Landlord Detection
-    is_landlord = bool(
+    has_explicit_private = bool(
         card.get("isLandlord") 
         or "plt=3" in link 
         or "listed_by_owner" in full_text 
-        or "landlord" in full_text.lower()
+        or re.search(r"\b(?:private landlord|rent directly from owner|direct from owner|no agency fees|private lease|managed directly by owner)\b", full_text, re.I)
     )
+    is_landlord = has_explicit_private
 
     # 7. Lease Period & Rental Type
     rental_type, lease_period = extract_lease_term(f"{title} {excerpt} {full_text}")
@@ -240,6 +241,9 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
             if re.search(rf"\b{re.escape(ag)}\b", f"{title} {excerpt} {full_text}", re.I):
                 agency_raw = ag.capitalize()
                 break
+
+    if agency_raw:
+        is_landlord = False
 
     from services.agency_reputation import lookup_agency_reputation
     rep = lookup_agency_reputation(None if is_landlord else agency_raw, area=clean_address)

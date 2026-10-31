@@ -76,7 +76,8 @@ app = FastAPI(title="HomeSeek Local Elite Node", version="24.0.0")
 # Enable CORS (Production Lockdown v126.0)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://homeseekza.web.app", "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["https://homeseekza.web.app", "http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -240,19 +241,17 @@ async def fetch_explore_listings(
         if sqm_floor and (l_sqm is None or l_sqm < sqm_floor): continue
         if sqm_ceil and (l_sqm is not None and l_sqm > sqm_ceil): continue
 
-        # [BEDROOMS]
-        if bedrooms and bedrooms != 'any':
+        # [BEDROOMS] Always minimum-based (1+, 2+, 3+, etc.)
+        if bedrooms and str(bedrooms).lower() not in ['any', 'all', '']:
             l_beds = h.get("bedrooms")
             if l_beds is None:
                 continue
-            if bedrooms.endswith("+"):
-                try:
-                    if l_beds < float(bedrooms[:-1]): continue
-                except ValueError: pass
-            else:
-                try:
-                    if l_beds < float(bedrooms): continue
-                except ValueError: pass
+            try:
+                min_b = float(str(bedrooms).replace("+", "").strip())
+                if l_beds < min_b:
+                    continue
+            except (ValueError, TypeError):
+                pass
 
         # [BATHROOMS]
         if bathrooms and bathrooms != 'any':
@@ -679,6 +678,17 @@ class TopupCreditsRequest(BaseModel):
     pack: str = "starter_5"
     credits: int = 5
 
+
+
+class UpdateLocationsRequest(BaseModel):
+    report_id: str
+    user_id: str
+    anchors: List[Dict[str, Any]]
+
+class VerifyAvailabilityRequest(BaseModel):
+    report_id: str
+    user_id: str
+
 @app.post("/api/reports/pro-audit")
 async def generate_pro_audit_endpoint(req: ProAuditRequest):
     """
@@ -795,23 +805,141 @@ async def topup_credits_endpoint(req: TopupCreditsRequest):
         print_safe(f"[TOPUP ERROR] {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+
+@app.get("/api/places/autocomplete")
+async def autocomplete_places_endpoint(q: str = "", limit: int = 8):
+    """
+    Provides real-time Google Maps / Places autocomplete suggestions for destinations and anchors.
+    Uses Google Places Autocomplete API when GOOGLE_PLACES_API_KEY is available,
+    with instant fallback to curated Cape Town places of interest.
+    """
+    try:
+        from services.places_service import search_places
+        results = await search_places(q, limit=limit)
+        return {
+            "status": "success",
+            "query": q,
+            "suggestions": results
+        }
+    except Exception as e:
+        print_safe(f"[PLACES AUTOCOMPLETE ERROR] {e}")
+        return {"status": "success", "query": q, "suggestions": []}
+
+@app.post("/api/reports/update-locations")
+async def update_report_locations_endpoint(req: UpdateLocationsRequest):
+    """
+    Updates the user's custom location anchors for a report and recalculates
+    proximity and travel times (driving, walking, cycling) for all listings.
+    """
+    try:
+        from services.commute_service import calculate_listing_proximities
+        db = get_db()
+        dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+        effective_id = get_effective_user_id(req.user_id, dummy_uid)
+        
+        rep_ref = db.collection("users").document(effective_id).collection("reports").document(req.report_id)
+        rep_doc = rep_ref.get()
+        if not rep_doc.exists:
+            rep_ref = db.collection("users").document("taun_test_user").collection("reports").document(req.report_id)
+            rep_doc = rep_ref.get()
+            if not rep_doc.exists:
+                raise HTTPException(status_code=404, detail="Report not found")
+                
+        rep_data = rep_doc.to_dict()
+        ranked = rep_data.get("ranked_listings", [])
+        
+        # Recalculate proximity for each listing
+        for item in ranked:
+            address = item.get("address") or item.get("title") or "Gardens, Cape Town"
+            item["location_proximity"] = await calculate_listing_proximities(address, req.anchors)
+            
+        rep_ref.update({
+            "ranked_listings": ranked,
+            "location_anchors": req.anchors,
+            "commute_anchors": req.anchors
+        })
+        
+        return {
+            "status": "success",
+            "location_anchors": req.anchors,
+            "listings": ranked,
+            "message": f"Updated proximity to {len(req.anchors)} locations across {len(ranked)} listings."
+        }
+    except Exception as e:
+        print_safe(f"[UPDATE LOCATIONS ERROR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/reports/verify-availability")
+async def verify_availability_endpoint(req: VerifyAvailabilityRequest):
+    """
+    Checks real-time availability of all listings in a report against Property24/Gumtree.
+    Identifies listings that are removed (404), Under Offer, or Let Agreed.
+    Updates the report in Firestore and returns updated listing availability data.
+    """
+    try:
+        from services.availability_checker import verify_report_listings_availability
+        db = get_db()
+        dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+        effective_id = get_effective_user_id(req.user_id, dummy_uid)
+        
+        rep_ref = db.collection("users").document(effective_id).collection("reports").document(req.report_id)
+        rep_doc = rep_ref.get()
+        if not rep_doc.exists:
+            rep_ref = db.collection("users").document("taun_test_user").collection("reports").document(req.report_id)
+            rep_doc = rep_ref.get()
+            if not rep_doc.exists:
+                raise HTTPException(status_code=404, detail="Report not found")
+                
+        rep_data = rep_doc.to_dict()
+        ranked = rep_data.get("ranked_listings", [])
+        
+        result = await verify_report_listings_availability(ranked)
+        
+        # Persist updated availability status to Firestore
+        rep_ref.update({
+            "ranked_listings": result["listings"],
+            "last_availability_check": result["checked_at"]
+        })
+        
+        return {
+            "status": "success",
+            "active_count": result["active_count"],
+            "unavailable_count": result["unavailable_count"],
+            "unavailable_ids": result["unavailable_ids"],
+            "listings": result["listings"],
+            "checked_at": result["checked_at"]
+        }
+    except Exception as e:
+        print_safe(f"[VERIFY AVAILABILITY ERROR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+_listing_photos_cache: Dict[str, List[str]] = {}
+
 @app.get("/api/listing-photos")
 async def get_listing_photos(url: str):
     """Fetches high-res interior/exterior photos for a listing, filtering out agent headshots and logos."""
-    try:
-        from services.lens_rectifier import fetch_image_bytes
-        import urllib.request
-        import re
+    if not url:
+        return {"status": "error", "photos": []}
 
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-                "Referer": "https://www.property24.com/"
-            }
-        )
-        html = urllib.request.urlopen(req, timeout=10).read().decode('utf-8', errors='ignore')
-        
+    # Check in-memory cache
+    if url in _listing_photos_cache and _listing_photos_cache[url]:
+        return {"status": "success", "photos": _listing_photos_cache[url]}
+
+    clean_url = url
+    if clean_url.startswith("/"):
+        clean_url = f"https://www.property24.com{clean_url}"
+
+    try:
+        import re
+        from services.p24_client import p24_client
+
+        # Polite rate-limited fetch with disk/RAM caching & circuit breaking
+        html = await p24_client.fetch_html(clean_url, cache_ttl_seconds=86400 * 7)
+        if not html:
+            return {"status": "success", "photos": []}
+
         # 1. Target genuine property gallery containers and lightbox elements
         lightbox_ids = re.findall(r'data-(?:lightbox-src|image-url)="https://images\.prop24\.com/(\d+)', html)
         listing_img_ids = re.findall(r'alt="Listing number:[^"]*"[^>]*(?:lazy-src|src)="https://images\.prop24\.com/(\d+)', html)
@@ -826,7 +954,7 @@ async def get_listing_photos(url: str):
 
         # Fallback if specific gallery attributes are missing
         if not candidate_ids:
-            all_ids = re.findall(r'https://images\.prop24\.com/(\d+)/[^\s"\'<>]+', html)
+            all_ids = re.findall(r"""https://images\.prop24\.com/(\d+)/[^\s"'<>]+""", html)
             for pid in all_ids:
                 if pid not in seen:
                     seen.add(pid)
@@ -834,10 +962,12 @@ async def get_listing_photos(url: str):
 
         # 2. Strict blacklisting of agent headshots, profile avatars, and agency logos
         agent_pids = set(re.findall(r'(?:agentPhoto|RealEstateAgent|agent-profile|agent-image|js_agentPhoto)[^>]*https://images\.prop24\.com/(\d+)', html))
-        agent_pids.update(re.findall(r'https://images\.prop24\.com/(\d+)/[^\s"\'<>]*(?:UpperCrop|Fit450|Fit200|Fit150|Crop200x200)', html))
-        
+        agent_pids.update(re.findall(r"""https://images\.prop24\.com/(\d+)/[^\s"'<>]*(?:UpperCrop|Fit450|Fit200|Fit150|Crop200x200)""", html))
+
         clean_photos = [f"https://images.prop24.com/{pid}/Crop600x400" for pid in candidate_ids if pid not in agent_pids]
-        return {"status": "success", "photos": clean_photos[:18]}
+        if clean_photos:
+            _listing_photos_cache[url] = clean_photos[:24]
+        return {"status": "success", "photos": clean_photos[:24]}
     except Exception as e:
         print_safe(f"[LISTING PHOTOS ERROR] {e}")
         return {"status": "error", "photos": []}
@@ -1693,6 +1823,29 @@ async def autonomous_pulse_heartbeat_once(target_query: Optional[str] = None):
             
     except Exception as e:
         print_safe(f"[MANUAL] Pulse Error: {e}")
+
+@app.get("/api/acoustics/hotspots")
+async def get_acoustic_hotspots():
+    """Returns calibrated Cape Town noise hotspots, transit corridors, and sanctuary zones."""
+    from services.acoustic_registry import NOISE_HOTSPOTS, SANCTUARY_ZONES
+    return {
+        "status": "success",
+        "hotspots": NOISE_HOTSPOTS,
+        "sanctuary_zones": SANCTUARY_ZONES
+    }
+
+@app.post("/api/acoustics/evaluate")
+async def evaluate_property_acoustics(payload: dict):
+    """Computes acoustic audit and sound shadow attenuation for given coordinates and building attributes."""
+    from services.acoustic_registry import compute_property_acoustic_audit
+    lat = float(payload.get("lat", -33.9323))
+    lng = float(payload.get("lng", 18.4108))
+    floor_level = payload.get("floor_level", "")
+    text_desc = payload.get("description", "")
+    title = payload.get("title", "")
+    address = payload.get("address", "")
+    audit = compute_property_acoustic_audit(lat, lng, floor_level, text_desc, title, address)
+    return {"status": "success", "acoustic_audit": audit}
 
 if __name__ == "__main__":
     import uvicorn

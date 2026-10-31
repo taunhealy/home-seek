@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   MagnifyingGlass, 
@@ -25,12 +25,19 @@ import {
   ArrowsClockwise,
   Info,
   X,
-  SpeakerSimpleSlash
+  SpeakerSimpleSlash,
+  NavigationArrow,
+  Ruler,
+  Compass,
+  CircleNotch
 } from '@phosphor-icons/react';
 import { useAuth } from '@/lib/auth-context';
 import { Navbar } from '@/components/Navbar';
 import { fetchWithAuth } from '@/lib/api';
 import { AreaPillsInput } from '@/components/AreaPillsInput';
+import { PlaceAutocompleteInput, PlaceSuggestion } from '@/components/PlaceAutocompleteInput';
+import { PropertyMap, PropertyMapItem, ProximityAnchor, ProximityFilterConfig } from '@/components/PropertyMap';
+import { resolveLocationCoords, getDistanceKm } from '@/lib/geo';
 
 interface CommuteAnchor {
   id: string;
@@ -42,29 +49,183 @@ interface CommuteAnchor {
 }
 
 const PRESET_ANCHORS = [
-  { label: 'Work (Amazon River Club HQ)', target_place: 'Amazon River Club, Observatory', mins: 30, km: 20 },
-  { label: 'Cape Town CBD / Foreshore', target_place: 'Cape Town City Bowl', mins: 25, km: 15 },
-  { label: 'UCT Main Campus', target_place: 'University of Cape Town, Rondebosch', mins: 20, km: 12 },
-  { label: 'Camps Bay Beach', target_place: 'Camps Bay Promenade', mins: 20, km: 15 },
+  { label: 'Work (Amazon River Club HQ)', place: 'Amazon River Club, Observatory', mins: 25, km: 15, mode: 'driving', icon: '💼' },
+  { label: 'Kloof Street Cafes', place: 'Kloof Street, Gardens, Cape Town', mins: 10, km: 5, mode: 'walking', icon: '☕' },
+  { label: 'Sea Point Promenade', place: 'Sea Point Promenade, Beach Road', mins: 12, km: 5, mode: 'bicycling', icon: '🌊' },
+  { label: 'Cape Town CBD', place: 'Cape Town City Bowl', mins: 15, km: 8, mode: 'driving', icon: '🏙️' },
+  { label: 'Virgin Active Kloof', place: 'Virgin Active, Kloof Street, Gardens', mins: 10, km: 3, mode: 'walking', icon: '🏋️' },
+  { label: 'Camps Bay Beach', place: 'Camps Bay Beach, Cape Town', mins: 15, km: 8, mode: 'driving', icon: '🏖️' },
+];
+
+const DEFAULT_SAMPLE_PROPERTIES: PropertyMapItem[] = [
+  {
+    id: 'prop-gp-1',
+    title: '1 Bedroom Apartment in Green Point',
+    address: 'Somerset Road, Green Point, Cape Town',
+    price: 16500,
+    bedrooms: 1,
+    bathrooms: 1,
+    sqm: 55,
+    image: 'https://images.prop24.com/389341421/Crop600x400',
+    lat: -33.9085,
+    lng: 18.4090,
+    rank: 1,
+    fit_score: 98,
+    noise_risk: 'low'
+  },
+  {
+    id: 'prop-sp-1',
+    title: 'Modern Regent Road Apartment',
+    address: 'Regent Road, Sea Point, Cape Town',
+    price: 16000,
+    bedrooms: 1,
+    bathrooms: 1,
+    sqm: 52,
+    image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop&q=80',
+    lat: -33.9180,
+    lng: 18.3880,
+    rank: 2,
+    fit_score: 87,
+    noise_risk: 'low'
+  },
+  {
+    id: 'prop-kloof-1',
+    title: 'Kloof Street Panoramic Flat',
+    address: '82 Kloof Street, Gardens, Cape Town',
+    price: 17500,
+    bedrooms: 1,
+    bathrooms: 1,
+    sqm: 58,
+    image: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop&q=80',
+    lat: -33.9315,
+    lng: 18.4105,
+    rank: 3,
+    fit_score: 85,
+    noise_risk: 'moderate'
+  },
+  {
+    id: 'prop-tb-1',
+    title: 'Derwent Road Mountain Haven',
+    address: 'Derwent Road, Tamboerskloof, Cape Town',
+    price: 18000,
+    bedrooms: 1,
+    bathrooms: 1,
+    sqm: 62,
+    image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&auto=format&fit=crop&q=80',
+    lat: -33.9338,
+    lng: 18.4055,
+    rank: 4,
+    fit_score: 92,
+    noise_risk: 'sanctuary'
+  },
+  {
+    id: 'prop-sp-2',
+    title: '203 Ocean View Drive',
+    address: '203 Ocean View Drive, Sea Point, Cape Town',
+    price: 18000,
+    bedrooms: 2,
+    bathrooms: 1,
+    sqm: 65,
+    image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&auto=format&fit=crop&q=80',
+    lat: -33.9160,
+    lng: 18.3920,
+    rank: 5,
+    fit_score: 81,
+    noise_risk: 'low'
+  },
+  {
+    id: 'prop-dw-1',
+    title: 'De Waterkant Heritage Loft',
+    address: 'Waterkant Street, De Waterkant, Cape Town',
+    price: 17000,
+    bedrooms: 1,
+    bathrooms: 1,
+    sqm: 50,
+    image: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&auto=format&fit=crop&q=80',
+    lat: -33.9160,
+    lng: 18.4180,
+    rank: 6,
+    fit_score: 79,
+    noise_risk: 'moderate'
+  },
+  {
+    id: 'prop-or-1',
+    title: 'Montrose Avenue Upper Suite',
+    address: 'Montrose Ave, Oranjezicht, Cape Town',
+    price: 16500,
+    bedrooms: 1,
+    bathrooms: 1,
+    sqm: 54,
+    image: 'https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&auto=format&fit=crop&q=80',
+    lat: -33.9400,
+    lng: 18.4190,
+    rank: 7,
+    fit_score: 88,
+    noise_risk: 'sanctuary'
+  },
+  {
+    id: 'prop-cb-1',
+    title: '14 Victoria Road Coastal Flat',
+    address: '14 Victoria Road, Camps Bay, Cape Town',
+    price: 18500,
+    bedrooms: 1,
+    bathrooms: 1,
+    sqm: 48,
+    image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&auto=format&fit=crop&q=80',
+    lat: -33.9515,
+    lng: 18.3780,
+    rank: 8,
+    fit_score: 76,
+    noise_risk: 'low'
+  }
 ];
 
 export default function SearchPage() {
   const router = useRouter();
-  const { user, profile, loading, login, logout, refreshProfile } = useAuth();
+  const { user, profile, loading, login, logout } = useAuth();
 
   // Search Criteria State - Area Filter Pills
   const [selectedAreas, setSelectedAreas] = useState<string[]>([
-    'Camps Bay', 
+    'Green Point', 
+    'Sea Point', 
     'Gardens', 
-    'Observatory', 
-    'Sea Point'
+    'Camps Bay'
   ]);
   const locationQuery = selectedAreas.join(', ');
 
   const [minPrice, setMinPrice] = useState('12000');
-  const [maxPrice, setMaxPrice] = useState('30000');
-  const [bedrooms, setBedrooms] = useState('2');
-  const [bathrooms, setBathrooms] = useState('1');
+  const [maxPrice, setMaxPrice] = useState('18000');
+  const [bedrooms, setBedrooms] = useState('1+');
+  const [bathrooms, setBathrooms] = useState('1+');
+
+  // Focal Proximity Location & Distance Radius Slider
+  const [proximityLocation, setProximityLocation] = useState('Kloof Street, Gardens');
+  const [proximityRadiusKm, setProximityRadiusKm] = useState<number>(5.0);
+
+  // Proximity Anchors List
+  const [anchors, setAnchors] = useState<CommuteAnchor[]>([
+    {
+      id: 'anchor-1',
+      label: 'Work (Amazon River Club HQ)',
+      target_place: 'Amazon River Club, Observatory',
+      max_commute_mins: 30,
+      max_distance_km: 15,
+      commute_mode: 'driving',
+    },
+    {
+      id: 'anchor-2',
+      label: 'Kloof Street Cafes',
+      target_place: 'Kloof Street, Gardens, Cape Town',
+      max_commute_mins: 15,
+      max_distance_km: 5,
+      commute_mode: 'walking',
+    },
+  ]);
+
+  const [newAnchorLabel, setNewAnchorLabel] = useState('');
+  const [newAnchorPlace, setNewAnchorPlace] = useState('');
+  const [newAnchorMins, setNewAnchorMins] = useState('25');
+  const [newAnchorMode, setNewAnchorMode] = useState<'driving' | 'walking' | 'bicycling' | 'transit'>('driving');
 
   // AI Lifestyle & Desires State
   const [aiPrompt, setAiPrompt] = useState(
@@ -74,34 +235,6 @@ export default function SearchPage() {
     "Acoustic privacy for music, safe storage for my mountain bike, unpretentious vibe, easy walk to lively Kloof Street cafes, decent natural light."
   );
 
-  // Load saved criteria from local storage on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('homeseek_search_criteria');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.locationQuery && typeof parsed.locationQuery === 'string') {
-          const loadedAreas = parsed.locationQuery.split(',').map((s: string) => s.trim()).filter(Boolean);
-          if (loadedAreas.length > 0) {
-            setSelectedAreas(loadedAreas);
-          }
-        }
-        if (parsed.minPrice) setMinPrice(parsed.minPrice);
-        if (parsed.maxPrice) setMaxPrice(parsed.maxPrice);
-        if (parsed.bedrooms) setBedrooms(parsed.bedrooms);
-        if (parsed.bathrooms) setBathrooms(parsed.bathrooms);
-        if (parsed.privacy) {
-          if (parsed.privacy.requireIndependentLiving !== undefined) setRequireIndependentLiving(parsed.privacy.requireIndependentLiving);
-          if (parsed.privacy.requirePrivateEntrance !== undefined) setRequirePrivateEntrance(parsed.privacy.requirePrivateEntrance);
-          if (parsed.privacy.requirePrivateGarden !== undefined) setRequirePrivateGarden(parsed.privacy.requirePrivateGarden);
-          if (parsed.privacy.excludeLandlordOnSite !== undefined) setExcludeLandlordOnSite(parsed.privacy.excludeLandlordOnSite);
-          if (parsed.privacy.excludeSharedHouse !== undefined) setExcludeSharedHouse(parsed.privacy.excludeSharedHouse);
-          if (parsed.privacy.requireNoOneAbove !== undefined) setRequireNoOneAbove(parsed.privacy.requireNoOneAbove);
-        }
-      }
-    } catch (e) {}
-  }, []);
-
   // Living Autonomy & Privacy Shield Checkboxes
   const [requireIndependentLiving, setRequireIndependentLiving] = useState(true);
   const [requirePrivateEntrance, setRequirePrivateEntrance] = useState(true);
@@ -109,33 +242,7 @@ export default function SearchPage() {
   const [excludeLandlordOnSite, setExcludeLandlordOnSite] = useState(true);
   const [excludeSharedHouse, setExcludeSharedHouse] = useState(true);
   const [requireNoOneAbove, setRequireNoOneAbove] = useState(false);
-
-  // Privacy Info Modal State
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
-
-  // Proximity Anchors
-  const [anchors, setAnchors] = useState<CommuteAnchor[]>([
-    {
-      id: 'anchor-1',
-      label: 'Work (Amazon River Club HQ)',
-      target_place: 'Amazon River Club, Observatory',
-      max_commute_mins: 30,
-      max_distance_km: 25,
-      commute_mode: 'driving',
-    },
-    {
-      id: 'anchor-2',
-      label: 'Cape Town CBD',
-      target_place: 'Cape Town CBD',
-      max_commute_mins: 25,
-      max_distance_km: 20,
-      commute_mode: 'driving',
-    },
-  ]);
-
-  const [newAnchorLabel, setNewAnchorLabel] = useState('');
-  const [newAnchorPlace, setNewAnchorPlace] = useState('');
-  const [newAnchorMins, setNewAnchorMins] = useState('25');
 
   // Must-Haves
   const [mustInverter, setMustInverter] = useState(true);
@@ -143,24 +250,123 @@ export default function SearchPage() {
   const [mustParking, setMustParking] = useState(true);
   const [mustPets, setMustPets] = useState(false);
 
-  // Alert Channels
-  const [notifyWhatsapp, setNotifyWhatsapp] = useState(true);
-  const [notifyEmail, setNotifyEmail] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [properties, setProperties] = useState<PropertyMapItem[]>(DEFAULT_SAMPLE_PROPERTIES);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(DEFAULT_SAMPLE_PROPERTIES[0].id);
 
-  // Save criteria to backend alert and navigate
-  const handleSaveAndExplore = async (destination: 'properties' | 'alerts' = 'properties') => {
+  // Load saved criteria and any existing scouted listings on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('homeseek_search_criteria');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.locationQuery && typeof parsed.locationQuery === 'string') {
+          const loadedAreas = parsed.locationQuery.split(',').map((s: string) => s.trim()).filter(Boolean);
+          if (loadedAreas.length > 0) setSelectedAreas(loadedAreas);
+        }
+        if (parsed.minPrice) setMinPrice(parsed.minPrice);
+        if (parsed.maxPrice) setMaxPrice(parsed.maxPrice);
+        if (parsed.bedrooms) setBedrooms(parsed.bedrooms);
+        if (parsed.bathrooms) setBathrooms(parsed.bathrooms);
+        if (parsed.proximityLocation) setProximityLocation(parsed.proximityLocation);
+        if (parsed.proximityRadiusKm) setProximityRadiusKm(parsed.proximityRadiusKm);
+        if (Array.isArray(parsed.anchors) && parsed.anchors.length > 0) setAnchors(parsed.anchors);
+      }
+    } catch (e) {}
+
+    // Fetch user's latest report properties if available to populate map
+    const fetchLatestListings = async () => {
+      try {
+        const uid = profile?.id || user?.uid || 'taun_test_user';
+        const res = await fetch(`http://127.0.0.1:8000/reports/${uid}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'success' && Array.isArray(data.reports) && data.reports.length > 0) {
+            const latest = data.reports.find((r: any) => r.ranked_listings && r.ranked_listings.length > 0);
+            if (latest && Array.isArray(latest.ranked_listings)) {
+              const mapped: PropertyMapItem[] = latest.ranked_listings.map((item: any, idx: number) => {
+                const geo = resolveLocationCoords(item.address || item.area || 'Cape Town');
+                return {
+                  id: item.id || item.listing_id || String(idx),
+                  title: item.title,
+                  address: item.address,
+                  price: item.price || 16500,
+                  bedrooms: item.bedrooms || 1,
+                  bathrooms: item.bathrooms || 1,
+                  sqm: item.sqm || 55,
+                  image: item.image || (item.images && item.images[0]) || 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=600&auto=format&fit=crop&q=80',
+                  lat: item.lat || geo.lat,
+                  lng: item.lng || geo.lng,
+                  rank: idx + 1,
+                  fit_score: item.fit_score || 88,
+                  noise_risk: item.noise_risk || 'low'
+                };
+              });
+              setProperties(mapped);
+              if (mapped.length > 0) setSelectedPropertyId(mapped[0].id);
+            }
+          }
+        }
+      } catch (err) {}
+    };
+
+    fetchLatestListings();
+  }, [profile?.id, user?.uid]);
+
+  // Compute geocoded coordinates for chosen proximity location
+  const proximityCoords = useMemo(() => {
+    return resolveLocationCoords(proximityLocation);
+  }, [proximityLocation]);
+
+  // Proximity filter configuration passed to PropertyMap
+  const proximityFilterConfig: ProximityFilterConfig = useMemo(() => {
+    return {
+      lat: proximityCoords.lat,
+      lng: proximityCoords.lng,
+      radiusKm: proximityRadiusKm,
+      label: proximityCoords.label || proximityLocation.split(',')[0].trim() || 'Focal Destination'
+    };
+  }, [proximityCoords, proximityRadiusKm, proximityLocation]);
+
+  // Filter properties by proximity to chosen location
+  const filteredProperties = useMemo(() => {
+    return properties.filter((prop) => {
+      const dist = getDistanceKm(prop.lat, prop.lng, proximityCoords.lat, proximityCoords.lng);
+      return dist <= proximityRadiusKm;
+    });
+  }, [properties, proximityCoords, proximityRadiusKm]);
+
+  // Convert commute anchors to map anchors
+  const mapAnchors: ProximityAnchor[] = useMemo(() => {
+    return anchors.map((a, idx) => {
+      const geo = resolveLocationCoords(a.target_place || a.label);
+      return {
+        id: a.id || `anchor-${idx}`,
+        label: a.label,
+        target_place: a.target_place,
+        lat: geo.lat,
+        lng: geo.lng,
+        max_commute_mins: a.max_commute_mins,
+        max_distance_km: a.max_distance_km || 15,
+        commute_mode: a.commute_mode
+      };
+    });
+  }, [anchors]);
+
+  // Save criteria and navigate
+  const handleSaveAndExplore = async (destination: 'properties' | 'alerts' | 'reports' = 'reports') => {
     setIsSaving(true);
     const uid = profile?.id || user?.uid || 'taun_test_user';
 
-    // 1. Save locally for instant offline sync
     const criteria = {
       locationQuery,
       minPrice,
       maxPrice,
       bedrooms,
       bathrooms,
+      proximityLocation,
+      proximityRadiusKm,
       privacy: {
         requireIndependentLiving,
         requirePrivateEntrance,
@@ -179,17 +385,16 @@ export default function SearchPage() {
       localStorage.setItem('homeseek_search_criteria', JSON.stringify(criteria));
     } catch (e) {}
 
-    // 2. Persist real autonomous radar alert to backend
     try {
       const primaryArea = locationQuery.split(',')[0].trim() || 'Cape Town';
       const alertPayload = {
         user_id: uid,
         target_area: primaryArea,
-        search_query: `AI Radar: ${locationQuery} (${bedrooms} Bed, max R${maxPrice})`,
+        search_query: `AI Radar: ${locationQuery} (${bedrooms} Beds, max R${maxPrice}, ${proximityRadiusKm}km from ${proximityLocation})`,
         max_price: parseInt(maxPrice) || 30000,
-        min_bedrooms: [parseInt(bedrooms) || 1],
+        min_bedrooms: [parseInt(bedrooms.replace("+", "")) || 1],
         property_type: 'Apartment',
-        require_verified_sea_view: locationQuery.toLowerCase().includes('sea') || locationQuery.toLowerCase().includes('hout bay'),
+        require_verified_sea_view: /\b(sea\s+view|ocean\s+view|water\s+view)\b/i.test(`${aiPrompt} ${aiPersonalTastes}`),
         require_independent_living: requireIndependentLiving,
         require_private_entrance: requirePrivateEntrance,
         require_private_garden: requirePrivateGarden,
@@ -198,6 +403,8 @@ export default function SearchPage() {
         require_no_one_above: requireNoOneAbove,
         pet_friendly: mustPets,
         commute_anchors: anchors,
+        proximity_location: proximityLocation,
+        max_distance_km: proximityRadiusKm,
         prompt: aiPrompt,
         personal_tastes: aiPersonalTastes,
         areas: selectedAreas,
@@ -217,7 +424,9 @@ export default function SearchPage() {
       setIsSaving(false);
       setSaveSuccess(true);
       setTimeout(() => {
-        if (destination === 'alerts') {
+        if (destination === 'reports') {
+          router.push('/reports');
+        } else if (destination === 'alerts') {
           router.push('/alerts');
         } else {
           router.push(`/properties?search=${encodeURIComponent(locationQuery.split(',')[0].trim())}`);
@@ -233,8 +442,8 @@ export default function SearchPage() {
       label: newAnchorLabel,
       target_place: newAnchorPlace,
       max_commute_mins: parseInt(newAnchorMins) || 30,
-      max_distance_km: 20,
-      commute_mode: 'driving',
+      max_distance_km: proximityRadiusKm || 15,
+      commute_mode: newAnchorMode,
     };
     setAnchors([...anchors, newAnchor]);
     setNewAnchorLabel('');
@@ -246,7 +455,7 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-zinc-900 font-sans flex flex-col pt-16">
+    <div className="min-h-screen bg-[#fcfcfd] text-zinc-900 font-sans flex flex-col pt-16">
       <Navbar 
         user={user} 
         profile={profile} 
@@ -255,654 +464,449 @@ export default function SearchPage() {
         handleLogout={logout} 
       />
 
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 py-10 space-y-10">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         
-        {/* Header */}
-        <div className="space-y-2 border-b border-zinc-200 pb-6">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 text-zinc-800 text-xs font-semibold">
-            <Target size={14} weight="bold" />
-            <span>Search Radar Setup</span>
+        {/* Header with Quick Action */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-6">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 text-zinc-800 text-xs font-semibold">
+              <Target size={14} weight="bold" className="text-indigo-600" />
+              <span>Search Radar & Proximity Setup</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-950">
+              Define Your Search Criteria
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-600 max-w-2xl leading-relaxed">
+              Configure your target locations, proximity distance radius, and privacy rules. 
+              The live map on the right plots your radius buffer zone in real time.
+            </p>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-950">
-            Define Your Search Criteria
-          </h1>
-          <p className="text-sm text-zinc-600 max-w-2xl leading-relaxed">
-            Configure your target locations, price window, proximity anchors, and privacy requirements. 
-            HomeSeek continuously checks property portals and displays matching listings in your Properties feed.
-          </p>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              onClick={() => handleSaveAndExplore('reports')}
+              disabled={isSaving}
+              className="px-5 py-2.5 bg-zinc-950 hover:bg-black text-white text-xs font-bold rounded-2xl transition-all shadow-md hover:shadow-lg flex items-center gap-2 cursor-pointer active:scale-98"
+            >
+              {isSaving ? <CircleNotch size={14} className="animate-spin" /> : <Sparkle size={14} weight="fill" className="text-amber-400" />}
+              <span>Save & View Reports</span>
+            </button>
+          </div>
         </div>
 
-        {/* Form Sections */}
-        <div className="space-y-8">
+        {/* 2-Column Responsive Layout: Form on Left, Sticky Map on Right */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start w-full">
           
-          {/* 1. Location & Budget */}
-          <section className="bg-white border border-zinc-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xs">
-            <h2 className="text-lg font-bold text-zinc-950 flex items-center gap-2">
-              <MapPin size={20} weight="bold" />
-              <span>Target Locations & Budget</span>
-            </h2>
+          {/* LEFT COLUMN: CRITERIA FORM SECTIONS */}
+          <div className="lg:col-span-6 xl:col-span-7 space-y-6">
+            
+            {/* 1. Target Locations & Budget */}
+            <section className="bg-white border border-zinc-200/90 rounded-3xl p-6 sm:p-7 space-y-5 shadow-2xs">
+              <h2 className="text-base font-bold text-zinc-950 flex items-center gap-2">
+                <MapPin size={18} weight="bold" className="text-zinc-800" />
+                <span>Target Suburbs & Budget Window</span>
+              </h2>
 
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider">
-                    Target Suburbs or Regions
-                  </label>
-                  <span className="text-[11px] text-zinc-400 font-medium">
-                    {selectedAreas.length} {selectedAreas.length === 1 ? 'area' : 'areas'} selected
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider">
+                      Target Suburbs
+                    </label>
+                    <span className="text-[11px] text-zinc-500 font-medium">
+                      {selectedAreas.length} selected
+                    </span>
+                  </div>
+                  <AreaPillsInput
+                    selectedAreas={selectedAreas}
+                    onChange={setSelectedAreas}
+                    placeholder="Type suburb (e.g. Green Point, Sea Point)..."
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+                      Min Price (ZAR)
+                    </label>
+                    <input
+                      type="number"
+                      value={minPrice}
+                      onChange={(e) => setMinPrice(e.target.value)}
+                      placeholder="12000"
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2.5 text-sm text-zinc-900 focus:outline-none focus:border-zinc-950 focus:bg-white transition-all font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+                      Max Price (ZAR)
+                    </label>
+                    <input
+                      type="number"
+                      value={maxPrice}
+                      onChange={(e) => setMaxPrice(e.target.value)}
+                      placeholder="18000"
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2.5 text-sm text-zinc-900 focus:outline-none focus:border-zinc-950 focus:bg-white transition-all font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+                      Bedrooms
+                    </label>
+                    <div className="flex gap-2">
+                      {['1+', '2+', '3+', '4+'].map((b) => {
+                        const isSelected = bedrooms === b || bedrooms === b.replace('+', '');
+                        return (
+                          <button
+                            key={b}
+                            type="button"
+                            onClick={() => setBedrooms(b)}
+                            className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-zinc-950 text-white border-zinc-950 shadow-xs font-bold'
+                                : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                            }`}
+                          >
+                            {b}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+                      Bathrooms
+                    </label>
+                    <div className="flex gap-2">
+                      {['1+', '2+', '3+'].map((bath) => {
+                        const isSelected = bathrooms === bath || bathrooms === bath.replace('+', '');
+                        return (
+                          <button
+                            key={bath}
+                            type="button"
+                            onClick={() => setBathrooms(bath)}
+                            className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-zinc-950 text-white border-zinc-950 shadow-xs font-bold'
+                                : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                            }`}
+                          >
+                            {bath}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* 2. PROXIMITY LOCATION & DISTANCE RADIUS SLIDER (CORE FEATURE) */}
+            <section className="bg-white border-2 border-indigo-500/30 rounded-3xl p-6 sm:p-7 space-y-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-zinc-950 flex items-center gap-2">
+                    <Target size={20} weight="bold" className="text-indigo-600" />
+                    <span>Proximity to Location & Distance Radius</span>
+                  </h2>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Choose a focal landmark, workplace or beach and slide the radius. The interactive map plots your buffer zone in real time.
+                  </p>
+                </div>
+                <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-extrabold text-xs shrink-0 border border-indigo-200">
+                  {proximityRadiusKm} km Buffer
+                </span>
+              </div>
+
+              {/* Location Input with Google Maps Autocomplete */}
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider">
+                  Focal Location (Destination / Workplace / Landmark)
+                </label>
+                <PlaceAutocompleteInput
+                  value={proximityLocation}
+                  onChange={(val) => setProximityLocation(val)}
+                  onSelectSuggestion={(s) => {
+                    setProximityLocation(s.description);
+                  }}
+                  placeholder="Type address or landmark (e.g. Kloof St, Sea Point Promenade)..."
+                />
+
+                {/* Popular Location Presets */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+                  <span className="text-zinc-500 text-[11px] font-semibold mr-1">Quick Select:</span>
+                  {PRESET_ANCHORS.map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        setProximityLocation(preset.place);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 hover:text-zinc-950 text-[11px] font-medium transition-all cursor-pointer shadow-2xs"
+                    >
+                      <span>{preset.icon}</span>
+                      <span>{preset.label.split('(')[0].trim()}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Distance Radius Slider */}
+              <div className="space-y-3 pt-3 border-t border-zinc-100">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-zinc-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Ruler size={14} weight="bold" className="text-indigo-600" />
+                    <span>Distance Radius Slider</span>
+                  </span>
+                  <span className="font-extrabold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-100">
+                    Within {proximityRadiusKm} km
                   </span>
                 </div>
-                <AreaPillsInput
-                  selectedAreas={selectedAreas}
-                  onChange={setSelectedAreas}
-                  placeholder="Type area name (e.g. Hout Bay, Sea Point)..."
-                />
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
-                    Min Price (ZAR / AUD)
-                  </label>
+                <div className="space-y-2">
                   <input
-                    type="number"
-                    value={minPrice}
-                    onChange={(e) => setMinPrice(e.target.value)}
-                    placeholder="12000"
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm text-zinc-900 focus:outline-none focus:border-zinc-900 focus:bg-white transition-all"
+                    type="range"
+                    min="1"
+                    max="20"
+                    step="0.5"
+                    value={proximityRadiusKm}
+                    onChange={(e) => setProximityRadiusKm(parseFloat(e.target.value))}
+                    className="w-full accent-indigo-600 h-2 bg-zinc-200 rounded-lg cursor-pointer"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
-                    Max Price (ZAR / AUD)
-                  </label>
-                  <input
-                    type="number"
-                    value={maxPrice}
-                    onChange={(e) => setMaxPrice(e.target.value)}
-                    placeholder="30000"
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm text-zinc-900 focus:outline-none focus:border-zinc-900 focus:bg-white transition-all"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
-                    Bedrooms
-                  </label>
-                  <div className="flex gap-2">
-                    {['1', '2', '3', '4+'].map((b) => (
-                      <button
-                        key={b}
-                        type="button"
-                        onClick={() => setBedrooms(b)}
-                        className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-                          bedrooms === b
-                            ? 'bg-zinc-950 text-white border-zinc-950 shadow-xs'
-                            : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                        }`}
-                      >
-                        {b} {b === '1' ? 'Bed' : 'Beds'}
-                      </button>
-                    ))}
+                  <div className="flex justify-between text-[10px] font-bold text-zinc-400 px-0.5">
+                    <span>1 km</span>
+                    <span>5 km</span>
+                    <span>10 km</span>
+                    <span>15 km</span>
+                    <span>20 km</span>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
-                    Bathrooms
-                  </label>
-                  <div className="flex gap-2">
-                    {['1', '2', '3+'].map((bath) => (
-                      <button
-                        key={bath}
-                        type="button"
-                        onClick={() => setBathrooms(bath)}
-                        className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-                          bathrooms === bath
-                            ? 'bg-zinc-950 text-white border-zinc-950 shadow-xs'
-                            : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                        }`}
-                      >
-                        {bath} {bath === '1' ? 'Bath' : 'Baths'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* 2. AI Lifestyle & Personalized Desires Input */}
-          <section className="bg-gradient-to-br from-white via-emerald-50/20 to-teal-50/30 border border-emerald-500/30 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm relative overflow-hidden">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 flex items-center justify-center font-bold">
-                    <Sparkle size={18} weight="fill" />
-                  </div>
-                  <h2 className="text-lg font-bold text-zinc-950">
-                    AI Personalized Desires & Lifestyle Ranking
-                  </h2>
-                </div>
-                <p className="text-xs text-zinc-600 mt-1 max-w-2xl">
-                  Tell the AI your real day-to-day habits (remote work, music acoustic needs, outdoor hobbies, cafe routines, dating). 
-                  Our daily 11:00 AM SAST cron uses this prompt to rank your Top 10 matches and deliver actionable insights.
-                </p>
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 px-2.5 py-1 rounded-full">
-                Gemini AI Advisor
-              </span>
-            </div>
-
-            <div className="space-y-4 pt-2">
-              <div>
-                <label className="block text-xs font-semibold text-zinc-800 uppercase tracking-wider mb-2">
-                  Your Desires & Lifestyle Prompt (Freeform Text)
-                </label>
-                <textarea
-                  rows={3}
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder="e.g. Remote web designer working from home. Mountain biking, trail running, walking on the beach, flying FPV drone, working from cafe twice a week, dating..."
-                  className="w-full bg-white border border-zinc-200 rounded-2xl px-4 py-3 text-sm text-zinc-900 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-zinc-400"
-                />
-                <span className="text-[11px] text-zinc-500 mt-1 block">Describe your weekly routine, hobbies, and social/dating desires.</span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-zinc-800 uppercase tracking-wider mb-2">
-                  Personal Tastes & Hard Dealbreakers
-                </label>
-                <textarea
-                  rows={2}
-                  value={aiPersonalTastes}
-                  onChange={(e) => setAiPersonalTastes(e.target.value)}
-                  placeholder="e.g. Thick walls for making music, space for bike storage, secure parking, quiet street..."
-                  className="w-full bg-white border border-zinc-200 rounded-2xl px-4 py-3 text-sm text-zinc-900 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-zinc-400"
-                />
-                <span className="text-[11px] text-zinc-500 mt-1 block">Specific nuances used to score acoustic privacy and filter out flawed options.</span>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <span className="text-xs text-zinc-500 flex items-center gap-1.5">
-                  <CheckCircle size={14} className="text-emerald-600" weight="fill" />
-                  Included in your Daily 11:00 AM Top 10 Intelligence Reports
-                </span>
-                <button
-                  type="button"
-                  onClick={() => router.push('/discover')}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800 underline underline-offset-4 cursor-pointer"
-                >
-                  <span>Open Dedicated Live AI Scout View</span>
-                  <ArrowRight size={14} weight="bold" />
-                </button>
-              </div>
-            </div>
-          </section>
-
-          {/* 3. Living Autonomy & Privacy Shield */}
-          <section className="bg-white border border-zinc-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="text-lg font-bold text-zinc-950 flex items-center gap-2">
-                    <ShieldCheck size={20} weight="bold" />
-                    <span>Living Autonomy & Privacy Shield</span>
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => setIsPrivacyModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:text-zinc-950 bg-zinc-100 hover:bg-zinc-200/90 rounded-full transition-all cursor-pointer shadow-2xs border border-zinc-200/60"
-                    title="Click for detailed breakdown of each privacy shield"
-                  >
-                    <Info size={14} weight="bold" className="text-zinc-500" />
-                    <span>How it works</span>
-                  </button>
-                </div>
-                <p className="text-xs text-zinc-500 mt-1">
-                  Filter out shared houses, upstairs stomping, shared gardens, or on-site landlords upfront before you tour.
-                </p>
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-zinc-100 text-zinc-800 px-2.5 py-1 rounded-full">
-                AI Filter
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              
-              {/* Checkbox 1: Entire Self-Contained Unit */}
-              <label className="flex items-start gap-3 p-3.5 rounded-2xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50 cursor-pointer transition-all">
-                <input
-                  type="checkbox"
-                  checked={requireIndependentLiving}
-                  onChange={(e) => setRequireIndependentLiving(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
-                />
-                <div>
-                  <span className="text-xs font-bold text-zinc-950 block">Entire Self-Contained Unit</span>
-                  <span className="text-[11px] text-zinc-500 block">100% private dwelling — dedicated kitchen, bathroom & living space (no shared facilities)</span>
-                </div>
-              </label>
-
-              {/* Checkbox 2: No One Living Above */}
-              <label className="flex items-start gap-3 p-3.5 rounded-2xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50 cursor-pointer transition-all">
-                <input
-                  type="checkbox"
-                  checked={requireNoOneAbove}
-                  onChange={(e) => setRequireNoOneAbove(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
-                />
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-zinc-950 block">No One Living Above</span>
-                    <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md uppercase">Quiet</span>
-                  </div>
-                  <span className="text-[11px] text-zinc-500 block">Top-floor apartment, penthouse, or standalone house with zero upstairs neighbors stomping overhead</span>
-                </div>
-              </label>
-
-              {/* Checkbox 3: Require Private Entrance */}
-              <label className="flex items-start gap-3 p-3.5 rounded-2xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50 cursor-pointer transition-all">
-                <input
-                  type="checkbox"
-                  checked={requirePrivateEntrance}
-                  onChange={(e) => setRequirePrivateEntrance(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
-                />
-                <div>
-                  <span className="text-xs font-bold text-zinc-950 block">Require Private Entrance</span>
-                  <span className="text-[11px] text-zinc-500 block">No passing through someone else's hallway, foyer, or house</span>
-                </div>
-              </label>
-
-              {/* Checkbox 4: Require Private Garden / Yard */}
-              <label className="flex items-start gap-3 p-3.5 rounded-2xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50 cursor-pointer transition-all">
-                <input
-                  type="checkbox"
-                  checked={requirePrivateGarden}
-                  onChange={(e) => setRequirePrivateGarden(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
-                />
-                <div>
-                  <span className="text-xs font-bold text-zinc-950 block">Require Private Garden / Yard</span>
-                  <span className="text-[11px] text-zinc-500 block">Exclusive outdoor area, not shared with primary house or other tenants</span>
-                </div>
-              </label>
-
-              {/* Checkbox 5: Exclude Landlord On-Site */}
-              <label className="flex items-start gap-3 p-3.5 rounded-2xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50 cursor-pointer transition-all">
-                <input
-                  type="checkbox"
-                  checked={excludeLandlordOnSite}
-                  onChange={(e) => setExcludeLandlordOnSite(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
-                />
-                <div>
-                  <span className="text-xs font-bold text-zinc-950 block">Exclude Landlord On-Site</span>
-                  <span className="text-[11px] text-zinc-500 block">Filter out garden cottages or rooms where landlord resides on premises</span>
-                </div>
-              </label>
-
-              {/* Checkbox 6: Exclude Shared House / Communes */}
-              <label className="flex items-start gap-3 p-3.5 rounded-2xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50 cursor-pointer transition-all">
-                <input
-                  type="checkbox"
-                  checked={excludeSharedHouse}
-                  onChange={(e) => setExcludeSharedHouse(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
-                />
-                <div>
-                  <span className="text-xs font-bold text-zinc-950 block">Exclude Shared House / Communes</span>
-                  <span className="text-[11px] text-zinc-500 block">No commune living, shared roommate accommodations, or single room rentals</span>
-                </div>
-              </label>
-
-            </div>
-          </section>
-
-          {/* 3. Desired Proximity Locations (Life Anchors) */}
-          <section className="bg-white border border-zinc-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xs">
-            <div>
-              <h2 className="text-lg font-bold text-zinc-950 flex items-center gap-2">
-                <Target size={20} weight="bold" />
-                <span>Desired Proximity Locations (Life Anchors)</span>
-              </h2>
-              <p className="text-xs text-zinc-500 mt-1">
-                Your properties map will plot these anchors and calculate commute times for every discovered property.
-              </p>
-            </div>
-
-            {/* Existing Anchors List */}
-            <div className="space-y-2.5">
-              {anchors.map((anchor) => (
-                <div
-                  key={anchor.id}
-                  className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 text-xs"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-zinc-950 text-white flex items-center justify-center font-bold">
-                      <Target size={16} weight="bold" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-zinc-950 block">{anchor.label}</span>
-                      <span className="text-[11px] text-zinc-500 block">{anchor.target_place}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <span className="text-zinc-600 font-medium hidden sm:inline">
-                      Max {anchor.max_commute_mins} mins ({anchor.commute_mode})
-                    </span>
+                {/* Radius Quick Presets */}
+                <div className="flex items-center gap-2 pt-1">
+                  {[2, 3, 5, 8, 12, 15].map((km) => (
                     <button
-                      onClick={() => removeAnchor(anchor.id)}
-                      className="p-1.5 text-zinc-400 hover:text-red-600 transition-colors"
-                      title="Remove anchor"
+                      key={km}
+                      type="button"
+                      onClick={() => setProximityRadiusKm(km)}
+                      className={`flex-1 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        proximityRadiusKm === km
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                          : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
+                      }`}
                     >
-                      <Trash size={16} />
+                      {km} km
                     </button>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
 
-            {/* Add New Anchor Form */}
-            <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-200 space-y-3">
-              <span className="text-xs font-bold text-zinc-800 uppercase tracking-wider block">Add Proximity Anchor</span>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <input
-                  type="text"
-                  placeholder="Label (e.g. Work HQ)"
-                  value={newAnchorLabel}
-                  onChange={(e) => setNewAnchorLabel(e.target.value)}
-                  className="bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:border-zinc-900"
-                />
-                <input
-                  type="text"
-                  placeholder="Destination / Address"
-                  value={newAnchorPlace}
-                  onChange={(e) => setNewAnchorPlace(e.target.value)}
-                  className="bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:border-zinc-900"
-                />
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    placeholder="Max mins (e.g. 25)"
-                    value={newAnchorMins}
-                    onChange={(e) => setNewAnchorMins(e.target.value)}
-                    className="w-24 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:border-zinc-900"
-                  />
-                  <button
-                    onClick={addAnchor}
-                    className="flex-1 bg-zinc-950 text-white rounded-xl text-xs font-semibold hover:bg-black transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <Plus size={14} weight="bold" />
-                    <span>Add</span>
-                  </button>
+                {/* Live Real-Time Match Counter */}
+                <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex items-center justify-between text-xs text-indigo-950 font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle size={15} weight="bold" className="text-indigo-600" />
+                    <span>Live Proximity Filter:</span>
+                  </span>
+                  <span className="font-extrabold bg-white px-2.5 py-0.5 rounded-lg border border-indigo-200 shadow-2xs">
+                    {filteredProperties.length} properties inside {proximityRadiusKm} km ring
+                  </span>
                 </div>
               </div>
-            </div>
-          </section>
+            </section>
 
-          {/* 4. Must-Have Amenities */}
-          <section className="bg-white border border-zinc-200 rounded-3xl p-6 sm:p-8 space-y-4 shadow-2xs">
-            <h2 className="text-lg font-bold text-zinc-950 flex items-center gap-2">
-              <Lightning size={20} weight="bold" />
-              <span>Must-Have Amenities</span>
-            </h2>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <button
-                type="button"
-                onClick={() => setMustInverter(!mustInverter)}
-                className={`p-3 rounded-2xl border text-xs font-semibold flex flex-col items-center gap-2 transition-all ${
-                  mustInverter
-                    ? 'bg-zinc-950 text-white border-zinc-950'
-                    : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                }`}
-              >
-                <Lightning size={18} weight={mustInverter ? "fill" : "regular"} />
-                <span>Inverter / Backup</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMustFibre(!mustFibre)}
-                className={`p-3 rounded-2xl border text-xs font-semibold flex flex-col items-center gap-2 transition-all ${
-                  mustFibre
-                    ? 'bg-zinc-950 text-white border-zinc-950'
-                    : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                }`}
-              >
-                <Sparkle size={18} weight={mustFibre ? "fill" : "regular"} />
-                <span>Fibre Ready</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMustParking(!mustParking)}
-                className={`p-3 rounded-2xl border text-xs font-semibold flex flex-col items-center gap-2 transition-all ${
-                  mustParking
-                    ? 'bg-zinc-950 text-white border-zinc-950'
-                    : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                }`}
-              >
-                <Car size={18} weight={mustParking ? "fill" : "regular"} />
-                <span>Secure Parking</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMustPets(!mustPets)}
-                className={`p-3 rounded-2xl border text-xs font-semibold flex flex-col items-center gap-2 transition-all ${
-                  mustPets
-                    ? 'bg-zinc-950 text-white border-zinc-950'
-                    : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                }`}
-              >
-                <Dog size={18} weight={mustPets ? "fill" : "regular"} />
-                <span>Pet Friendly</span>
-              </button>
-            </div>
-          </section>
-
-          {/* Action CTA */}
-          <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-zinc-200">
-            <p className="text-xs text-zinc-500">
-              Criteria automatically registers an active autonomous monitor and syncs with your interactive Properties view.
-            </p>
-
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <button
-                type="button"
-                onClick={() => handleSaveAndExplore('alerts')}
-                disabled={isSaving}
-                className="w-full sm:w-auto px-5 py-3.5 rounded-2xl border border-zinc-200 hover:border-zinc-300 bg-white text-zinc-900 font-semibold text-xs transition-all shadow-2xs hover:bg-zinc-50 flex items-center justify-center gap-2"
-              >
-                <Bell size={16} weight="bold" />
-                <span>Save to Radar Alerts</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSaveAndExplore('properties')}
-                disabled={isSaving}
-                className="w-full sm:w-auto bg-zinc-950 text-white hover:bg-black px-7 py-3.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 disabled:opacity-60"
-              >
-                {isSaving ? (
-                  <>
-                    <ArrowsClockwise size={16} className="animate-spin" />
-                    <span>Activating Radar...</span>
-                  </>
-                ) : saveSuccess ? (
-                  <>
-                    <CheckCircle size={16} weight="fill" className="text-emerald-400" />
-                    <span>Radar Activated!</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Activate & View Properties</span>
-                    <ArrowRight size={16} weight="bold" />
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-        </div>
-
-      </main>
-
-      {/* ==================== PRIVACY SHIELD EXPLANATION MODAL ==================== */}
-      {isPrivacyModalOpen && (
-        <div 
-          onClick={() => setIsPrivacyModalOpen(false)}
-          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-zinc-100 max-h-[90vh] overflow-y-auto space-y-6 relative custom-scrollbar animate-in zoom-in-95 duration-150"
-          >
-            {/* Modal Header */}
-            <div className="flex items-start justify-between gap-4 border-b border-zinc-100 pb-5">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-zinc-950 text-white flex items-center justify-center shrink-0">
-                  <ShieldCheck size={22} weight="bold" />
-                </div>
+            {/* 3. Additional Commute Anchors */}
+            <section className="bg-white border border-zinc-200/90 rounded-3xl p-6 sm:p-7 space-y-4 shadow-2xs">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-bold text-zinc-950">
-                    Living Autonomy & Privacy Shield
-                  </h3>
+                  <h2 className="text-base font-bold text-zinc-950 flex items-center gap-2">
+                    <Compass size={18} weight="bold" className="text-zinc-800" />
+                    <span>Commute Time Anchors</span>
+                  </h2>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    How HomeSeek evaluates property listings to protect your privacy and daily peace of mind.
+                    Secondary destinations plotted on the map with estimated driving & walking duration.
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsPrivacyModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-600 hover:text-zinc-950 flex items-center justify-center transition-colors shrink-0 cursor-pointer"
-                aria-label="Close modal"
-              >
-                <X size={16} weight="bold" />
-              </button>
-            </div>
 
-            {/* Explanation Grid */}
-            <div className="space-y-4">
-              
-              {/* Feature 1 */}
-              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 text-zinc-950 font-bold text-xs">
-                  <span className="w-2 h-2 rounded-full bg-zinc-950" />
-                  <span>Entire Self-Contained Unit</span>
-                </div>
-                <p className="text-xs text-zinc-600 leading-relaxed pl-4">
-                  <strong className="text-zinc-800">What it means:</strong> A 100% private dwelling with your own dedicated kitchen, bathroom, and living area.
-                </p>
-                <p className="text-[11px] text-zinc-500 leading-relaxed pl-4">
-                  <strong className="text-zinc-700">Why this matters in South Africa:</strong> Many landlords advertise partitioned bedrooms, granny flatlets, or backhouses as "bachelor studios", yet they secretly share a geyser, laundry hookup, or hallway. This filter ensures zero shared facilities.
-                </p>
+              {/* Anchors List */}
+              <div className="space-y-2">
+                {anchors.map((anchor) => (
+                  <div
+                    key={anchor.id}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 border border-zinc-200/90 text-xs"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-zinc-950 text-white flex items-center justify-center font-bold">
+                        <Target size={14} weight="bold" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-zinc-950 block">{anchor.label}</span>
+                        <span className="text-[11px] text-zinc-500 block truncate max-w-xs">{anchor.target_place}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-zinc-600 font-semibold text-[11px]">
+                        ~{anchor.max_commute_mins} mins
+                      </span>
+                      <button
+                        onClick={() => removeAnchor(anchor.id)}
+                        className="p-1 text-zinc-400 hover:text-rose-600 transition-colors cursor-pointer"
+                        title="Remove anchor"
+                      >
+                        <Trash size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
 
-              {/* Feature 2: No One Living Above */}
-              <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 text-zinc-950 font-bold text-xs">
-                  <span className="w-2 h-2 rounded-full bg-amber-600" />
-                  <span>No One Living Above (Quiet Ceiling)</span>
-                  <span className="text-[9px] font-bold bg-amber-200/70 text-amber-900 px-1.5 py-0.5 rounded-md uppercase">Top Floor / House</span>
-                </div>
-                <p className="text-xs text-zinc-600 leading-relaxed pl-4">
-                  <strong className="text-zinc-800">What it means:</strong> Only matches top-floor apartments, penthouses, or standalone single-story houses.
-                </p>
-                <p className="text-[11px] text-zinc-500 leading-relaxed pl-4">
-                  <strong className="text-zinc-700">Why this matters:</strong> Overhead footstep noise, heel stomping, late-night furniture dragging, and creaky floorboards are the #1 complaint of apartment tenants. This filter guarantees no upstairs neighbors living above your ceiling.
-                </p>
+              {/* Add New Anchor */}
+              <div className="pt-2 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Add label (e.g. Gym, Client Office)..."
+                  value={newAnchorLabel}
+                  onChange={(e) => setNewAnchorLabel(e.target.value)}
+                  className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:border-zinc-950"
+                />
+                <input
+                  type="text"
+                  placeholder="Address or suburb..."
+                  value={newAnchorPlace}
+                  onChange={(e) => setNewAnchorPlace(e.target.value)}
+                  className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:border-zinc-950"
+                />
+                <button
+                  type="button"
+                  onClick={addAnchor}
+                  className="px-4 py-2 bg-zinc-950 hover:bg-black text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+                >
+                  Add Anchor
+                </button>
+              </div>
+            </section>
+
+            {/* 4. Living Autonomy & Privacy Shield */}
+            <section className="bg-white border border-zinc-200/90 rounded-3xl p-6 sm:p-7 space-y-4 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-zinc-950 flex items-center gap-2">
+                  <ShieldCheck size={18} weight="bold" className="text-zinc-800" />
+                  <span>Living Autonomy & Acoustic Privacy</span>
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setIsPrivacyModalOpen(true)}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+                >
+                  Learn how this works
+                </button>
               </div>
 
-              {/* Feature 3: Private Entrance */}
-              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 text-zinc-950 font-bold text-xs">
-                  <span className="w-2 h-2 rounded-full bg-zinc-950" />
-                  <span>Require Private Entrance</span>
-                </div>
-                <p className="text-xs text-zinc-600 leading-relaxed pl-4">
-                  <strong className="text-zinc-800">What it means:</strong> Direct, independent exterior door leading straight outside.
-                </p>
-                <p className="text-[11px] text-zinc-500 leading-relaxed pl-4">
-                  <strong className="text-zinc-700">Why this matters:</strong> Eliminates awkward entry layouts where you have to unlock the landlord's front door, walk through their foyer, or pass through their private living room to reach your space.
-                </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-zinc-200 hover:bg-zinc-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requireIndependentLiving}
+                    onChange={(e) => setRequireIndependentLiving(e.target.checked)}
+                    className="w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
+                  />
+                  <span className="font-bold text-zinc-900">Independent Living Only</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-zinc-200 hover:bg-zinc-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={excludeLandlordOnSite}
+                    onChange={(e) => setExcludeLandlordOnSite(e.target.checked)}
+                    className="w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
+                  />
+                  <span className="font-bold text-zinc-900">No Landlord On-Site</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-zinc-200 hover:bg-zinc-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={excludeSharedHouse}
+                    onChange={(e) => setExcludeSharedHouse(e.target.checked)}
+                    className="w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
+                  />
+                  <span className="font-bold text-zinc-900">Exclude Communes & Digs</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-zinc-200 hover:bg-zinc-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requirePrivateEntrance}
+                    onChange={(e) => setRequirePrivateEntrance(e.target.checked)}
+                    className="w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
+                  />
+                  <span className="font-bold text-zinc-900">Private Entrance</span>
+                </label>
               </div>
+            </section>
 
-              {/* Feature 4: Private Garden */}
-              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 text-zinc-950 font-bold text-xs">
-                  <span className="w-2 h-2 rounded-full bg-zinc-950" />
-                  <span>Require Private Garden / Yard</span>
-                </div>
-                <p className="text-xs text-zinc-600 leading-relaxed pl-4">
-                  <strong className="text-zinc-800">What it means:</strong> An exclusive-use enclosed outdoor area, deck, or yard.
-                </p>
-                <p className="text-[11px] text-zinc-500 leading-relaxed pl-4">
-                  <strong className="text-zinc-700">Why this matters:</strong> Garden cottages frequently advertise "access to beautiful garden and pool", which usually means sharing the lawn with the owner's barking dogs or family gatherings.
-                </p>
-              </div>
-
-              {/* Feature 5: Exclude Landlord On-Site */}
-              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 text-zinc-950 font-bold text-xs">
-                  <span className="w-2 h-2 rounded-full bg-zinc-950" />
-                  <span>Exclude Landlord On-Site</span>
-                </div>
-                <p className="text-xs text-zinc-600 leading-relaxed pl-4">
-                  <strong className="text-zinc-800">What it means:</strong> The property owner does not live on the same erf or in the primary house.
-                </p>
-                <p className="text-[11px] text-zinc-500 leading-relaxed pl-4">
-                  <strong className="text-zinc-700">Why this matters:</strong> Ensures full personal autonomy without feeling monitored, dealing with micromanaged curfew rules, or having the landlord drop by unexpectedly.
-                </p>
-              </div>
-
-              {/* Feature 6: Exclude Shared House */}
-              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 text-zinc-950 font-bold text-xs">
-                  <span className="w-2 h-2 rounded-full bg-zinc-950" />
-                  <span>Exclude Shared House / Communes</span>
-                </div>
-                <p className="text-xs text-zinc-600 leading-relaxed pl-4">
-                  <strong className="text-zinc-800">What it means:</strong> Full disqualification of student digs, co-living communes, and roommate sublets.
-                </p>
-                <p className="text-[11px] text-zinc-500 leading-relaxed pl-4">
-                  <strong className="text-zinc-700">Why this matters:</strong> Ensures every listing on your radar is an entire private rental lease in your own name.
-                </p>
-              </div>
-
-            </div>
-
-            {/* AI Verification Note */}
-            <div className="p-4 rounded-2xl bg-zinc-900 text-white space-y-1.5">
-              <div className="flex items-center gap-2 text-xs font-bold text-emerald-400">
-                <ShieldCheck size={16} weight="bold" />
-                <span>How HomeSeek's AI Validates Listings</span>
-              </div>
-              <p className="text-[11px] text-zinc-300 leading-relaxed">
-                Our forensic evaluator inspects property descriptions, agent notes, architectural floor levels, and structural tags on Property24 to detect subtle signs of shared grounds, landlord proximity, or downstairs placement before saving to your feed.
-              </p>
-            </div>
-
-            {/* Close Button */}
+            {/* Save & Trigger Radar Button */}
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => setIsPrivacyModalOpen(false)}
-                className="w-full py-3.5 bg-zinc-950 hover:bg-black text-white text-xs font-bold rounded-2xl transition-all shadow-md active:scale-98 cursor-pointer"
+                onClick={() => handleSaveAndExplore('reports')}
+                disabled={isSaving}
+                className="w-full py-4 bg-zinc-950 hover:bg-black text-white text-sm font-extrabold rounded-2xl transition-all shadow-md hover:shadow-xl flex items-center justify-center gap-2 cursor-pointer active:scale-98"
               >
-                Got It, Return to Search Setup
+                {isSaving ? <CircleNotch size={18} className="animate-spin" /> : <Sparkle size={18} weight="fill" className="text-amber-400" />}
+                <span>Save Radar & Launch Executive Intelligence Report</span>
+                <ArrowRight size={16} weight="bold" />
               </button>
             </div>
 
+          </div>
+
+          {/* RIGHT COLUMN: STICKY INTERACTIVE MAP (MATCHING REPORTS PAGE) */}
+          <div className="w-full lg:col-span-6 xl:col-span-5 sticky top-24 h-[calc(100vh-120px)] rounded-3xl overflow-hidden border border-zinc-200 shadow-md bg-zinc-100 flex flex-col">
+            <PropertyMap
+              properties={filteredProperties}
+              anchors={mapAnchors}
+              proximityFilter={proximityFilterConfig}
+              onRadiusChange={setProximityRadiusKm}
+              selectedPropertyId={selectedPropertyId}
+              onSelectProperty={(p) => setSelectedPropertyId(p.id)}
+              className="w-full h-full rounded-3xl"
+            />
+          </div>
+
+        </div>
+      </main>
+
+      {/* Privacy Info Modal */}
+      {isPrivacyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-zinc-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+              <div className="flex items-center gap-2 text-zinc-950 font-black text-sm">
+                <ShieldCheck size={18} className="text-indigo-600" weight="bold" />
+                <span>Forensic Living Autonomy Protocol</span>
+              </div>
+              <button
+                onClick={() => setIsPrivacyModalOpen(false)}
+                className="text-zinc-400 hover:text-zinc-900 p-1 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              HomeSeek analyzes listing wording, photos, floor plans, and architectural elevation to ensure you are not placed in a shared house, under a noisy landlord, or in a compromised room.
+            </p>
+            <button
+              onClick={() => setIsPrivacyModalOpen(false)}
+              className="w-full py-2.5 bg-zinc-950 text-white text-xs font-bold rounded-xl cursor-pointer"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

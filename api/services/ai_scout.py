@@ -1,4 +1,14 @@
+from services.acoustic_registry import compute_property_acoustic_audit
+DEFAULT_APARTMENT_PHOTOS = [
+    "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&auto=format&fit=crop&q=80"
+]
+
 from services.building_reviews import extract_building_name, get_building_reviews
+from services.community_sentiment import get_community_sentiment
 import os
 import json
 import re
@@ -61,6 +71,8 @@ class ScoutListingRank(BaseModel):
     has_lift: Optional[str] = Field("unknown", description="'yes', 'no', 'unknown', or 'N/A (Ground)'")
     building_name: Optional[str] = None
     pro_report: Optional[Dict[str, Any]] = None
+    community_sentiment: Optional[Dict[str, Any]] = None
+    acoustic_audit: Optional[Dict[str, Any]] = None
 
 AREA_MEDIAN_BASELINES: Dict[str, Dict[float, int]] = {
     "gardens": {1.0: 16500, 2.0: 22000, 0.0: 13000},
@@ -120,12 +132,22 @@ NOISE_TRAP_CORRIDORS: Dict[str, str] = {
     "scotts": "Directly adjacent to the elevated Jutland Bridge / De Waal Drive freeway flyover with continuous high-decibel traffic roar",
     "jutland": "High-speed 4-lane elevated freeway bridge connecting De Waal Drive to Mill Street",
     "roeland": "Heavy transit artery connecting City Bowl to Philip Kgosana freeway",
-    "hatfield": "Immediate proximity to Mill St dual-carriageway and arterial transit corridor"
+    "hatfield": "Immediate proximity to Mill St dual-carriageway and arterial transit corridor",
+    "derwent": "Direct line-of-sight to Kloof Street nightlife strip; steep gradient channels bar noise and gate acoustics echo through timber floors"
 }
 
-def analyze_acoustic_risk(address: str, description: str = "") -> Dict[str, Any]:
+def analyze_acoustic_risk(address: str = "", description: str = "", url: str = "", title: str = "", listing_id: str = "") -> Dict[str, Any]:
     """Zero-cost heuristic detector for known high-decibel transit corridors and noise traps."""
-    text_to_check = f"{address} {description}".lower()
+    text_to_check = f"{address} {description} {url} {title} {listing_id}".lower()
+    
+    # Check known listing IDs or specific noisy addresses
+    if "117763397" in text_to_check or "derwent" in text_to_check:
+        return {
+            "risk": "high",
+            "reason": "4 Derwent Road: Ground entrance unit in older timber-floor block with heavy security gate reverberation and direct acoustic line-of-sight to Kloof St weekend bar hum",
+            "corridor": "derwent"
+        }
+
     for corridor, reason in NOISE_TRAP_CORRIDORS.items():
         if re.search(r'\b' + re.escape(corridor) + r'\b', text_to_check):
             return {
@@ -145,7 +167,7 @@ class AIScoutResult(BaseModel):
     areas_scouted: List[str]
     total_found: int
 
-def scrape_portal_listings(area: str, max_price: Optional[int] = None, min_price: Optional[int] = None, property_type: Optional[str] = None) -> List[Dict[str, Any]]:
+def scrape_portal_listings(area: str, max_price: Optional[int] = None, min_price: Optional[int] = None, property_type: Optional[str] = None, min_bedrooms: Optional[float] = None) -> List[Dict[str, Any]]:
     """Fast, reliable scraper for Property24 listings in a given area."""
     from scraper.portal_resolver import resolve_p24_url
     base_url = resolve_p24_url(area)
@@ -158,6 +180,8 @@ def scrape_portal_listings(area: str, max_price: Optional[int] = None, min_price
         params.append(f"ToPrice={max_price}")
     if min_price:
         params.append(f"FromPrice={min_price}")
+    if min_bedrooms and min_bedrooms > 0:
+        params.append(f"sp=bd{int(min_bedrooms)}")
     if property_type:
         pt = property_type.lower()
         if 'apartment' in pt or 'flat' in pt:
@@ -170,131 +194,155 @@ def scrape_portal_listings(area: str, max_price: Optional[int] = None, min_price
     if params:
         url += '?' + '&'.join(params)
 
-    req = urllib.request.Request(url, headers={
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36'
-    })
-    try:
-        html = urllib.request.urlopen(req, timeout=15).read().decode('utf-8', errors='ignore')
-    except Exception as e:
-        print(f"[SCOUT SCRAPER] Error fetching {url}: {e}")
-        return []
+    from services.p24_client import p24_client
+    base_clean = base_url.split('?')[0]
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Referer': 'https://www.property24.com/'
+    }
 
     pattern = r'<div[^>]*class="[^"]*p24_regularTile[^"]*"[^>]*data-listing-number="(\d+)"'
-    tiles = re.split(pattern, html)
     listings = []
     seen = set()
 
-    for i in range(1, len(tiles), 2):
-        lid = tiles[i]
-        if lid in seen:
-            continue
-        seen.add(lid)
-        b = tiles[i+1][:3500]
+    # Multi-page scan (Pages 1 to 3) to uncover deep inventory and hidden gems
+    for page_num in range(1, 4):
+        if page_num == 1:
+            page_url = base_clean
+        else:
+            page_url = f"{base_clean}/p{page_num}"
+        if params:
+            page_url += '?' + '&'.join(params)
 
-        p_m = re.search(r'class="p24_price"[^>]*content="(\d+)"', b)
-        price = int(p_m.group(1)) if p_m else None
-        if not price:
-            p_text = re.search(r'class="p24_price"[^>]*>(.*?)</span>', b, re.S)
-            if p_text:
-                nums = re.sub(r'[^\d]', '', p_text.group(1))
-                price = int(nums) if nums else None
+        cached = p24_client.get_cached(page_url, max_age_seconds=1800)
+        if cached and "Server unavailable" not in cached:
+            html = cached
+        else:
+            try:
+                req = urllib.request.Request(page_url, headers=headers)
+                html = urllib.request.urlopen(req, timeout=12).read().decode('utf-8', errors='ignore')
+                if "Server unavailable" in html:
+                    break
+                p24_client.set_cache(page_url, html)
+            except Exception as e:
+                print(f"[SCOUT SCRAPER] Error fetching {page_url}: {e}")
+                break
 
-        title_m = re.search(r'class="p24_title[^"]*"[^>]*>(.*?)</span>', b, re.S)
-        title = html_lib.unescape(re.sub(r'<[^>]+>', '', title_m.group(1))).strip() if title_m else ""
+        tiles = re.split(pattern, html)
+        if len(tiles) <= 1:
+            break
 
-        loc_m = re.search(r'class="p24_location[^"]*"[^>]*>(.*?)</span>', b, re.S)
-        loc = html_lib.unescape(re.sub(r'<[^>]+>', '', loc_m.group(1))).strip() if loc_m else area
+        for i in range(1, len(tiles), 2):
+            lid = tiles[i]
+            if lid in seen:
+                continue
+            seen.add(lid)
+            b = tiles[i+1][:3500]
 
-        addr_m = re.search(r'class="p24_address[^"]*"[^>]*>(.*?)</span>', b, re.S)
-        addr = html_lib.unescape(re.sub(r'<[^>]+>', '', addr_m.group(1))).strip() if addr_m else ""
+            p_m = re.search(r'class="p24_price"[^>]*content="(\d+)"', b)
+            price = int(p_m.group(1)) if p_m else None
+            if not price:
+                p_text = re.search(r'class="p24_price"[^>]*>(.*?)</span>', b, re.S)
+                if p_text:
+                    nums = re.sub(r'[^\d]', '', p_text.group(1))
+                    price = int(nums) if nums else None
 
-        exc_m = re.search(r'class="p24_excerpt"[^>]*title="([^"]+)"', b) or re.search(r'class="p24_excerpt"[^>]*>(.*?)</span>', b, re.S)
-        desc = html_lib.unescape(re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', exc_m.group(1)))).strip() if exc_m else ""
+            title_m = re.search(r'class="p24_title[^"]*"[^>]*>(.*?)</span>', b, re.S)
+            title = html_lib.unescape(re.sub(r'<[^>]+>', '', title_m.group(1))).strip() if title_m else ""
 
-        img_m = re.search(r'src="(https://images\.prop24\.com/[^"]+)"', b)
-        img = img_m.group(1) if img_m else ""
+            loc_m = re.search(r'class="p24_location[^"]*"[^>]*>(.*?)</span>', b, re.S)
+            loc = html_lib.unescape(re.sub(r'<[^>]+>', '', loc_m.group(1))).strip() if loc_m else area
 
-        size_m = re.search(r'class="p24_size"[^>]*>.*?<span>(\d+)\s*m²</span>', b, re.S)
-        sqm = int(size_m.group(1)) if size_m else None
+            addr_m = re.search(r'class="p24_address[^"]*"[^>]*>(.*?)</span>', b, re.S)
+            addr = html_lib.unescape(re.sub(r'<[^>]+>', '', addr_m.group(1))).strip() if addr_m else ""
 
-        beds_m = re.search(r'title="Bedrooms"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S)
-        beds = float(beds_m.group(1)) if beds_m else None
+            exc_m = re.search(r'class="p24_excerpt"[^>]*title="([^"]+)"', b) or re.search(r'class="p24_excerpt"[^>]*>(.*?)</span>', b, re.S)
+            desc = html_lib.unescape(re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', exc_m.group(1)))).strip() if exc_m else ""
 
-        baths_m = re.search(r'title="Bathrooms"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S)
-        baths = float(baths_m.group(1)) if baths_m else None
+            img_m = re.search(r"""(?:lazy-src|data-original|data-image-url|data-lightbox-src|src)="(https://images\.prop24\.com/[^"]+)""", b)
+            img = img_m.group(1) if img_m else ""
 
-        park_m = re.search(r'title="Parking Spaces"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S) or \
-                 re.search(r'title="Garages"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S)
-        park = int(park_m.group(1)) if park_m else None
-        
-        # Textual parking fallback
-        if park is None:
-            txt_lower = f"{title} {desc}".lower()
-            if any(k in txt_lower for k in ["undercover parking", "secure parking", "parking bay", "garage", "carport"]):
-                park = 1
+            size_m = re.search(r'class="p24_size"[^>]*>.*?<span>(\d+)\s*m²</span>', b, re.S)
+            sqm = int(size_m.group(1)) if size_m else None
 
-        avail_m = re.search(r'class="p24_badgeSupplemental">([^<]+)</span>', b)
-        avail = avail_m.group(1).strip() if avail_m else None
+            beds_m = re.search(r'title="Bedrooms"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S)
+            beds = float(beds_m.group(1)) if beds_m else None
 
-        link_m = re.search(r'href="(/to-rent/[^"]+/' + lid + r')"', b)
-        link = f"https://www.property24.com{link_m.group(1)}" if link_m else f"https://www.property24.com/to-rent/{area.lower().replace(' ', '-')}/cape-town/western-cape/9163/{lid}"
+            baths_m = re.search(r'title="Bathrooms"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S)
+            baths = float(baths_m.group(1)) if baths_m else None
 
-        # Furnished inference from title/description
-        furn = None
-        lower_txt = f"{title} {desc}".lower()
-        if "unfurnished" in lower_txt:
-            furn = False
-        elif "fully furnished" in lower_txt or "furnished" in lower_txt:
-            furn = True
+            park_m = re.search(r'title="Parking Spaces"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S) or \
+                     re.search(r'title="Garages"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', b, re.S)
+            park = int(park_m.group(1)) if park_m else None
+            
+            # Textual parking fallback
+            if park is None:
+                txt_lower = f"{title} {desc}".lower()
+                if any(k in txt_lower for k in ["undercover parking", "secure parking", "parking bay", "garage", "carport"]):
+                    park = 1
 
-        # Agency & Landlord reputation lookup
-        agency_m = re.search(r'title="Estate Agency profile for ([^"]+)"', b) or \
-                   re.search(r'class="p24_branding"[^>]*title="([^"]+)"', b) or \
-                   re.search(r'class="[^"]*p24_brandingImage[^"]*"[^>]*alt="([^"]+)"', b) or \
-                   re.search(r'title="Managed by ([^"]+)"', b)
-        agency_raw = agency_m.group(1).strip() if agency_m else None
-        
-        from services.agency_reputation import lookup_agency_reputation
-        rep = lookup_agency_reputation(agency_raw, area=area)
+            avail_m = re.search(r'class="p24_badgeSupplemental">([^<]+)</span>', b)
+            avail = avail_m.group(1).strip() if avail_m else None
 
-        listings.append({
-            "id": f"p24-{lid}",
-            "listing_id": lid,
-            "title": title or f"Rental in {area}",
-            "address": f"{addr}, {loc}" if addr else loc,
-            "price": price,
-            "bedrooms": beds,
-            "bathrooms": baths,
-            "sqm": sqm,
-            "parking": park,
-            "is_furnished": furn,
-            "available_date": avail,
-            "description": desc,
-            "image": img,
-            "url": link,
-            "area": area,
-            "agency_name": rep.get("canonical_name"),
-            "agency_rating": rep.get("google_rating"),
-            "agency_review_count": rep.get("google_review_count"),
-            "agency_risk_level": rep.get("risk_level", "low"),
-            "agency_flags": rep.get("flags", []),
-            "agency_complaint_sample": rep.get("recent_complaint_sample"),
-            "agency_url": rep.get("google_reviews_url"),
-            "agency_hellopeter_rating": rep.get("hellopeter_rating")
-        })
+            link_m = re.search(r'href="(/to-rent/[^"]+/' + lid + r')"', b)
+            link = f"https://www.property24.com{link_m.group(1)}" if link_m else f"https://www.property24.com/to-rent/{area.lower().replace(' ', '-')}/cape-town/western-cape/9163/{lid}"
+
+            # Furnished inference from title/description
+            furn = None
+            lower_txt = f"{title} {desc}".lower()
+            if "unfurnished" in lower_txt:
+                furn = False
+            elif "fully furnished" in lower_txt or "furnished" in lower_txt:
+                furn = True
+
+            # Agency & Landlord reputation lookup
+            agency_m = re.search(r'title="Estate Agency profile for ([^"]+)"', b) or \
+                       re.search(r'class="p24_branding"[^>]*title="([^"]+)"', b) or \
+                       re.search(r'class="[^"]*p24_brandingImage[^"]*"[^>]*alt="([^"]+)"', b) or \
+                       re.search(r'title="Managed by ([^"]+)"', b)
+            agency_raw = agency_m.group(1).strip() if agency_m else None
+            
+            from services.agency_reputation import lookup_agency_reputation
+            rep = lookup_agency_reputation(agency_raw, area=area)
+
+            listings.append({
+                "id": f"p24-{lid}",
+                "listing_id": lid,
+                "title": title or f"Rental in {area}",
+                "address": f"{addr}, {loc}" if addr else loc,
+                "price": price,
+                "bedrooms": beds,
+                "bathrooms": baths,
+                "sqm": sqm,
+                "parking": park,
+                "is_furnished": furn,
+                "available_date": avail,
+                "description": desc,
+                "image": img,
+                "url": link,
+                "area": area,
+                "agency_name": rep.get("canonical_name"),
+                "agency_rating": rep.get("google_rating"),
+                "agency_review_count": rep.get("google_review_count"),
+                "agency_risk_level": rep.get("risk_level", "low"),
+                "agency_flags": rep.get("flags", []),
+                "agency_complaint_sample": rep.get("recent_complaint_sample"),
+                "agency_url": rep.get("google_reviews_url"),
+                "agency_hellopeter_rating": rep.get("hellopeter_rating")
+            })
     return listings
 
-def enrich_candidate_listing(item: Dict[str, Any]) -> Dict[str, Any]:
-    """Inspects listing detail page to extract exact parking spaces, security, and sqm if missing."""
+async def enrich_candidate_listing_async(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Inspects listing detail page to extract floor level, lift/elevator, exact parking, security, and agency."""
     url = item.get("url")
     if not url:
         return item
     try:
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": "https://www.property24.com/"}
-        )
-        html = urllib.request.urlopen(req, timeout=4).read().decode("utf-8", errors="ignore")
+        from services.p24_client import p24_client
+        html = await p24_client.fetch_html(url)
+        if not html:
+            return item
         
         # Check parking icons
         park_m = re.search(r'title="Parking Spaces"[^>]*>.*?<span>(\d+(?:\.\d+)?)</span>', html, re.S) or \
@@ -310,6 +358,16 @@ def enrich_candidate_listing(item: Dict[str, Any]) -> Dict[str, Any]:
 
         if any(k in txt for k in ["24-hour security", "24hr security", "manned security"]):
             item["has_24hr_security"] = True
+
+        # Extract Elevator & Floor cues
+        if "elevator" in txt or ("lift" in txt and "short walk" not in txt):
+            item["has_lift"] = "yes"
+        elif "no lift" in txt or "stairs only" in txt:
+            item["has_lift"] = "no"
+
+        floor_m = re.search(r'\b(ground|1st|2nd|3rd|4th|first|second|third|fourth|top)\s+floor\b', txt)
+        if floor_m:
+            item["floor_number"] = floor_m.group(0)
 
         if not item.get("sqm"):
             schema_size = re.search(r'"floorSize"\s*:\s*\{[^}]*"value"\s*:\s*(\d+)', html)
@@ -383,28 +441,99 @@ class AIScoutEngine:
                 area=area_clean,
                 max_price=prefs.max_price,
                 min_price=prefs.min_price,
-                property_type=prefs.property_type
+                property_type=prefs.property_type,
+                min_bedrooms=prefs.min_bedrooms
             )
             raw_listings.extend(scraped)
 
-        # 2. Hard filter on bedrooms, parking if strictly specified
-        filtered = []
+        # Fallback to database registry if portal returned 0 (e.g. anti-bot/503)
+        if not raw_listings:
+            try:
+                from services.database import get_db
+                db = get_db()
+                if db:
+                    docs = db.collection("listings").limit(400).stream()
+                    for d in docs:
+                        l_data = d.to_dict()
+                        l_addr = (str(l_data.get("address", "")) + " " + str(l_data.get("location", "")) + " " + str(l_data.get("title", ""))).lower()
+                        if any(a.lower() in l_addr for a in prefs.areas):
+                            if prefs.max_price and l_data.get("price") and l_data.get("price") > prefs.max_price:
+                                continue
+                            imgs = l_data.get("images") or l_data.get("image_urls") or []
+                            first_img = imgs[0] if isinstance(imgs, list) and imgs else (l_data.get("image") or "")
+                            raw_listings.append({
+                                "id": d.id,
+                                "listing_id": d.id,
+                                "title": l_data.get("title") or "Rental Property",
+                                "address": l_data.get("address") or l_data.get("location") or "Cape Town",
+                                "price": l_data.get("price"),
+                                "bedrooms": l_data.get("bedrooms"),
+                                "bathrooms": l_data.get("bathrooms"),
+                                "sqm": l_data.get("sqm"),
+                                "parking": l_data.get("parking"),
+                                "is_furnished": l_data.get("is_furnished"),
+                                "description": l_data.get("description") or "",
+                                "image": first_img,
+                                "images": imgs if isinstance(imgs, list) else [],
+                                "url": l_data.get("source_url") or l_data.get("url") or "",
+                                "area": prefs.areas[0] if prefs.areas else "Cape Town",
+                                "agency_name": l_data.get("agency_name"),
+                                "is_direct_landlord": l_data.get("is_direct_landlord", False)
+                            })
+            except Exception as e:
+                print(f"[SCOUT REGISTRY FALLBACK ERROR] {e}")
+
+        # 2. Strict Hard filter: residential only, budget ceiling, min bedrooms floor
+        filtered_by_area = {}
         for it in raw_listings:
-            if prefs.max_price and it.get("price") and it["price"] > (prefs.max_price + 1000):
+            # Discard non-residential commercial/office listings
+            t_lower = (it.get("title") or "").lower()
+            if any(w in t_lower for w in ["commercial", "office", "retail", "industrial", "warehouse"]):
                 continue
-            if prefs.min_bedrooms and it.get("bedrooms") and it["bedrooms"] < prefs.min_bedrooms:
-                continue
+
+            # Strict budget ceiling
+            if prefs.max_price and it.get("price"):
+                try:
+                    if float(it["price"]) > float(prefs.max_price):
+                        continue
+                except Exception:
+                    pass
+
+            # Strict minimum bedrooms floor
+            if prefs.min_bedrooms is not None:
+                beds = it.get("bedrooms")
+                if beds is not None:
+                    try:
+                        if float(beds) < float(prefs.min_bedrooms):
+                            continue
+                    except Exception:
+                        pass
+                elif float(prefs.min_bedrooms) >= 1.0:
+                    if any(w in t_lower for w in ["0.5 bed", "studio", "bachelor", "room to rent"]):
+                        continue
+
             if prefs.must_have_parking and (it.get("parking") is not None and it["parking"] == 0):
                 continue
-            filtered.append(it)
 
-        # Fallback if filtered is too small, use raw_listings
-        candidates = filtered if len(filtered) >= 3 else (raw_listings or [])
-        # Limit to top 12 candidates for the LLM
-        candidates = candidates[:12]
+            area_key = it.get("area") or "Other"
+            filtered_by_area.setdefault(area_key, []).append(it)
+
+        # Distribute candidates fairly across each requested area (up to 4 per area)
+        candidates = []
+        for area_k, itms in filtered_by_area.items():
+            candidates.extend(itms[:4])
+
+        # If still room, backfill
+        if len(candidates) < 16:
+            for area_k, itms in filtered_by_area.items():
+                for rem in itms[4:]:
+                    if len(candidates) >= 18:
+                        break
+                    if rem not in candidates:
+                        candidates.append(rem)
+
         for c in candidates:
-            if c.get("parking") is None or not c.get("sqm"):
-                enrich_candidate_listing(c)
+            await enrich_candidate_listing_async(c)
 
         llm = self._get_llm()
         if not llm or not candidates:
@@ -427,15 +556,27 @@ TENANT DESIRES & PROMPT:
 PERSONAL TASTES & HOBBIES:
 "{prefs.personal_tastes or 'Not specified'}"
 
-CRITICAL ACOUSTIC & ROAD NOISE CONSTRAINT:
+CRITICAL DEALBREAKERS & LIFESTYLE CONSTRAINTS:
+1. ACOUSTIC PRIVACY & ROAD NOISE:
 The user produces music and works remotely; acoustic privacy and low ambient street noise are paramount.
-- Known arterial road traps (e.g. Annadale St / Mill St / Orange St next to highways and petrol stations, Buitengracht, Kloof Nek, Main Rd) suffer from severe traffic roar, taxi acceleration, delivery scooters, and sirens.
-- You MUST penalize any listing on or bordering these high-traffic transit corridors (-30 to -40 fit score penalty) and prioritize peaceful residential streets (e.g. Camp St, Belle Ombre, side avenues).
-- Explicitly flag road noise hazards in "cons".
+- Known arterial road traps (e.g. Annadale St / Mill St / Orange St next to highways and petrol stations, Buitengracht, Kloof Nek, Main Rd, and lower Derwent Rd directly facing Kloof bar corridors) suffer from severe traffic roar, patrons, and noise funneling.
+- Penalize listings on or bordering high-noise corridors (-30 to -40 fit score penalty) and prioritize peaceful residential streets (e.g. Belle Ombre, Camp St, Hildene Rd, Annadale cul-de-sac).
+
+2. BIKE ERGONOMICS & STAIRS:
+The user carries a mountain bike every second day.
+- 3rd or 4th floor walk-ups with stairs and NO elevator (like 10 Union St) are a severe dealbreaker (-35 fit score penalty).
+- Prioritize units with an ELEVATOR, GROUND FLOOR, or 1ST FLOOR only.
+
+3. AGENCY REPUTATION SHIELD:
+- Trafalgar Property Management is a high-risk agency (1.9★ on HelloPeter with widespread complaints regarding unreturned deposits, billing penalties, and unresponsive maintenance).
+- You MUST heavily penalize any listing managed by Trafalgar or high-risk agencies (-35 penalty) and flag this in "cons".
+
+4. REAL RESIDENTIAL FLATS ONLY (NO APARTHOTELS):
+- Avoid hotel/aparthotel micro-units (like BlackBrick) that lack private gear storage and have transient tourist noise (-30 penalty).
 
 CRITERIA:
 - Target Areas: {', '.join(prefs.areas)}
-- Budget Max: R {prefs.max_price or 'Flexible'} pm
+- Budget Max: R {prefs.max_price or 'Flexible'} pm (STRICT CEILING — absolutely no listings above this rent)
 - Furnished preference: {prefs.is_furnished}
 - Must have parking: {prefs.must_have_parking}
 
@@ -502,13 +643,35 @@ Return strictly valid JSON matching this structure:
                     cons_list = r.get("cons", [])
                     verdict_txt = r.get("verdict", "Solid option to consider.")
                     
-                    # Zero-cost acoustic corridor safety verification
-                    acoustic_audit = analyze_acoustic_risk(base.get("address", ""), base.get("description", ""))
+                    # 1. Agency Reputation Shield (Trafalgar & High-Risk Management)
+                    agency_name = (base.get("agency_name") or "").lower()
+                    if "trafalgar" in agency_name or base.get("agency_risk_level") == "high":
+                        score = min(score, 45)
+                        cons_list.insert(0, "🚨 High Agency Risk (Trafalgar): 1.9★ on HelloPeter — chronic complaints regarding delayed maintenance and deposit disputes")
+                        verdict_txt = "Demoted: Trafalgar Property Management has widespread tenant dispute complaints (1.9★ HelloPeter)."
+
+                    # 2. Mountain Bike Logistics & Stair Dealbreaker
+                    floor_txt = f"{base.get('floor_number', '')} {base.get('description', '')} {base.get('title', '')} {base.get('address', '')}".lower()
+                    has_lift = str(base.get("has_lift", "")).lower() in ["yes", "true", "1"] or "lift" in floor_txt or "elevator" in floor_txt
+                    is_walkup = (any(w in floor_txt for w in ["4th floor", "fourth floor", "3rd floor", "third floor", "palmhof"]) or "4th" in str(base.get("floor_number", "")).lower()) and not has_lift
+                    if is_walkup:
+                        score = min(score, 48)
+                        cons_list.insert(0, "⚠️ 4th floor walk-up without lift — carrying mountain bike up stairs is an ergonomic dealbreaker")
+                        verdict_txt = "Demoted: 4th-floor walk-up with stairs only. Carrying a mountain bike every second day is an ergonomic dealbreaker."
+
+                    # 3. Aparthotel (BlackBrick) Demotion
+                    desc_lower = f"{base.get('title', '')} {base.get('description', '')}".lower()
+                    if any(w in desc_lower for w in ["blackbrick", "aparthotel", "apartment hotel"]):
+                        score = min(score, 52)
+                        cons_list.insert(0, "⚠️ Hybrid apartment-hotel — high transient tourist turnover, no private sports gear storage, weekend rooftop noise")
+                        verdict_txt = "Demoted: BlackBrick is an apartment-hotel unsuited for quiet acoustic isolation or bulky sports gear."
+
+                    # 4. Zero-cost acoustic corridor safety verification
+                    acoustic_audit = analyze_acoustic_risk(base.get("address", ""), base.get("description", ""), base.get("url", ""), base.get("title", ""), base.get("listing_id", ""))
                     if acoustic_audit["risk"] == "high":
-                        # Apply acoustic penalty if the LLM forgot to penalize
-                        score = min(score, 55) # Hard cap at 55 out of 100
-                        cons_list.insert(0, f"🚨 Severe Road Noise Risk: {acoustic_audit['reason']}")
-                        verdict_txt = "Demoted: Sits on or adjacent to high-decibel transit corridor. Unsuitable for acoustic work."
+                        score = min(score, 50)
+                        cons_list.insert(0, f"🚨 Severe Noise Risk: {acoustic_audit['reason']}")
+                        verdict_txt = "Demoted: Sits on or adjacent to high-decibel transit corridor or bar noise funnel. Unsuitable for acoustic work."
 
                     final_ranked.append(ScoutListingRank(
                         id=base["id"],
@@ -521,8 +684,8 @@ Return strictly valid JSON matching this structure:
                         sqm=base.get("sqm"),
                         parking=base.get("parking"),
                         is_furnished=base.get("is_furnished"),
-                        image=base.get("image"),
-                        images=base.get("images") or ([base["image"]] if base.get("image") else []),
+                        image=base.get("image") or (base.get("images")[0] if isinstance(base.get("images"), list) and base.get("images") else DEFAULT_APARTMENT_PHOTOS[len(final_ranked) % len(DEFAULT_APARTMENT_PHOTOS)]),
+                        images=base.get("images") or ([base["image"]] if base.get("image") else [DEFAULT_APARTMENT_PHOTOS[len(final_ranked) % len(DEFAULT_APARTMENT_PHOTOS)]]),
                         url=base["url"],
                         area=base["area"],
                         rank=r.get("rank", len(final_ranked) + 1),
@@ -546,7 +709,22 @@ Return strictly valid JSON matching this structure:
                         floor_number=base.get("floor_number"),
                         has_lift=base.get("has_lift", "unknown"),
                         building_name=base.get("building_name"),
-                        pro_report=base.get("pro_report")
+                        pro_report=base.get("pro_report"),
+                        community_sentiment=get_community_sentiment(
+                            area=base.get("area", "Gardens"),
+                            address=base.get("address", ""),
+                            listing_id=base.get("listing_id", ""),
+                            title=base.get("title", ""),
+                            building_name=base.get("building_name")
+                        ),
+                        acoustic_audit=compute_property_acoustic_audit(
+                            lat=float(base.get("lat") or -33.9328),
+                            lng=float(base.get("lng") or 18.4103),
+                            floor_level=base.get("floor_number", ""),
+                            text_desc=f"{base.get('description', '')} {base.get('title', '')} {base.get('address', '')}",
+                            title=base.get("title", ""),
+                            address=base.get("address", "")
+                        )
                     ))
 
             # Sort strictly by fit_score descending so noise traps drop to the bottom
@@ -618,6 +796,8 @@ Return strictly valid JSON matching this structure:
             else:
                 explanation = f"Well-positioned {c.get('bedrooms', 1)} bedroom in {c['area']} at R {price_val:,} pm with easy access to cafes and trails."
 
+            verdict_text = f"Top contender in {c['area']} to view immediately."
+
             if is_aparthotel:
                 c["building_name"] = "BlackBrick Gardens (Apartment Hotel)"
                 c["has_lift"] = "yes"
@@ -635,16 +815,41 @@ Return strictly valid JSON matching this structure:
                 ]
                 verdict_text = "Lifestyle Aparthotel: Great for networking & lock-up-and-go remote work, but unsuited for quiet acoustic isolation or bulky sports gear."
 
-            # Zero-cost acoustic check
-            acoustic = analyze_acoustic_risk(c.get("address", ""), c.get("description", ""))
-            verdict_text = f"Top contender in {c['area']} to view immediately."
-            
+            # 1. Agency Reputation Check (Trafalgar & High-Risk Management)
+            agency_name = (c.get("agency_name") or "").lower()
+            agency_risk = c.get("agency_risk_level")
+            if "trafalgar" in agency_name or agency_risk == "high":
+                score -= 40
+                cons_list.insert(0, "🚨 High Agency Risk (Trafalgar): 1.9★ on HelloPeter — chronic complaints regarding delayed maintenance and deposit disputes")
+                verdict_text = "High Agency Risk: Trafalgar has a 1.9★ HelloPeter score with widespread tenant complaints."
+
+            # 2. Bike Logistics & Stairs Check
+            desc_check = f"{c.get('title', '')} {c.get('address', '')} {c.get('description', '')} {c.get('floor_number', '')}".lower()
+            has_lift = str(c.get("has_lift", "")).lower() in ["yes", "true", "1"] or "lift" in desc_check or "elevator" in desc_check
+            is_high_walkup = (any(w in desc_check for w in ["4th floor", "fourth floor", "3rd floor", "third floor", "palmhof"]) or "4th" in str(c.get("floor_number", "")).lower()) and not has_lift
+            is_easy_bike = any(w in desc_check for w in ["ground floor", "1st floor", "first floor"]) or has_lift
+
+            if is_high_walkup:
+                score -= 35
+                cons_list.insert(0, "⚠️ 4th floor walk-up without lift — carrying a mountain bike up 4 flights is an ergonomic dealbreaker")
+                verdict_text = "Stair Dealbreaker: 4th floor walk-up without a lift makes carrying a mountain bike exhausting."
+            elif is_easy_bike:
+                pros_list.append("Easy mountain bike access (ground/first floor or elevator equipped)")
+                score += 5
+
+            # 3. Aparthotel penalty
+            if is_aparthotel:
+                score -= 30
+
+            # 4. Zero-cost acoustic check
+            acoustic = analyze_acoustic_risk(c.get("address", ""), c.get("description", ""), c.get("url", ""), c.get("title", ""), c.get("listing_id", ""))
             if acoustic["risk"] == "high":
                 score -= 35 # Heavy penalty drops it below 60
-                cons_list.insert(0, f"🚨 Severe Traffic Noise Risk: {acoustic['reason']}")
-                verdict_text = "Avoid if noise-sensitive: sits on high-decibel transit corridor."
+                cons_list.insert(0, f"🚨 Severe Noise Risk: {acoustic['reason']}")
+                if "Agency" not in verdict_text and "Stair" not in verdict_text:
+                    verdict_text = "Avoid if noise-sensitive: sits on high-decibel corridor or bar transit funnel."
 
-            score = min(98, max(40, score))
+            score = min(98, max(35, score))
 
             ranked.append(ScoutListingRank(
                 id=c["id"],
@@ -657,8 +862,8 @@ Return strictly valid JSON matching this structure:
                 sqm=c.get("sqm"),
                 parking=c.get("parking"),
                 is_furnished=c.get("is_furnished"),
-                image=c.get("image"),
-                images=c.get("images") or ([c["image"]] if c.get("image") else []),
+                image=c.get("image") or (c.get("images")[0] if isinstance(c.get("images"), list) and c.get("images") else DEFAULT_APARTMENT_PHOTOS[idx % len(DEFAULT_APARTMENT_PHOTOS)]),
+                images=c.get("images") or ([c["image"]] if c.get("image") else [DEFAULT_APARTMENT_PHOTOS[idx % len(DEFAULT_APARTMENT_PHOTOS)]]),
                 url=c["url"],
                 area=c["area"],
                 rank=idx + 1,
@@ -682,7 +887,14 @@ Return strictly valid JSON matching this structure:
                 floor_number=c.get("floor_number"),
                 has_lift=c.get("has_lift", "unknown"),
                 building_name=c.get("building_name"),
-                pro_report=c.get("pro_report")
+                pro_report=c.get("pro_report"),
+                community_sentiment=get_community_sentiment(
+                    area=c.get("area", "Gardens"),
+                    address=c.get("address", ""),
+                    listing_id=c.get("listing_id", ""),
+                    title=c.get("title", ""),
+                    building_name=c.get("building_name")
+                )
             ))
 
         # Re-sort deterministically by score so noise-penalized listings drop to the bottom
