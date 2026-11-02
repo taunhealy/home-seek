@@ -23,8 +23,10 @@ import {
   ShieldWarning,
   Waveform,
   Stack,
-  CircleDashed
+  CircleDashed,
+  SlidersHorizontal
 } from '@phosphor-icons/react';
+import { resolveLocationCoords } from '@/lib/geo';
 
 export interface AcousticAudit {
   estimated_db: number;
@@ -84,16 +86,24 @@ export interface ProximityFilterConfig {
   label: string;
 }
 
-interface PropertyMapProps {
+export interface PropertyMapProps {
   properties: PropertyMapItem[];
   anchors: ProximityAnchor[];
   selectedPropertyId?: string | null;
   selectedAnchorId?: string | null;
-  onSelectProperty: (property: PropertyMapItem) => void;
+  onSelectProperty?: (property: PropertyMapItem) => void;
   onSelectAnchor?: (anchor: ProximityAnchor) => void;
   proximityFilter?: ProximityFilterConfig | null;
   onRadiusChange?: (radiusKm: number) => void;
   className?: string;
+  mode?: 'default' | 'search';
+  selectedSuburbs?: string[];
+  searchSummary?: {
+    minPrice?: string | number;
+    maxPrice?: string | number;
+    bedrooms?: string;
+    suburbsCount?: number;
+  };
 }
 
 // Convert lat/lng to Web Mercator pixel coordinates
@@ -255,6 +265,53 @@ export const CAPE_TOWN_SANCTUARIES = [
   }
 ];
 
+export const SUBURB_ABBREVIATIONS: Record<string, string> = {
+  'tamboerskloof': 'TK',
+  'oranjezicht': 'OZ',
+  'gardens': 'GD',
+  'green point': 'GP',
+  'sea point': 'SP',
+  'camps bay': 'CB',
+  'vredehoek': 'VH',
+  'higgovale': 'HV',
+  'bo-kaap': 'BK',
+  'de waterkant': 'DW',
+  'mouille point': 'MP',
+  'fresnaye': 'FR',
+  'bantry bay': 'BB',
+  'clifton': 'CF',
+  'bakoven': 'BO',
+  'hout bay': 'HB',
+  'observatory': 'OB',
+  'woodstock': 'WS',
+  'salt river': 'SR',
+  'rondebosch': 'RB',
+  'newlands': 'NL',
+  'claremont': 'CM',
+  'constantia': 'CS',
+  'century city': 'CC',
+  'kalk bay': 'KB',
+  'simons town': 'ST',
+  "simon's town": 'ST',
+  'fish hoek': 'FH',
+  'muizenberg': 'MB',
+  'pinelands': 'PL',
+  'durbanville': 'DV',
+  'bellville': 'BV',
+  'blouberg': 'BB',
+  'table view': 'TV',
+};
+
+export function getSuburbAbbr(name: string): string {
+  const clean = name.toLowerCase().trim();
+  if (SUBURB_ABBREVIATIONS[clean]) return SUBURB_ABBREVIATIONS[clean];
+  const words = clean.split(/\s+/);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 2).toUpperCase();
+}
+
 export const PropertyMap: React.FC<PropertyMapProps> = ({
   properties,
   anchors,
@@ -262,10 +319,14 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   selectedAnchorId,
   onSelectProperty,
   onSelectAnchor,
-  proximityFilter,
+  proximityFilter = null,
   onRadiusChange,
   className = '',
+  mode = 'default',
+  selectedSuburbs = [],
+  searchSummary
 }) => {
+  const isSearchMode = mode === 'search';
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 600, height: 600 });
   const [zoom, setZoom] = useState(14.5);
@@ -312,8 +373,10 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   const [hoveredProperty, setHoveredProperty] = useState<PropertyMapItem | null>(null);
   const [showAnchors, setShowAnchors] = useState(true);
   const [showRadius, setShowRadius] = useState(true);
-  const [showNoiseRadar, setShowNoiseRadar] = useState(true);
+  const [showNoiseRadar, setShowNoiseRadar] = useState(mode !== 'search');
   const [isHudCollapsed, setIsHudCollapsed] = useState(false);
+  const [isSearchRadarCollapsed, setIsSearchRadarCollapsed] = useState(false);
+  const [isRadiusCollapsed, setIsRadiusCollapsed] = useState(false);
 
   // Click-to-activate map focus (prevents page scroll hijacking)
   const [isMapActive, setIsMapActive] = useState(false);
@@ -354,7 +417,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
 
   // Center map & calculate smart initial zoom on load
   useEffect(() => {
-    if (properties.length > 0) {
+    if (!isSearchMode && properties.length > 0) {
       const lats = properties.map(p => p.lat);
       const lngs = properties.map(p => p.lng);
       const minLat = Math.min(...lats);
@@ -369,7 +432,45 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       setZoom(targetZ);
       targetZoomRef.current = targetZ;
     }
-  }, [properties]);
+  }, [properties, isSearchMode]);
+
+  // Auto-center & frame in Search Mode when criteria change
+  useEffect(() => {
+    if (isSearchMode) {
+      const points: { lat: number; lng: number }[] = [];
+      if (proximityFilter) {
+        points.push({ lat: proximityFilter.lat, lng: proximityFilter.lng });
+      }
+      if (selectedSuburbs && selectedSuburbs.length > 0) {
+        selectedSuburbs.forEach((suburb) => {
+          const geo = resolveLocationCoords(suburb);
+          points.push({ lat: geo.lat, lng: geo.lng });
+        });
+      }
+      if (anchors && anchors.length > 0) {
+        anchors.forEach((a) => points.push({ lat: a.lat, lng: a.lng }));
+      }
+      if (points.length > 0 && !isDraggingRef.current) {
+        let minLat = points[0].lat;
+        let maxLat = points[0].lat;
+        let minLng = points[0].lng;
+        let maxLng = points[0].lng;
+        points.forEach((pt) => {
+          if (pt.lat < minLat) minLat = pt.lat;
+          if (pt.lat > maxLat) maxLat = pt.lat;
+          if (pt.lng < minLng) minLng = pt.lng;
+          if (pt.lng > maxLng) maxLng = pt.lng;
+        });
+        const centerLat = (minLat + maxLat) / 2;
+        const centerLng = (minLng + maxLng) / 2;
+        setCenter({ lat: centerLat, lng: centerLng });
+        const span = Math.max(maxLat - minLat, maxLng - minLng);
+        const targetZ = span < 0.02 ? 14.6 : span < 0.06 ? 13.8 : span < 0.12 ? 12.8 : 12.0;
+        setZoom(targetZ);
+        targetZoomRef.current = targetZ;
+      }
+    }
+  }, [isSearchMode, proximityFilter?.lat, proximityFilter?.lng, selectedSuburbs, anchors]);
 
   // Center map when a property is selected (only if not currently dragging)
   useEffect(() => {
@@ -381,7 +482,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     }
   }, [selectedPropertyId, properties]);
 
-  // Unified Drag Handlers attached to window (zero drift, zero coordinate lag)
+  // Unified Drag Handlers attached to window (zero drift, zero coordinate lag, rAF throttled)
   const startDrag = (clientX: number, clientY: number) => {
     isDraggingRef.current = true;
     hasDraggedRef.current = false;
@@ -401,15 +502,17 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   };
 
   useEffect(() => {
-    const handleMove = (clientX: number, clientY: number) => {
-      if (!isDraggingRef.current) return;
-      const dx = clientX - dragStartRef.current.x;
-      const dy = clientY - dragStartRef.current.y;
+    let rafId: number | null = null;
+    let accumulatedDx = 0;
+    let accumulatedDy = 0;
 
-      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
-        hasDraggedRef.current = true;
-      }
-      dragStartRef.current = { x: clientX, y: clientY };
+    const applyMove = () => {
+      rafId = null;
+      if (accumulatedDx === 0 && accumulatedDy === 0) return;
+      const dx = accumulatedDx;
+      const dy = accumulatedDy;
+      accumulatedDx = 0;
+      accumulatedDy = 0;
 
       setCenter((prevCenter) => {
         const centerP = project(prevCenter.lat, prevCenter.lng, zoom);
@@ -424,7 +527,28 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       });
     };
 
+    const handleMove = (clientX: number, clientY: number) => {
+      if (!isDraggingRef.current) return;
+      const dx = clientX - dragStartRef.current.x;
+      const dy = clientY - dragStartRef.current.y;
+
+      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+        hasDraggedRef.current = true;
+      }
+      dragStartRef.current = { x: clientX, y: clientY };
+      accumulatedDx += dx;
+      accumulatedDy += dy;
+
+      if (rafId === null) {
+        rafId = requestAnimationFrame(applyMove);
+      }
+    };
+
     const handleEnd = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        applyMove();
+      }
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         setIsDragging(false);
@@ -446,6 +570,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     window.addEventListener('touchend', onWindowTouchEnd);
 
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
       window.removeEventListener('mousemove', onWindowMouseMove);
       window.removeEventListener('mouseup', onWindowMouseUp);
       window.removeEventListener('touchmove', onWindowTouchMove);
@@ -591,7 +716,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   }
 
   // Selected property & active proximity anchor
-  const selectedProp = properties.find((p) => p.id === selectedPropertyId) || properties[0] || null;
+  const selectedProp = isSearchMode ? null : (properties.find((p) => p.id === selectedPropertyId) || properties[0] || null);
   const activeAnchor =
     anchors.find((a) => a.id === selectedAnchorId) || anchors[0] || null;
 
@@ -602,9 +727,16 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   // Selected prop position
   const propPos = selectedProp ? getScreenPos(selectedProp.lat, selectedProp.lng) : null;
 
+  const lastRenderedPositionsRef = useRef<Record<string, { isCompact: boolean }>>({});
+
   // Smart Anti-Collision Level-of-Detail (LOD) Engine:
   // Detects overlapping pins in screen pixel space and condenses crowded pins into sleek micro-dots
   const renderedPositions = React.useMemo(() => {
+    // While dragging, freeze the LOD layout so pins never pop or nudge mid-drag
+    if (isDraggingRef.current && Object.keys(lastRenderedPositionsRef.current).length > 0) {
+      return lastRenderedPositionsRef.current;
+    }
+
     const result: Record<string, { isCompact: boolean }> = {};
     const placed: { x: number; y: number }[] = [];
 
@@ -670,6 +802,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       placed.push({ x: pos.x, y: pos.y });
     }
 
+    lastRenderedPositionsRef.current = result;
     return result;
   }, [properties, selectedPropertyId, hoveredProperty, center, zoom, dimensions, activeAnchor]);
 
@@ -825,7 +958,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         </div>
       )}
       {/* 1. Map Tiles Layer (Free Map APIs - No Watermarks) */}
-      <div className={`absolute inset-0 pointer-events-none transition-all duration-300 ${mapStyle === 'canvas' ? 'grayscale-[85%] contrast-[92%] brightness-[102%]' : ''}`}>
+      <div className={`absolute inset-0 pointer-events-none transition-[filter] duration-300 ${mapStyle === 'canvas' ? 'grayscale-[85%] contrast-[92%] brightness-[102%]' : ''}`}>
         {tiles.map((tile) => (
           <React.Fragment key={tile.key}>
             <img
@@ -1259,7 +1392,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       )}
 
       {/* 3. Single Floating Commute Badge for the Active Target Anchor */}
-      {propPos && showAnchors && activeAnchor && (() => {
+      {selectedProp && propPos && showAnchors && activeAnchor && (() => {
         const aPos = getScreenPos(activeAnchor.lat, activeAnchor.lng);
         const driveData = activeDrivingRoute;
 
@@ -1333,7 +1466,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
           return (
             <div
               key={anchor.id}
-              className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all ${isSelected ? 'z-35' : 'z-20'
+              className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-none ${isSelected ? 'z-35' : 'z-20'
                 }`}
               style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
               onClick={(e) => {
@@ -1390,23 +1523,44 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
           <div key="dynamic-proximity-filter-elements" className="pointer-events-none">
             {/* Center Beacon */}
             <div
-              className="absolute z-40 transform -translate-x-1/2 -translate-y-1/2"
+              className="absolute z-40 transform -translate-x-1/2 -translate-y-1/2 transition-none pointer-events-auto"
               style={{ left: `${pPos.x}px`, top: `${pPos.y}px` }}
             >
-              <div className="relative flex flex-col items-center">
-                <span className="absolute -inset-2.5 rounded-full bg-indigo-500/40 animate-ping pointer-events-none" />
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-950 text-white font-extrabold text-xs shadow-2xl ring-2 ring-indigo-400 ring-offset-2 ring-offset-white whitespace-nowrap">
-                  <Target size={14} weight="bold" className="text-indigo-400 animate-pulse" />
-                  <span>{proximityFilter.label}</span>
-                </div>
-                <div className="w-2 h-2 rotate-45 -mt-1 shadow-2xs bg-zinc-950" />
+              <div className="relative flex flex-col items-center group/focal">
+                {zoom < 13.8 ? (
+                  /* Compact Target Icon for Zoomed-Out View */
+                  <>
+                    {!isDragging && (
+                      <span className="absolute -inset-1.5 rounded-full bg-indigo-500/40 animate-ping pointer-events-none" />
+                    )}
+                    <div className="w-7 h-7 rounded-full bg-indigo-600 text-white ring-2 ring-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform cursor-pointer">
+                      <Target size={15} weight="bold" />
+                    </div>
+                    {/* Tooltip on Hover */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1 rounded-xl bg-zinc-950 text-white text-[11px] font-extrabold whitespace-nowrap opacity-0 group-hover/focal:opacity-100 pointer-events-none shadow-xl border border-white/10 z-50 transition-opacity">
+                      Focal Hub: {proximityFilter.label}
+                    </div>
+                  </>
+                ) : (
+                  /* Expanded Luxury Pill for Zoomed-In View */
+                  <>
+                    {!isDragging && (
+                      <span className="absolute -inset-2.5 rounded-full bg-indigo-500/40 animate-ping pointer-events-none" />
+                    )}
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-950 text-white font-extrabold text-xs shadow-2xl ring-2 ring-indigo-400 ring-offset-2 ring-offset-white whitespace-nowrap">
+                      <Target size={14} weight="bold" className={`text-indigo-400 ${isDragging ? '' : 'animate-pulse'}`} />
+                      <span>{proximityFilter.label}</span>
+                    </div>
+                    <div className="w-2 h-2 rotate-45 -mt-1 shadow-2xs bg-zinc-950" />
+                  </>
+                )}
               </div>
             </div>
 
             {/* Perimeter Distance Badge */}
               { radiusPixels > 30 && showRadius && (
                 <div
-                  className="absolute z-35 transform -translate-x-1/2 -translate-y-full mb-1"
+                  className="absolute z-35 transform -translate-x-1/2 -translate-y-full mb-1 transition-none"
                   style={{ left: `${pPos.x}px`, top: `${pPos.y - radiusPixels}px` }}
                 >
                   <div className="px-2.5 py-0.5 rounded-full bg-indigo-600/95 text-white text-[10px] font-black shadow-md border border-white/50 backdrop-blur-md whitespace-nowrap">
@@ -1428,7 +1582,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         return (
           <div
             key={`anchor-perimeter-badge-${activeAnchor.id}`}
-            className="absolute z-35 transform -translate-x-1/2 -translate-y-full mb-1 pointer-events-none"
+            className="absolute z-35 transform -translate-x-1/2 -translate-y-full mb-1 pointer-events-none transition-none"
             style={{ left: `${aPos.x}px`, top: `${aPos.y - radiusPixels}px` }}
           >
             <div className="px-2.5 py-0.5 rounded-full bg-indigo-600/95 text-white text-[10px] font-black shadow-md border border-white/50 backdrop-blur-md whitespace-nowrap">
@@ -1438,8 +1592,88 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         );
       })()}
 
-      {/* 5. Property Markers Layer (Airbnb-Grade Dynamic Anti-Collision Pins) */}
-      {properties.map((property) => {
+      {/* 5A. Target Suburb Pins (Search Mode: Dynamic Level-of-Detail & Anti-Collision) */}
+      {isSearchMode && selectedSuburbs && (() => {
+        const placedMarkers: { x: number; y: number }[] = [];
+        if (proximityFilter) {
+          const fp = getScreenPos(proximityFilter.lat, proximityFilter.lng);
+          placedMarkers.push({ x: fp.x, y: fp.y });
+        }
+
+        return selectedSuburbs.map((suburb) => {
+          const coords = resolveLocationCoords(suburb);
+          const rawPos = getScreenPos(coords.lat, coords.lng);
+          if (rawPos.x < -100 || rawPos.x > dimensions.width + 100 || rawPos.y < -100 || rawPos.y > dimensions.height + 100) {
+            return null;
+          }
+
+          const abbr = getSuburbAbbr(suburb);
+          const isZoomedOut = zoom < 13.8;
+          let renderCompact = isZoomedOut;
+
+          if (!renderCompact) {
+            // Check collision for full 110px pill against previously placed markers
+            const collides = placedMarkers.some(
+              (p) => Math.abs(p.x - rawPos.x) < 85 && Math.abs(p.y - rawPos.y) < 28
+            );
+            if (collides) {
+              renderCompact = true;
+            }
+          }
+
+          // Anti-overlap displacement: if even the compact circles collide (< 26px), micro-nudge slightly
+          let posX = rawPos.x;
+          let posY = rawPos.y;
+          const pointCollision = placedMarkers.find(
+            (p) => Math.hypot(p.x - posX, p.y - posY) < 26
+          );
+          if (pointCollision) {
+            const angle = Math.atan2(posY - pointCollision.y, posX - pointCollision.x) || Math.PI / 4;
+            posX = pointCollision.x + Math.cos(angle) * 28;
+            posY = pointCollision.y + Math.sin(angle) * 28;
+          }
+
+          placedMarkers.push({ x: posX, y: posY });
+
+          return (
+            <div
+              key={suburb}
+              className="absolute transform -translate-x-1/2 -translate-y-1/2 z-35 pointer-events-auto cursor-pointer select-none transition-none group/suburb"
+              style={{ left: `${posX}px`, top: `${posY}px` }}
+            >
+              <div className="relative flex flex-col items-center">
+                {renderCompact ? (
+                  /* Compact Geo Icon & Abbreviation Dot for Zoomed-Out View */
+                  <>
+                    <div className="w-6 h-6 rounded-full bg-zinc-950 text-white border-2 border-indigo-400 shadow-lg flex items-center justify-center text-[10px] font-black tracking-tight hover:scale-125 transition-transform">
+                      {abbr}
+                    </div>
+                    {/* Tooltip on Hover showing full suburb name */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1 rounded-xl bg-zinc-950 text-white text-[11px] font-extrabold whitespace-nowrap opacity-0 group-hover/suburb:opacity-100 pointer-events-none shadow-xl border border-white/10 z-50 transition-opacity">
+                      <div className="flex items-center gap-1.5">
+                        <MapPin size={12} weight="fill" className="text-indigo-400" />
+                        <span>{suburb}</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  /* Expanded Full Luxury Pill for Zoomed-In View */
+                  <>
+                    <div className="px-3 py-1.5 rounded-2xl text-xs font-black bg-zinc-950 text-white shadow-xl border border-white/20 flex items-center gap-1.5 whitespace-nowrap hover:scale-105 transition-transform">
+                      <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
+                      <span>{suburb}</span>
+                    </div>
+                    <div className="w-2.5 h-2.5 rotate-45 -mt-1 bg-zinc-950 border-r border-b border-white/20 shadow-xs" />
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        });
+      })()}
+
+      {/* 5B. Property Markers Layer (Results / Default Mode) */}
+      {!isSearchMode && properties.map((property) => {
         const pos = getScreenPos(property.lat, property.lng);
         const isSelected = (selectedPropertyId ? selectedPropertyId === property.id : selectedProp?.id === property.id);
         const isHovered = hoveredProperty?.id === property.id;
@@ -1454,13 +1688,13 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         return (
           <div
             key={property.id}
-            className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-150 ${isSelected ? 'z-45 scale-110' : isHovered ? 'z-40 scale-105' : isCompact ? 'z-20' : 'z-25'
+            className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-none ${isSelected ? 'z-45' : isHovered ? 'z-40' : isCompact ? 'z-20' : 'z-25'
               }`}
             style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
             onClick={(e) => {
               e.stopPropagation();
               if (hasDraggedRef.current) return;
-              onSelectProperty(property);
+              if (onSelectProperty) onSelectProperty(property);
             }}
             onMouseEnter={() => setHoveredProperty(property)}
             onMouseLeave={() => setHoveredProperty(null)}
@@ -1562,158 +1796,250 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       })}
 
 
-      {/* 6. Active Property & Proximity HUD Header (Top Left - Sleek Glassmorphic Inspector) */}
-      {selectedProp && (
-        <div className="absolute top-4 left-4 z-40 bg-white/95 backdrop-blur-xl border border-zinc-200/90 rounded-2xl shadow-xl text-xs max-w-sm pointer-events-auto transition-all duration-200">
-          {/* Collapsed Pill State */}
-          {isHudCollapsed ? (
+      {/* 6. Active Property & Proximity HUD Header (Top Left) */}
+      {isSearchMode ? (
+        <div className="absolute top-4 left-4 z-40 max-w-sm pointer-events-auto">
+          {isSearchRadarCollapsed ? (
             <div
-              onClick={() => setIsHudCollapsed(false)}
-              className="px-3.5 py-2 flex items-center gap-2 cursor-pointer hover:bg-zinc-50/80 rounded-2xl transition-colors"
+              onClick={() => setIsSearchRadarCollapsed(false)}
+              className="px-3.5 py-2 flex items-center gap-2.5 cursor-pointer hover:bg-zinc-50/90 rounded-2xl bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl text-xs transition-all select-none group"
+              title="Expand Search Filter Radar"
             >
-              <img
-                src={selectedProp.image}
-                alt=""
-                className="w-6 h-6 rounded-lg object-cover border border-zinc-200 shrink-0"
-              />
-              <span className="font-extrabold text-zinc-950 truncate max-w-[150px]">
-                #{selectedProp.rank} {selectedProp.title}
+              <div className="w-6 h-6 rounded-xl bg-zinc-950 text-white flex items-center justify-center font-bold shadow-xs shrink-0 group-hover:scale-105 transition-transform">
+                <SlidersHorizontal size={13} weight="bold" className="text-indigo-400" />
+              </div>
+              <span className="font-extrabold text-zinc-950 truncate max-w-[170px]">
+                Search Radar ({selectedSuburbs && selectedSuburbs.length > 0 ? `${selectedSuburbs.length} Suburbs` : 'All City'})
               </span>
-              <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md text-[11px] shrink-0">
-                {formatPricePill(selectedProp.price, selectedProp.currency)}
+              <span className="font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md text-[10px] shrink-0">
+                {effectiveRadiusKm.toFixed(1)} km
               </span>
               <CaretDown size={14} weight="bold" className="text-zinc-500 shrink-0" />
             </div>
           ) : (
-            /* Expanded Full Inspector State */
-            <div className="p-3.5 space-y-3">
-              <div className="flex items-start justify-between gap-3">
+            <div className="bg-white/95 backdrop-blur-xl border border-zinc-200/90 rounded-3xl shadow-xl text-xs p-4 space-y-3 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5">
-                  <img
-                    src={selectedProp.image}
-                    alt={selectedProp.title}
-                    className="w-12 h-12 rounded-xl object-cover border border-zinc-200 shrink-0 shadow-2xs"
-                  />
+                  <div className="w-8 h-8 rounded-2xl bg-zinc-950 text-white flex items-center justify-center font-bold shadow-xs">
+                    <SlidersHorizontal size={16} weight="bold" className="text-indigo-400" />
+                  </div>
                   <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="bg-zinc-950 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                        #{selectedProp.rank}
-                      </span>
-                      <span className="font-extrabold text-zinc-950 text-xs truncate max-w-[140px]">
-                        {selectedProp.title}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-zinc-500 truncate max-w-[160px] mt-0.5">{selectedProp.address}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="font-black text-indigo-700 text-xs">
-                        {formatPricePill(selectedProp.price, selectedProp.currency)}
-                        <span className="text-[10px] font-normal text-zinc-500"> /mo</span>
-                      </span>
-                      {selectedProp.fit_score && (
-                        <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-md ${selectedProp.fit_score >= 70 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
-                          }`}>
-                          {selectedProp.fit_score}% Fit
-                        </span>
-                      )}
-                    </div>
+                    <h3 className="font-extrabold text-zinc-950 text-xs">Search Filter Radar</h3>
+                    <p className="text-[10px] text-zinc-500 font-medium">Real-time criteria footprint</p>
                   </div>
                 </div>
-
-                <button
-                  onClick={() => setIsHudCollapsed(true)}
-                  className="p-1 text-zinc-400 hover:text-zinc-800 transition-colors rounded-lg hover:bg-zinc-100 cursor-pointer shrink-0"
-                  title="Collapse Inspector"
-                  aria-label="Collapse Inspector"
-                >
-                  <CaretUp size={15} weight="bold" />
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-[10px] font-black uppercase tracking-wider">
+                    Search Mode
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchRadarCollapsed(true)}
+                    className="p-1 text-zinc-400 hover:text-zinc-800 transition-colors rounded-lg hover:bg-zinc-100 cursor-pointer"
+                    title="Collapse Search Filter Radar"
+                    aria-label="Collapse Search Filter Radar"
+                  >
+                    <CaretUp size={15} weight="bold" />
+                  </button>
+                </div>
               </div>
 
-
-              {/* Acoustic Decibel & Orientation Rating */}
-              <div className="pt-2 border-t border-zinc-100">
-                <div className="flex items-center justify-between text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                  <span>Acoustic Decibel &amp; Orientation</span>
-                  <span className={isPropShielded ? 'text-emerald-600 font-extrabold' : 'text-rose-600 font-extrabold'}>
-                    {selectedProp.acoustic_audit?.estimated_db || (isPropShielded ? 40 : 73)} dBA
+              {/* Active Criteria Summary */}
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between text-[11px] p-2.5 rounded-2xl bg-zinc-50 border border-zinc-200/70">
+                  <span className="font-semibold text-zinc-600 flex items-center gap-1.5">
+                    <MapPin size={14} weight="bold" className="text-indigo-600" />
+                    Target Suburbs
+                  </span>
+                  <span className="font-extrabold text-zinc-950">
+                    {selectedSuburbs && selectedSuburbs.length > 0
+                      ? `${selectedSuburbs.length} Selected`
+                      : 'All Cape Town'}
                   </span>
                 </div>
-                <div className={`p-2 rounded-xl text-xs flex items-center gap-2 border ${isPropShielded
-                    ? 'bg-emerald-50/80 text-emerald-950 border-emerald-200/80'
-                    : 'bg-rose-50/80 text-rose-950 border-rose-200/80'
-                  }`}>
-                  {isPropShielded ? (
-                    <ShieldCheck size={18} weight="bold" className="text-emerald-600 shrink-0" />
-                  ) : (
-                    <SpeakerHigh size={18} weight="bold" className="text-rose-600 shrink-0" />
-                  )}
-                  <div className="min-w-0">
-                    <div className="font-extrabold text-[11px] truncate">
-                      {selectedProp.acoustic_audit?.sound_shadow_status || (isPropShielded ? 'In Acoustic Shadow (Shielded)' : 'Direct Unbuffered Exposure')}
-                    </div>
-                    <div className="text-[10px] text-zinc-600 truncate mt-0.5">
-                      Facing: {selectedProp.acoustic_audit?.facing_direction || (isPropShielded ? 'West / Mountain' : 'East / Malan St')}
-                    </div>
+
+                {proximityFilter && (
+                  <div className="flex items-center justify-between text-[11px] p-2.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/70">
+                    <span className="font-semibold text-indigo-900 flex items-center gap-1.5 truncate max-w-[160px]">
+                      <Target size={14} weight="bold" className="text-indigo-600 shrink-0" />
+                      {locationLabel}
+                    </span>
+                    <span className="font-black text-indigo-700 shrink-0">
+                      {effectiveRadiusKm.toFixed(1)} km buffer
+                    </span>
                   </div>
-                </div>
+                )}
+
+                {searchSummary && (searchSummary.minPrice || searchSummary.maxPrice) && (
+                  <div className="flex items-center justify-between text-[11px] p-2.5 rounded-2xl bg-zinc-50 border border-zinc-200/70">
+                    <span className="font-semibold text-zinc-600">Budget Window</span>
+                    <span className="font-extrabold text-zinc-950">
+                      R {Number(searchSummary.minPrice || 0).toLocaleString()} – R {Number(searchSummary.maxPrice || 0).toLocaleString()}
+                    </span>
+                  </div>
+                )}
               </div>
 
-              {/* Desired Locations Proximity Section */}
-              {anchors.length > 0 && (
-                <div className="space-y-1.5 pt-2.5 border-t border-zinc-100">
-                  <div className="flex items-center justify-between text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                    <span>Commute & Proximity</span>
-                    <span className="text-zinc-400 font-normal">Click to focus</span>
-                  </div>
-
-                  {anchors.map((a) => {
-                    const isSelectedAnchor = activeAnchor?.id === a.id;
-                    const driveData = (isSelectedAnchor && activeDrivingRoute) ? activeDrivingRoute : null;
-                    const distKm = driveData
-                      ? driveData.distanceKm
-                      : calculateDrivingDistanceKm(selectedProp.lat, selectedProp.lng, a.lat, a.lng);
-                    const durMins = driveData
-                      ? driveData.durationMins
-                      : calculateDrivingDurationMins(distKm);
-                    const dist = `${distKm} km`;
-                    const dur = `~${durMins} mins`;
-
-                    return (
-                      <div
-                        key={a.id}
-                        onClick={() => onSelectAnchor && onSelectAnchor(a)}
-                        className={`flex items-center justify-between text-[11px] font-medium px-2.5 py-1.5 rounded-xl cursor-pointer transition-all ${isSelectedAnchor
-                            ? 'bg-zinc-950 text-white shadow-sm'
-                            : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-800 border border-zinc-200/60'
-                          }`}
-                      >
-                        <span className="truncate max-w-[130px] font-semibold flex items-center gap-1.5">
-                          <Target size={12} className={isSelectedAnchor ? 'text-emerald-400' : 'text-zinc-500'} />
-                          {a.label}
-                        </span>
-                        <span className={`font-black shrink-0 ${isSelectedAnchor ? 'text-emerald-400' : 'text-indigo-600'}`}>
-                          {dur} • {dist}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Jump to listing card button */}
-              <button
-                onClick={() => {
-                  const el = document.getElementById(`listing-card-${selectedProp.id}`);
-                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }}
-                className="w-full py-1.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200/90 text-zinc-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <span>Scroll to Full Dossier</span>
-                <NavigationArrow size={12} weight="bold" className="text-zinc-600" />
-              </button>
+              <div className="pt-1.5 text-[10px] text-zinc-400 font-medium leading-relaxed border-t border-zinc-100 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                <span>Map reflects your live filters. Properties are ranked when you launch the report.</span>
+              </div>
             </div>
           )}
         </div>
+      ) : (
+        selectedProp && (
+          <div className="absolute top-4 left-4 z-40 bg-white/95 backdrop-blur-xl border border-zinc-200/90 rounded-2xl shadow-xl text-xs max-w-sm pointer-events-auto transition-all duration-200">
+            {/* Collapsed Pill State */}
+            {isHudCollapsed ? (
+              <div
+                onClick={() => setIsHudCollapsed(false)}
+                className="px-3.5 py-2 flex items-center gap-2 cursor-pointer hover:bg-zinc-50/80 rounded-2xl transition-colors"
+              >
+                <img
+                  src={selectedProp.image}
+                  alt=""
+                  className="w-6 h-6 rounded-lg object-cover border border-zinc-200 shrink-0"
+                />
+                <span className="font-extrabold text-zinc-950 truncate max-w-[150px]">
+                  #{selectedProp.rank} {selectedProp.title}
+                </span>
+                <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md text-[11px] shrink-0">
+                  {formatPricePill(selectedProp.price, selectedProp.currency)}
+                </span>
+                <CaretDown size={14} weight="bold" className="text-zinc-500 shrink-0" />
+              </div>
+            ) : (
+              /* Expanded Full Inspector State */
+              <div className="p-3.5 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src={selectedProp.image}
+                      alt={selectedProp.title}
+                      className="w-12 h-12 rounded-xl object-cover border border-zinc-200 shrink-0 shadow-2xs"
+                    />
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-zinc-950 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                          #{selectedProp.rank}
+                        </span>
+                        <span className="font-extrabold text-zinc-950 text-xs truncate max-w-[140px]">
+                          {selectedProp.title}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 truncate max-w-[160px] mt-0.5">{selectedProp.address}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="font-black text-indigo-700 text-xs">
+                          {formatPricePill(selectedProp.price, selectedProp.currency)}
+                          <span className="text-[10px] font-normal text-zinc-500"> /mo</span>
+                        </span>
+                        {selectedProp.fit_score && (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-md ${selectedProp.fit_score >= 70 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}>
+                            {selectedProp.fit_score}% Fit
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setIsHudCollapsed(true)}
+                    className="p-1 text-zinc-400 hover:text-zinc-800 transition-colors rounded-lg hover:bg-zinc-100 cursor-pointer shrink-0"
+                    title="Collapse Inspector"
+                    aria-label="Collapse Inspector"
+                  >
+                    <CaretUp size={15} weight="bold" />
+                  </button>
+                </div>
+
+
+                {/* Acoustic Decibel & Orientation Rating */}
+                <div className="pt-2 border-t border-zinc-100">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                    <span>Acoustic Decibel &amp; Orientation</span>
+                    <span className={isPropShielded ? 'text-emerald-600 font-extrabold' : 'text-rose-600 font-extrabold'}>
+                      {selectedProp.acoustic_audit?.estimated_db || (isPropShielded ? 40 : 73)} dBA
+                    </span>
+                  </div>
+                  <div className={`p-2 rounded-xl text-xs flex items-center gap-2 border ${isPropShielded
+                      ? 'bg-emerald-50/80 text-emerald-950 border-emerald-200/80'
+                      : 'bg-rose-50/80 text-rose-950 border-rose-200/80'
+                    }`}>
+                    {isPropShielded ? (
+                      <ShieldCheck size={18} weight="bold" className="text-emerald-600 shrink-0" />
+                    ) : (
+                      <SpeakerHigh size={18} weight="bold" className="text-rose-600 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-extrabold text-[11px] truncate">
+                        {selectedProp.acoustic_audit?.sound_shadow_status || (isPropShielded ? 'In Acoustic Shadow (Shielded)' : 'Direct Unbuffered Exposure')}
+                      </div>
+                      <div className="text-[10px] text-zinc-600 truncate mt-0.5">
+                        Facing: {selectedProp.acoustic_audit?.facing_direction || (isPropShielded ? 'West / Mountain' : 'East / Malan St')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Desired Locations Proximity Section */}
+                {anchors.length > 0 && (
+                  <div className="space-y-1.5 pt-2.5 border-t border-zinc-100">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                      <span>Commute & Proximity</span>
+                      <span className="text-zinc-400 font-normal">Click to focus</span>
+                    </div>
+
+                    {anchors.map((a) => {
+                      const isSelectedAnchor = activeAnchor?.id === a.id;
+                      const driveData = (isSelectedAnchor && activeDrivingRoute) ? activeDrivingRoute : null;
+                      const distKm = driveData
+                        ? driveData.distanceKm
+                        : calculateDrivingDistanceKm(selectedProp.lat, selectedProp.lng, a.lat, a.lng);
+                      const durMins = driveData
+                        ? driveData.durationMins
+                        : calculateDrivingDurationMins(distKm);
+                      const dist = `${distKm} km`;
+                      const dur = `~${durMins} mins`;
+
+                      return (
+                        <div
+                          key={a.id}
+                          onClick={() => onSelectAnchor && onSelectAnchor(a)}
+                          className={`flex items-center justify-between text-[11px] font-medium px-2.5 py-1.5 rounded-xl cursor-pointer transition-all ${isSelectedAnchor
+                              ? 'bg-zinc-950 text-white shadow-sm'
+                              : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-800 border border-zinc-200/60'
+                            }`}
+                        >
+                          <span className="truncate max-w-[130px] font-semibold flex items-center gap-1.5">
+                            <Target size={12} className={isSelectedAnchor ? 'text-emerald-400' : 'text-zinc-500'} />
+                            {a.label}
+                          </span>
+                          <span className={`font-black shrink-0 ${isSelectedAnchor ? 'text-emerald-400' : 'text-indigo-600'}`}>
+                            {dur} • {dist}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Jump to listing card button */}
+                <button
+                  onClick={() => {
+                    const el = document.getElementById(`listing-card-${selectedProp.id}`);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }}
+                  className="w-full py-1.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200/90 text-zinc-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <span>Scroll to Full Dossier</span>
+                  <NavigationArrow size={12} weight="bold" className="text-zinc-600" />
+                </button>
+              </div>
+            )}
+          </div>
+        )
       )}
 
       {/* Map Zoom & Action Controls (Bottom Right) */}
@@ -1761,54 +2087,86 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         >
           {/* Dynamic Radius Ring Slider (Directly above the toggle visibility switches) */}
           {showRadius && (proximityFilter || (showAnchors && (activeAnchor || anchors.length > 0))) && (
-            <div className="w-64 sm:w-72 p-3 rounded-2xl bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl transition-all duration-200 select-none">
-              {/* Header: Location Label & Radius Pill */}
-              <div className="flex items-center justify-between gap-2 mb-2">
+            isRadiusCollapsed ? (
+              <div
+                onClick={() => setIsRadiusCollapsed(false)}
+                className="w-64 sm:w-72 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl flex items-center justify-between gap-2 cursor-pointer hover:bg-zinc-50/90 transition-all select-none group"
+                title="Expand Radius Slider"
+              >
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <Target size={14} weight="bold" className="text-indigo-600 shrink-0" />
+                  <Target size={14} weight="bold" className="text-indigo-600 shrink-0 group-hover:scale-110 transition-transform" />
                   <span className="text-xs font-bold text-zinc-800 truncate" title={locationLabel}>
                     {locationLabel}
                   </span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-extrabold text-[11px] whitespace-nowrap shrink-0">
-                  {effectiveRadiusKm.toFixed(1)} km
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-extrabold text-[11px] whitespace-nowrap">
+                    {effectiveRadiusKm.toFixed(1)} km
+                  </span>
+                  <CaretUp size={14} weight="bold" className="text-zinc-500 shrink-0" />
+                </div>
               </div>
-
-                  {/* Slider Track */}
-                  <input
-                    type="range"
-                    min="1"
-                    max="20"
-                    step="0.5"
-                    value={effectiveRadiusKm}
-                    onChange={(e) => handleRadiusChange(parseFloat(e.target.value))}
-                    className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none"
-                    aria-label="Location Radius Ring Slider"
-                  />
-
-                  {/* Scale & Quick Presets */}
-                  <div className="flex items-center justify-between mt-1 text-[10px] font-semibold text-zinc-400">
-                    <span>1 km</span>
-                    <div className="flex items-center gap-1">
-                      {[2, 5, 10, 15].map((km) => (
-                        <button
-                          key={km}
-                          type="button"
-                          onClick={() => handleRadiusChange(km)}
-                          className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${Math.abs(effectiveRadiusKm - km) < 0.25
-                              ? 'bg-indigo-600 text-white shadow-xs'
-                              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'
-                            }`}
-                        >
-                          {km}k
-                        </button>
-                      ))}
-                    </div>
-                    <span>20 km</span>
+            ) : (
+              <div className="w-64 sm:w-72 p-3 rounded-2xl bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl transition-all duration-200 select-none animate-in fade-in duration-150">
+                {/* Header: Location Label & Radius Pill */}
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Target size={14} weight="bold" className="text-indigo-600 shrink-0" />
+                    <span className="text-xs font-bold text-zinc-800 truncate" title={locationLabel}>
+                      {locationLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-extrabold text-[11px] whitespace-nowrap shrink-0">
+                      {effectiveRadiusKm.toFixed(1)} km
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsRadiusCollapsed(true)}
+                      className="p-1 text-zinc-400 hover:text-zinc-800 transition-colors rounded-lg hover:bg-zinc-100 cursor-pointer"
+                      title="Collapse Radius Slider"
+                      aria-label="Collapse Radius Slider"
+                    >
+                      <CaretDown size={14} weight="bold" />
+                    </button>
                   </div>
                 </div>
-        )}
+
+                {/* Slider Track */}
+                <input
+                  type="range"
+                  min="1"
+                  max="20"
+                  step="0.5"
+                  value={effectiveRadiusKm}
+                  onChange={(e) => handleRadiusChange(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none"
+                  aria-label="Location Radius Ring Slider"
+                />
+
+                {/* Scale & Quick Presets */}
+                <div className="flex items-center justify-between mt-1 text-[10px] font-semibold text-zinc-400">
+                  <span>1 km</span>
+                  <div className="flex items-center gap-1">
+                    {[2, 5, 10, 15].map((km) => (
+                      <button
+                        key={km}
+                        type="button"
+                        onClick={() => handleRadiusChange(km)}
+                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${Math.abs(effectiveRadiusKm - km) < 0.25
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'
+                          }`}
+                      >
+                        {km}k
+                      </button>
+                    ))}
+                  </div>
+                  <span>20 km</span>
+                </div>
+              </div>
+            )
+          )}
 
                   {/* Layer Visibility Toolbar (Gray Container with Title & Tooltips) */}
                   <div className="flex items-center p-1.5 rounded-2xl bg-zinc-200/90 backdrop-blur-xl border border-zinc-300/80 shadow-xl gap-1.5">
@@ -1835,22 +2193,22 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                         </div>
                       </div>
 
-                      {/* 2. Noise Radar Heatmap Toggle */ }
-                      < div className="relative group/layer-btn">
-                    <button
-                      onClick={() => setShowNoiseRadar(!showNoiseRadar)}
-                showNoiseRadar
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
-                    : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
-              }`}
-                    aria-label="Toggle Noise Radar Layer"
-            >
-                    <SpeakerHigh size={16} weight={showNoiseRadar ? 'fill' : 'bold'} />
-                  </button>
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
-                    Noise Radar: {showNoiseRadar ? 'Visible' : 'Hidden'}
-                  </div>
-                </div>
+                      {/* 2. Noise Radar Heatmap Toggle */}
+                      <div className="relative group/layer-btn">
+                        <button
+                          onClick={() => setShowNoiseRadar(!showNoiseRadar)}
+                          className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showNoiseRadar
+                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
+                              : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                            }`}
+                          aria-label="Toggle Noise Radar Layer"
+                        >
+                          <SpeakerHigh size={16} weight={showNoiseRadar ? 'fill' : 'bold'} />
+                        </button>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+                          Noise Radar: {showNoiseRadar ? 'Visible' : 'Hidden'}
+                        </div>
+                      </div>
 
                 {/* 3. Proximity Anchors Toggle */}
                 <div className="relative group/layer-btn">

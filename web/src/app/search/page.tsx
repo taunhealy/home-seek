@@ -866,15 +866,21 @@ export default function SearchPage() {
 
           </div>
 
-          {/* RIGHT COLUMN: STICKY INTERACTIVE MAP (MATCHING REPORTS PAGE) */}
+          {/* RIGHT COLUMN: STICKY INTERACTIVE MAP (SEARCH CRITERIA RADAR MODE) */}
           <div className="w-full lg:col-span-6 xl:col-span-5 sticky top-24 h-[calc(100vh-120px)] rounded-3xl overflow-hidden border border-zinc-200 shadow-md bg-zinc-100 flex flex-col">
             <PropertyMap
-              properties={filteredProperties}
+              mode="search"
+              selectedSuburbs={selectedAreas}
+              searchSummary={{
+                minPrice,
+                maxPrice,
+                bedrooms,
+                suburbsCount: selectedAreas.length,
+              }}
+              properties={[]}
               anchors={mapAnchors}
               proximityFilter={proximityFilterConfig}
               onRadiusChange={setProximityRadiusKm}
-              selectedPropertyId={selectedPropertyId}
-              onSelectProperty={(p) => setSelectedPropertyId(p.id)}
               className="w-full h-full rounded-3xl"
             />
           </div>
