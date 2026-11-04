@@ -21,10 +21,10 @@ import {
 } from '@phosphor-icons/react';
 
 interface NavbarProps {
-  user: any;
-  profile: any;
+  user?: any;
+  profile?: any;
   loading?: boolean;
-  handleLogout: () => void;
+  handleLogout?: () => void;
   handleLogin?: () => void;
   onUpdateProfile?: (updates: any) => Promise<void>;
 }

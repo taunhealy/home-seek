@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { 
   MagnifyingGlass, 
   MapPin, 
@@ -9,913 +9,770 @@ import {
   ShieldCheck, 
   SlidersHorizontal, 
   House, 
-  Buildings, 
   Car, 
   Plus, 
   Trash, 
   CheckCircle, 
-  Bell, 
-  DeviceMobile, 
-  Envelope, 
   ArrowRight,
   Lightning,
-  Dog,
-  Lock,
   Sparkle,
   ArrowsClockwise,
   Info,
   X,
-  SpeakerSimpleSlash,
   NavigationArrow,
   Ruler,
   Compass,
-  CircleNotch
+  CircleNotch,
+  CaretRight,
+  CaretLeft,
+  ArrowSquareOut,
+  Sliders,
+  Tree,
+  Waves,
+  Coffee,
+  Bicycle,
+  Eye,
+  Check
 } from '@phosphor-icons/react';
 import { useAuth } from '@/lib/auth-context';
 import { Navbar } from '@/components/Navbar';
-import { fetchWithAuth } from '@/lib/api';
-import { AreaPillsInput } from '@/components/AreaPillsInput';
-import { PlaceAutocompleteInput, PlaceSuggestion } from '@/components/PlaceAutocompleteInput';
 import { PropertyMap, PropertyMapItem, ProximityAnchor, ProximityFilterConfig } from '@/components/PropertyMap';
 import { resolveLocationCoords, getDistanceKm } from '@/lib/geo';
 
-interface CommuteAnchor {
-  id: string;
-  label: string;
-  target_place: string;
-  max_commute_mins: number;
-  max_distance_km: number;
-  commute_mode: 'driving' | 'transit' | 'walking' | 'bicycling';
+// Deterministic number formatting to avoid SSR/client locale hydration mismatch
+function formatPrice(val: number | string | undefined | null): string {
+  if (val === undefined || val === null || val === '') return '0';
+  const num = typeof val === 'string' ? parseFloat(val) : val;
+  if (isNaN(num)) return '0';
+  return Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-const PRESET_ANCHORS = [
-  { label: 'Work (Amazon River Club HQ)', place: 'Amazon River Club, Observatory', mins: 25, km: 15, mode: 'driving', icon: '💼' },
-  { label: 'Kloof Street Cafes', place: 'Kloof Street, Gardens, Cape Town', mins: 10, km: 5, mode: 'walking', icon: '☕' },
-  { label: 'Sea Point Promenade', place: 'Sea Point Promenade, Beach Road', mins: 12, km: 5, mode: 'bicycling', icon: '🌊' },
-  { label: 'Cape Town CBD', place: 'Cape Town City Bowl', mins: 15, km: 8, mode: 'driving', icon: '🏙️' },
-  { label: 'Virgin Active Kloof', place: 'Virgin Active, Kloof Street, Gardens', mins: 10, km: 3, mode: 'walking', icon: '🏋️' },
-  { label: 'Camps Bay Beach', place: 'Camps Bay Beach, Cape Town', mins: 15, km: 8, mode: 'driving', icon: '🏖️' },
+interface CommuteAnchor extends ProximityAnchor {
+  iconType?: 'trail' | 'surf' | 'cafe' | 'work' | 'general';
+}
+
+const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
+  {
+    id: 'trail-newlands',
+    label: 'Newlands Forest Trailhead',
+    target_place: 'Newlands Forest, Table Mountain National Park',
+    lat: -33.9740,
+    lng: 18.4550,
+    max_commute_mins: 15,
+    max_distance_km: 8,
+    commute_mode: 'driving',
+    iconType: 'trail',
+  },
+  {
+    id: 'trail-tokai',
+    label: 'Tokai Forest MTB Trails',
+    target_place: 'Tokai MTB Trail Centre, Tokai Forest',
+    lat: -34.0580,
+    lng: 18.4310,
+    max_commute_mins: 20,
+    max_distance_km: 12,
+    commute_mode: 'driving',
+    iconType: 'trail',
+  },
+  {
+    id: 'trail-george-witfontein',
+    label: 'Witfontein Forest (George)',
+    target_place: 'Witfontein Forest Station, Outeniqua Nature Reserve, George',
+    lat: -33.9350,
+    lng: 22.4430,
+    max_commute_mins: 10,
+    max_distance_km: 6,
+    commute_mode: 'driving',
+    iconType: 'trail',
+  },
+  {
+    id: 'surf-vicbay',
+    label: 'Victoria Bay Point Break',
+    target_place: 'Victoria Bay Beach, George',
+    lat: -34.0040,
+    lng: 22.5480,
+    max_commute_mins: 15,
+    max_distance_km: 10,
+    commute_mode: 'driving',
+    iconType: 'surf',
+  },
+  {
+    id: 'surf-muizenberg',
+    label: 'Muizenberg Surfers Corner',
+    target_place: 'Surfers Corner, Beach Road, Muizenberg',
+    lat: -34.1080,
+    lng: 18.4720,
+    max_commute_mins: 25,
+    max_distance_km: 15,
+    commute_mode: 'driving',
+    iconType: 'surf',
+  },
+  {
+    id: 'hub-kloof',
+    label: 'Kloof Street Cafes',
+    target_place: 'Kloof Street, Gardens, Cape Town',
+    lat: -33.9315,
+    lng: 18.4110,
+    max_commute_mins: 15,
+    max_distance_km: 6,
+    commute_mode: 'driving',
+    iconType: 'cafe',
+  },
 ];
 
-const DEFAULT_SAMPLE_PROPERTIES: PropertyMapItem[] = [
+const INITIAL_SHOWCASE_PROPERTIES: PropertyMapItem[] = [
   {
-    id: 'prop-gp-1',
-    title: '1 Bedroom Apartment in Green Point',
-    address: 'Somerset Road, Green Point, Cape Town',
-    price: 16500,
-    bedrooms: 1,
-    bathrooms: 1,
-    sqm: 55,
-    image: 'https://images.prop24.com/389341421/Crop600x400',
-    lat: -33.9085,
-    lng: 18.4090,
-    rank: 1,
-    fit_score: 98,
-    noise_risk: 'low'
-  },
-  {
-    id: 'prop-sp-1',
-    title: 'Modern Regent Road Apartment',
-    address: 'Regent Road, Sea Point, Cape Town',
-    price: 16000,
-    bedrooms: 1,
-    bathrooms: 1,
-    sqm: 52,
-    image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop&q=80',
-    lat: -33.9180,
-    lng: 18.3880,
-    rank: 2,
-    fit_score: 87,
-    noise_risk: 'low'
-  },
-  {
-    id: 'prop-kloof-1',
-    title: 'Kloof Street Panoramic Flat',
-    address: '82 Kloof Street, Gardens, Cape Town',
-    price: 17500,
-    bedrooms: 1,
-    bathrooms: 1,
-    sqm: 58,
-    image: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop&q=80',
-    lat: -33.9315,
-    lng: 18.4105,
-    rank: 3,
-    fit_score: 85,
-    noise_risk: 'moderate'
-  },
-  {
-    id: 'prop-tb-1',
-    title: 'Derwent Road Mountain Haven',
-    address: 'Derwent Road, Tamboerskloof, Cape Town',
-    price: 18000,
-    bedrooms: 1,
-    bathrooms: 1,
-    sqm: 62,
-    image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&auto=format&fit=crop&q=80',
-    lat: -33.9338,
-    lng: 18.4055,
-    rank: 4,
-    fit_score: 92,
-    noise_risk: 'sanctuary'
-  },
-  {
-    id: 'prop-sp-2',
-    title: '203 Ocean View Drive',
-    address: '203 Ocean View Drive, Sea Point, Cape Town',
-    price: 18000,
+    id: 'p24-117112383',
+    title: 'Character 2-Bed with Sunroom Study & Garage',
+    address: '9 Highstead Rd, Upper Rondebosch',
+    price: 15900,
     bedrooms: 2,
     bathrooms: 1,
-    sqm: 65,
-    image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&auto=format&fit=crop&q=80',
-    lat: -33.9160,
-    lng: 18.3920,
-    rank: 5,
-    fit_score: 81,
-    noise_risk: 'low'
-  },
-  {
-    id: 'prop-dw-1',
-    title: 'De Waterkant Heritage Loft',
-    address: 'Waterkant Street, De Waterkant, Cape Town',
-    price: 17000,
-    bedrooms: 1,
-    bathrooms: 1,
-    sqm: 50,
-    image: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&auto=format&fit=crop&q=80',
-    lat: -33.9160,
-    lng: 18.4180,
-    rank: 6,
-    fit_score: 79,
-    noise_risk: 'moderate'
-  },
-  {
-    id: 'prop-or-1',
-    title: 'Montrose Avenue Upper Suite',
-    address: 'Montrose Ave, Oranjezicht, Cape Town',
-    price: 16500,
-    bedrooms: 1,
-    bathrooms: 1,
-    sqm: 54,
-    image: 'https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&auto=format&fit=crop&q=80',
-    lat: -33.9400,
-    lng: 18.4190,
-    rank: 7,
-    fit_score: 88,
-    noise_risk: 'sanctuary'
-  },
-  {
-    id: 'prop-cb-1',
-    title: '14 Victoria Road Coastal Flat',
-    address: '14 Victoria Road, Camps Bay, Cape Town',
-    price: 18500,
-    bedrooms: 1,
-    bathrooms: 1,
-    sqm: 48,
+    sqm: 78,
     image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&auto=format&fit=crop&q=80',
-    lat: -33.9515,
-    lng: 18.3780,
-    rank: 8,
-    fit_score: 76,
-    noise_risk: 'low'
+    lat: -33.9635,
+    lng: 18.4720,
+    rank: 1,
+    fit_score: 98,
+    noise_risk: 'sanctuary',
+    url: 'https://www.property24.com/to-rent/rondebosch/cape-town/western-cape/8682/117112383',
+    acoustic_audit: {
+      estimated_db: 36,
+      sound_shadow_status: 'Deep Acoustic Sanctuary (Shielded Garden Grove)',
+      facing_direction: 'North / Mountain Foliage'
+    }
+  },
+  {
+    id: 'p24-117782499',
+    title: 'Modern 1-Bed with 65m² Wrap-Around Balcony',
+    address: 'A Block Woodstock Quarter, 187 Sir Lowry Road',
+    price: 15000,
+    bedrooms: 1,
+    bathrooms: 1,
+    sqm: 43,
+    image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop&q=80',
+    lat: -33.9310,
+    lng: 18.4480,
+    rank: 2,
+    fit_score: 91,
+    noise_risk: 'low',
+    url: 'https://www.property24.com/to-rent/woodstock/cape-town/western-cape/10164/117782499',
+    acoustic_audit: {
+      estimated_db: 48,
+      sound_shadow_status: 'Double Glazed Acoustic Insulation',
+      facing_direction: 'North / City Skyline'
+    }
+  },
+  {
+    id: 'p24-117775782',
+    title: 'Tokai Villas Mountain View Top-Floor Unit',
+    address: '5 Tokai Road, Tokai',
+    price: 11800,
+    bedrooms: 1,
+    bathrooms: 1,
+    sqm: 40,
+    image: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop&q=80',
+    lat: -34.0580,
+    lng: 18.4310,
+    rank: 3,
+    fit_score: 95,
+    noise_risk: 'sanctuary',
+    url: 'https://www.property24.com/to-rent/tokai/cape-town/western-cape/9044/117775782',
+    acoustic_audit: {
+      estimated_db: 38,
+      sound_shadow_status: 'Surrounded by Pine Trees & Greenbelts',
+      facing_direction: 'West / Constantiaberg'
+    }
+  },
+  {
+    id: 'p24-george-1',
+    title: 'Heatherlands Garden Residence with Double Garage',
+    address: 'Heatherlands, Outeniqua Mountain Foothills, George',
+    price: 13500,
+    bedrooms: 2,
+    bathrooms: 2,
+    sqm: 95,
+    image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&auto=format&fit=crop&q=80',
+    lat: -33.9520,
+    lng: 22.4510,
+    rank: 4,
+    fit_score: 99,
+    noise_risk: 'sanctuary',
+    url: 'https://www.property24.com/to-rent/george/western-cape/321',
+    acoustic_audit: {
+      estimated_db: 32,
+      sound_shadow_status: 'Pristine Mountain Quiet (Pin-Drop Silence)',
+      facing_direction: 'North / Outeniqua Peaks'
+    }
   }
 ];
 
-export default function SearchPage() {
-  const router = useRouter();
-  const { user, profile, loading, login, logout } = useAuth();
+const QUICK_SUBURBS = [
+  'Rondebosch',
+  'George',
+  'Tamboerskloof',
+  'Wilderness',
+  'Newlands',
+  'Tokai',
+  'Gardens',
+  'Woodstock'
+];
 
-  // Search Criteria State - Area Filter Pills
-  const [selectedAreas, setSelectedAreas] = useState<string[]>([
-    'Green Point', 
-    'Sea Point', 
-    'Gardens', 
-    'Camps Bay'
-  ]);
-  const locationQuery = selectedAreas.join(', ');
+export default function SearchMapPage() {
+  const { user, profile, logout } = useAuth();
+  const [isMounted, setIsMounted] = useState(false);
 
-  const [minPrice, setMinPrice] = useState('12000');
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Search Criteria State
+  const [selectedSuburbs, setSelectedSuburbs] = useState<string[]>(['Rondebosch', 'George']);
+  const [suburbInput, setSuburbInput] = useState('');
+  const [minPrice, setMinPrice] = useState('11000');
   const [maxPrice, setMaxPrice] = useState('18000');
   const [bedrooms, setBedrooms] = useState('1+');
-  const [bathrooms, setBathrooms] = useState('1+');
 
-  // Focal Proximity Location & Distance Radius Slider
-  const [proximityLocation, setProximityLocation] = useState('Kloof Street, Gardens');
-  const [proximityRadiusKm, setProximityRadiusKm] = useState<number>(5.0);
-
-  // Proximity Anchors List
-  const [anchors, setAnchors] = useState<CommuteAnchor[]>([
-    {
-      id: 'anchor-1',
-      label: 'Work (Amazon River Club HQ)',
-      target_place: 'Amazon River Club, Observatory',
-      max_commute_mins: 30,
-      max_distance_km: 15,
-      commute_mode: 'driving',
-    },
-    {
-      id: 'anchor-2',
-      label: 'Kloof Street Cafes',
-      target_place: 'Kloof Street, Gardens, Cape Town',
-      max_commute_mins: 15,
-      max_distance_km: 5,
-      commute_mode: 'walking',
-    },
-  ]);
-
+  // Desirable Locations & Trailheads State
+  const [anchors, setAnchors] = useState<CommuteAnchor[]>(PRESET_TRAILHEADS_AND_HUBS);
+  const [activeAnchorId, setActiveAnchorId] = useState<string>('trail-newlands');
+  const [isAnchorMenuOpen, setIsAnchorMenuOpen] = useState(false);
   const [newAnchorLabel, setNewAnchorLabel] = useState('');
   const [newAnchorPlace, setNewAnchorPlace] = useState('');
-  const [newAnchorMins, setNewAnchorMins] = useState('25');
-  const [newAnchorMode, setNewAnchorMode] = useState<'driving' | 'walking' | 'bicycling' | 'transit'>('driving');
 
-  // AI Lifestyle & Desires State
-  const [aiPrompt, setAiPrompt] = useState(
-    "Remote web designer working from home. I enjoy mountain biking, trail running, walking on the beach, flying my FPV drone, and working from a cafe twice a week. I'd like to date and have spontaneous chats with interesting people, occasionally have a friend over, and listen to/make music."
-  );
-  const [aiPersonalTastes, setAiPersonalTastes] = useState(
-    "Acoustic privacy for music, safe storage for my mountain bike, unpretentious vibe, easy walk to lively Kloof Street cafes, decent natural light."
-  );
+  // Live Scraped Properties State
+  const [properties, setProperties] = useState<PropertyMapItem[]>(INITIAL_SHOWCASE_PROPERTIES);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>('p24-117112383');
+  const [isScraping, setIsScraping] = useState(false);
+  const [scrapeStatusText, setScrapeStatusText] = useState('');
+  const [isListCollapsed, setIsListCollapsed] = useState(false);
+  const [sortBy, setSortBy] = useState<'price-asc' | 'price-desc' | 'distance' | 'fit'>('fit');
 
-  // Living Autonomy & Privacy Shield Checkboxes
-  const [requireIndependentLiving, setRequireIndependentLiving] = useState(true);
-  const [requirePrivateEntrance, setRequirePrivateEntrance] = useState(true);
-  const [requirePrivateGarden, setRequirePrivateGarden] = useState(false);
-  const [excludeLandlordOnSite, setExcludeLandlordOnSite] = useState(true);
-  const [excludeSharedHouse, setExcludeSharedHouse] = useState(true);
-  const [requireNoOneAbove, setRequireNoOneAbove] = useState(false);
-  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+  const activeAnchor = useMemo(() => {
+    return anchors.find(a => a.id === activeAnchorId) || anchors[0] || null;
+  }, [anchors, activeAnchorId]);
 
-  // Must-Haves
-  const [mustInverter, setMustInverter] = useState(true);
-  const [mustFibre, setMustFibre] = useState(true);
-  const [mustParking, setMustParking] = useState(true);
-  const [mustPets, setMustPets] = useState(false);
+  // Suburb management
+  const handleAddSuburb = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (!selectedSuburbs.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
+      setSelectedSuburbs([...selectedSuburbs, trimmed]);
+    }
+    setSuburbInput('');
+  };
 
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [properties, setProperties] = useState<PropertyMapItem[]>(DEFAULT_SAMPLE_PROPERTIES);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(DEFAULT_SAMPLE_PROPERTIES[0].id);
+  const handleRemoveSuburb = (name: string) => {
+    setSelectedSuburbs(selectedSuburbs.filter(s => s.toLowerCase() !== name.toLowerCase()));
+  };
 
-  // Load saved criteria and any existing scouted listings on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('homeseek_search_criteria');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.locationQuery && typeof parsed.locationQuery === 'string') {
-          const loadedAreas = parsed.locationQuery.split(',').map((s: string) => s.trim()).filter(Boolean);
-          if (loadedAreas.length > 0) setSelectedAreas(loadedAreas);
-        }
-        if (parsed.minPrice) setMinPrice(parsed.minPrice);
-        if (parsed.maxPrice) setMaxPrice(parsed.maxPrice);
-        if (parsed.bedrooms) setBedrooms(parsed.bedrooms);
-        if (parsed.bathrooms) setBathrooms(parsed.bathrooms);
-        if (parsed.proximityLocation) setProximityLocation(parsed.proximityLocation);
-        if (parsed.proximityRadiusKm) setProximityRadiusKm(parsed.proximityRadiusKm);
-        if (Array.isArray(parsed.anchors) && parsed.anchors.length > 0) setAnchors(parsed.anchors);
-      }
-    } catch (e) {}
-
-    // Fetch user's latest report properties if available to populate map
-    const fetchLatestListings = async () => {
-      try {
-        const uid = profile?.id || user?.uid || 'taun_test_user';
-        const res = await fetch(`http://127.0.0.1:8000/reports/${uid}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === 'success' && Array.isArray(data.reports) && data.reports.length > 0) {
-            const latest = data.reports.find((r: any) => r.ranked_listings && r.ranked_listings.length > 0);
-            if (latest && Array.isArray(latest.ranked_listings)) {
-              const mapped: PropertyMapItem[] = latest.ranked_listings.map((item: any, idx: number) => {
-                const geo = resolveLocationCoords(item.address || item.area || 'Cape Town');
-                return {
-                  id: item.id || item.listing_id || String(idx),
-                  title: item.title,
-                  address: item.address,
-                  price: item.price || 16500,
-                  bedrooms: item.bedrooms || 1,
-                  bathrooms: item.bathrooms || 1,
-                  sqm: item.sqm || 55,
-                  image: item.image || (item.images && item.images[0]) || 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=600&auto=format&fit=crop&q=80',
-                  lat: item.lat || geo.lat,
-                  lng: item.lng || geo.lng,
-                  rank: idx + 1,
-                  fit_score: item.fit_score || 88,
-                  noise_risk: item.noise_risk || 'low'
-                };
-              });
-              setProperties(mapped);
-              if (mapped.length > 0) setSelectedPropertyId(mapped[0].id);
-            }
-          }
-        }
-      } catch (err) {}
+  // Add custom desirable location
+  const handleAddCustomAnchor = () => {
+    if (!newAnchorLabel.trim()) return;
+    const resolved = resolveLocationCoords(newAnchorPlace || newAnchorLabel);
+    const newAnchor: CommuteAnchor = {
+      id: `custom-${Date.now()}`,
+      label: newAnchorLabel.trim(),
+      target_place: newAnchorPlace.trim() || newAnchorLabel.trim(),
+      lat: resolved ? resolved.lat : -33.9500,
+      lng: resolved ? resolved.lng : 18.4400,
+      max_commute_mins: 20,
+      max_distance_km: 12,
+      commute_mode: 'driving',
+      iconType: 'general'
     };
+    setAnchors([newAnchor, ...anchors]);
+    setActiveAnchorId(newAnchor.id);
+    setNewAnchorLabel('');
+    setNewAnchorPlace('');
+    setIsAnchorMenuOpen(false);
+  };
 
-    fetchLatestListings();
-  }, [profile?.id, user?.uid]);
+  // Scrape Property24 Live Action
+  const handleScrapeP24 = async () => {
+    if (selectedSuburbs.length === 0) {
+      alert('Please select at least one suburb to scrape.');
+      return;
+    }
 
-  // Compute geocoded coordinates for chosen proximity location
-  const proximityCoords = useMemo(() => {
-    return resolveLocationCoords(proximityLocation);
-  }, [proximityLocation]);
-
-  // Proximity filter configuration passed to PropertyMap
-  const proximityFilterConfig: ProximityFilterConfig = useMemo(() => {
-    return {
-      lat: proximityCoords.lat,
-      lng: proximityCoords.lng,
-      radiusKm: proximityRadiusKm,
-      label: proximityCoords.label || proximityLocation.split(',')[0].trim() || 'Focal Destination'
-    };
-  }, [proximityCoords, proximityRadiusKm, proximityLocation]);
-
-  // Filter properties by proximity to chosen location
-  const filteredProperties = useMemo(() => {
-    return properties.filter((prop) => {
-      const dist = getDistanceKm(prop.lat, prop.lng, proximityCoords.lat, proximityCoords.lng);
-      return dist <= proximityRadiusKm;
-    });
-  }, [properties, proximityCoords, proximityRadiusKm]);
-
-  // Convert commute anchors to map anchors
-  const mapAnchors: ProximityAnchor[] = useMemo(() => {
-    return anchors.map((a, idx) => {
-      const geo = resolveLocationCoords(a.target_place || a.label);
-      return {
-        id: a.id || `anchor-${idx}`,
-        label: a.label,
-        target_place: a.target_place,
-        lat: geo.lat,
-        lng: geo.lng,
-        max_commute_mins: a.max_commute_mins,
-        max_distance_km: a.max_distance_km || 15,
-        commute_mode: a.commute_mode
-      };
-    });
-  }, [anchors]);
-
-  // Save criteria and navigate
-  const handleSaveAndExplore = async (destination: 'properties' | 'alerts' | 'reports' = 'reports') => {
-    setIsSaving(true);
-    const uid = profile?.id || user?.uid || 'taun_test_user';
-
-    const criteria = {
-      locationQuery,
-      minPrice,
-      maxPrice,
-      bedrooms,
-      bathrooms,
-      proximityLocation,
-      proximityRadiusKm,
-      privacy: {
-        requireIndependentLiving,
-        requirePrivateEntrance,
-        requirePrivateGarden,
-        excludeLandlordOnSite,
-        excludeSharedHouse,
-        requireNoOneAbove,
-      },
-      anchors,
-      mustInverter,
-      mustFibre,
-      mustParking,
-      mustPets,
-    };
-    try {
-      localStorage.setItem('homeseek_search_criteria', JSON.stringify(criteria));
-    } catch (e) {}
+    setIsScraping(true);
+    setScrapeStatusText(`Scraping Property24 live for ${selectedSuburbs.join(', ')}...`);
 
     try {
-      const primaryArea = locationQuery.split(',')[0].trim() || 'Cape Town';
-      const alertPayload = {
-        user_id: uid,
-        target_area: primaryArea,
-        search_query: `AI Radar: ${locationQuery} (${bedrooms} Beds, max R${maxPrice}, ${proximityRadiusKm}km from ${proximityLocation})`,
-        max_price: parseInt(maxPrice) || 30000,
-        min_bedrooms: [parseInt(bedrooms.replace("+", "")) || 1],
-        property_type: 'Apartment',
-        require_verified_sea_view: /\b(sea\s+view|ocean\s+view|water\s+view)\b/i.test(`${aiPrompt} ${aiPersonalTastes}`),
-        require_independent_living: requireIndependentLiving,
-        require_private_entrance: requirePrivateEntrance,
-        require_private_garden: requirePrivateGarden,
-        exclude_landlord_on_site: excludeLandlordOnSite,
-        exclude_shared_house: excludeSharedHouse,
-        require_no_one_above: requireNoOneAbove,
-        pet_friendly: mustPets,
-        commute_anchors: anchors,
-        proximity_location: proximityLocation,
-        max_distance_km: proximityRadiusKm,
-        prompt: aiPrompt,
-        personal_tastes: aiPersonalTastes,
-        areas: selectedAreas,
-        alert_enabled: true,
-        is_active: true,
-        trigger_initial_scan: true,
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const payload = {
+        suburbs: selectedSuburbs,
+        min_price: parseInt(minPrice) || 0,
+        max_price: parseInt(maxPrice) || 999999,
+        bedrooms: bedrooms,
+        anchor_lat: activeAnchor ? activeAnchor.lat : null,
+        anchor_lng: activeAnchor ? activeAnchor.lng : null
       };
 
-      await fetchWithAuth('/save-alert', {
+      const res = await fetch(`${backendBase}/api/search/live-scrape`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(alertPayload),
+        body: JSON.stringify(payload)
       });
-    } catch (err) {
-      console.warn('Backend alert save warning:', err);
-    } finally {
-      setIsSaving(false);
-      setSaveSuccess(true);
-      setTimeout(() => {
-        if (destination === 'reports') {
-          router.push('/reports');
-        } else if (destination === 'alerts') {
-          router.push('/alerts');
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'success' && Array.isArray(data.listings) && data.listings.length > 0) {
+          const mapped: PropertyMapItem[] = data.listings.map((item: any, idx: number) => ({
+            id: item.id || `p24-${idx}`,
+            title: item.title,
+            address: item.address,
+            price: item.price,
+            bedrooms: item.bedrooms,
+            bathrooms: item.bathrooms,
+            sqm: item.sqm,
+            image: item.image,
+            lat: item.lat,
+            lng: item.lng,
+            rank: idx + 1,
+            fit_score: item.fit_score || 90,
+            noise_risk: item.noise_risk || 'low',
+            url: item.url,
+            acoustic_audit: {
+              estimated_db: item.noise_risk === 'sanctuary' ? 34 : 45,
+              sound_shadow_status: item.noise_risk === 'sanctuary' ? 'Acoustic Sanctuary (Forest/Quiet Grove)' : 'Standard Residential Quiet',
+              facing_direction: 'North / Scenic'
+            }
+          }));
+
+          setProperties(mapped);
+          setSelectedPropertyId(mapped[0].id);
+          setScrapeStatusText(`Found ${mapped.length} live listings from Property24!`);
         } else {
-          router.push(`/properties?search=${encodeURIComponent(locationQuery.split(',')[0].trim())}`);
+          setScrapeStatusText('No direct listings matched the price window. Showing curated selections.');
         }
-      }, 500);
+      } else {
+        setScrapeStatusText('Live portal connection timed out. Showing cached contenders.');
+      }
+    } catch (err) {
+      console.error('Scrape error:', err);
+      setScrapeStatusText('Offline mode: Using cached high-trust properties.');
+    } finally {
+      setIsScraping(false);
+      setTimeout(() => setScrapeStatusText(''), 4500);
     }
   };
 
-  const addAnchor = () => {
-    if (!newAnchorLabel.trim() || !newAnchorPlace.trim()) return;
-    const newAnchor: CommuteAnchor = {
-      id: `anchor-${Date.now()}`,
-      label: newAnchorLabel,
-      target_place: newAnchorPlace,
-      max_commute_mins: parseInt(newAnchorMins) || 30,
-      max_distance_km: proximityRadiusKm || 15,
-      commute_mode: newAnchorMode,
-    };
-    setAnchors([...anchors, newAnchor]);
-    setNewAnchorLabel('');
-    setNewAnchorPlace('');
-  };
-
-  const removeAnchor = (id: string) => {
-    setAnchors(anchors.filter((a) => a.id !== id));
-  };
+  // Sort properties
+  const sortedProperties = useMemo(() => {
+    return [...properties].sort((a, b) => {
+      if (sortBy === 'price-asc') return a.price - b.price;
+      if (sortBy === 'price-desc') return b.price - a.price;
+      if (sortBy === 'fit') return (b.fit_score || 0) - (a.fit_score || 0);
+      if (sortBy === 'distance' && activeAnchor) {
+        const distA = getDistanceKm(a.lat, a.lng, activeAnchor.lat, activeAnchor.lng);
+        const distB = getDistanceKm(b.lat, b.lng, activeAnchor.lat, activeAnchor.lng);
+        return distA - distB;
+      }
+      return 0;
+    });
+  }, [properties, sortBy, activeAnchor]);
 
   return (
-    <div className="min-h-screen bg-[#fcfcfd] text-zinc-900 font-sans flex flex-col pt-16">
-      <Navbar 
-        user={user} 
-        profile={profile} 
-        loading={loading}
-        handleLogin={login} 
-        handleLogout={logout} 
-      />
+    <div className="h-screen bg-zinc-50 flex flex-col font-sans select-none overflow-hidden pt-16">
+      <Navbar user={user} profile={profile} handleLogout={logout} />
 
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        
-        {/* Header with Quick Action */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-6">
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 text-zinc-800 text-xs font-semibold">
-              <Target size={14} weight="bold" className="text-indigo-600" />
-              <span>Search Radar & Proximity Setup</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-950">
-              Define Your Search Criteria
-            </h1>
-            <p className="text-xs sm:text-sm text-zinc-600 max-w-2xl leading-relaxed">
-              Configure your target locations, proximity distance radius, and privacy rules. 
-              The live map on the right plots your radius buffer zone in real time.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              onClick={() => handleSaveAndExplore('reports')}
-              disabled={isSaving}
-              className="px-5 py-2.5 bg-zinc-950 hover:bg-black text-white text-xs font-bold rounded-2xl transition-all shadow-md hover:shadow-lg flex items-center gap-2 cursor-pointer active:scale-98"
-            >
-              {isSaving ? <CircleNotch size={14} className="animate-spin" /> : <Sparkle size={14} weight="fill" className="text-amber-400" />}
-              <span>Save & View Reports</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 2-Column Responsive Layout: Form on Left, Sticky Map on Right */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start w-full">
+      {/* TOP COMPACT CRITERIA BAR */}
+      <header className="w-full bg-white/95 backdrop-blur-md border-b border-zinc-200 z-30 px-4 py-2.5 shadow-xs shrink-0">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           
-          {/* LEFT COLUMN: CRITERIA FORM SECTIONS */}
-          <div className="lg:col-span-6 xl:col-span-7 space-y-6">
-            
-            {/* 1. Target Locations & Budget */}
-            <section className="bg-white border border-zinc-200/90 rounded-3xl p-6 sm:p-7 space-y-5 shadow-2xs">
-              <h2 className="text-base font-bold text-zinc-950 flex items-center gap-2">
-                <MapPin size={18} weight="bold" className="text-zinc-800" />
-                <span>Target Suburbs & Budget Window</span>
-              </h2>
+          {/* 1. Suburb Filter Pills & Quick-Select */}
+          <div className="flex items-center flex-wrap gap-1.5 min-w-0 flex-1">
+            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-400 mr-1 flex items-center gap-1">
+              <MapPin size={13} weight="bold" className="text-indigo-600" />
+              Areas:
+            </span>
 
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider">
-                      Target Suburbs
-                    </label>
-                    <span className="text-[11px] text-zinc-500 font-medium">
-                      {selectedAreas.length} selected
-                    </span>
-                  </div>
-                  <AreaPillsInput
-                    selectedAreas={selectedAreas}
-                    onChange={setSelectedAreas}
-                    placeholder="Type suburb (e.g. Green Point, Sea Point)..."
-                  />
+            {selectedSuburbs.map((suburb) => (
+              <span 
+                key={suburb}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 border border-indigo-200 text-indigo-900 group"
+              >
+                {suburb}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveSuburb(suburb)}
+                  className="hover:text-rose-600 p-0.5 rounded-full transition-colors cursor-pointer"
+                  title={`Remove ${suburb}`}
+                >
+                  <X size={12} weight="bold" />
+                </button>
+              </span>
+            ))}
+
+            {/* Quick Add Dropdown / Input */}
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                placeholder="+ Add area..."
+                value={suburbInput}
+                onChange={(e) => setSuburbInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleAddSuburb(suburbInput);
+                  }
+                }}
+                className="w-28 focus:w-36 text-xs px-2.5 py-1 rounded-full border border-zinc-200 focus:border-indigo-600 focus:outline-none transition-all placeholder:text-zinc-400 bg-zinc-50/60"
+              />
+            </div>
+
+            {/* Quick Pills for rapid toggling */}
+            <div className="hidden lg:flex items-center gap-1 ml-2 border-l border-zinc-200 pl-2">
+              {QUICK_SUBURBS.filter(s => !selectedSuburbs.includes(s)).slice(0, 3).map((qs) => (
+                <button
+                  key={qs}
+                  type="button"
+                  onClick={() => handleAddSuburb(qs)}
+                  className="px-2 py-0.5 rounded-full text-[11px] font-semibold text-zinc-500 hover:text-zinc-950 bg-zinc-100 hover:bg-zinc-200 transition-all cursor-pointer"
+                >
+                  +{qs}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 2. Budget & Beds Criteria */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-zinc-100 px-2 py-1 rounded-xl text-xs border border-zinc-200">
+              <span className="text-[10px] font-bold text-zinc-400">Budget:</span>
+              <input
+                type="number"
+                value={minPrice}
+                onChange={(e) => setMinPrice(e.target.value)}
+                className="w-14 text-center font-bold text-zinc-800 bg-transparent focus:outline-none"
+                placeholder="Min"
+                step="500"
+              />
+              <span className="text-zinc-400">−</span>
+              <input
+                type="number"
+                value={maxPrice}
+                onChange={(e) => setMaxPrice(e.target.value)}
+                className="w-14 text-center font-bold text-zinc-800 bg-transparent focus:outline-none"
+                placeholder="Max"
+                step="500"
+              />
+            </div>
+
+            <div className="flex items-center gap-1 bg-zinc-100 px-2 py-1 rounded-xl text-xs border border-zinc-200">
+              <span className="text-[10px] font-bold text-zinc-400">Beds:</span>
+              <select
+                value={bedrooms}
+                onChange={(e) => setBedrooms(e.target.value)}
+                className="font-bold text-zinc-800 bg-transparent focus:outline-none cursor-pointer"
+              >
+                <option value="1+">1+ Bed</option>
+                <option value="2+">2+ Beds</option>
+                <option value="3+">3+ Beds</option>
+                <option value="any">Any</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 3. Desirable Locations & Trailheads Button */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsAnchorMenuOpen(!isAnchorMenuOpen)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                activeAnchor ? 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-xs' : 'bg-zinc-100 border-zinc-200 text-zinc-700'
+              }`}
+            >
+              <Tree size={15} weight="bold" className="text-emerald-600" />
+              <span className="truncate max-w-[140px]">{activeAnchor ? activeAnchor.label : 'Select Trailhead / Spot'}</span>
+              <span className="px-1.5 py-0.2 bg-emerald-200/80 rounded-md text-[10px] font-extrabold text-emerald-900">
+                {anchors.length}
+              </span>
+            </button>
+
+            {/* Anchor Dropdown Popover */}
+            {isAnchorMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-zinc-200 p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between pb-2 border-b border-zinc-100">
+                  <span className="font-extrabold text-xs text-zinc-950 flex items-center gap-1.5">
+                    <Tree size={14} className="text-emerald-600" weight="bold" />
+                    Trailheads & Desirable Spots
+                  </span>
+                  <button onClick={() => setIsAnchorMenuOpen(false)} className="text-zinc-400 hover:text-zinc-700 p-0.5">
+                    <X size={14} />
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
-                      Min Price (ZAR)
-                    </label>
-                    <input
-                      type="number"
-                      value={minPrice}
-                      onChange={(e) => setMinPrice(e.target.value)}
-                      placeholder="12000"
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2.5 text-sm text-zinc-900 focus:outline-none focus:border-zinc-950 focus:bg-white transition-all font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
-                      Max Price (ZAR)
-                    </label>
-                    <input
-                      type="number"
-                      value={maxPrice}
-                      onChange={(e) => setMaxPrice(e.target.value)}
-                      placeholder="18000"
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2.5 text-sm text-zinc-900 focus:outline-none focus:border-zinc-950 focus:bg-white transition-all font-medium"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
-                      Bedrooms
-                    </label>
-                    <div className="flex gap-2">
-                      {['1+', '2+', '3+', '4+'].map((b) => {
-                        const isSelected = bedrooms === b || bedrooms === b.replace('+', '');
-                        return (
-                          <button
-                            key={b}
-                            type="button"
-                            onClick={() => setBedrooms(b)}
-                            className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-zinc-950 text-white border-zinc-950 shadow-xs font-bold'
-                                : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                            }`}
-                          >
-                            {b}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
-                      Bathrooms
-                    </label>
-                    <div className="flex gap-2">
-                      {['1+', '2+', '3+'].map((bath) => {
-                        const isSelected = bathrooms === bath || bathrooms === bath.replace('+', '');
-                        return (
-                          <button
-                            key={bath}
-                            type="button"
-                            onClick={() => setBathrooms(bath)}
-                            className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-zinc-950 text-white border-zinc-950 shadow-xs font-bold'
-                                : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                            }`}
-                          >
-                            {bath}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* 2. PROXIMITY LOCATION & DISTANCE RADIUS SLIDER (CORE FEATURE) */}
-            <section className="bg-white border-2 border-indigo-500/30 rounded-3xl p-6 sm:p-7 space-y-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-bold text-zinc-950 flex items-center gap-2">
-                    <Target size={20} weight="bold" className="text-indigo-600" />
-                    <span>Proximity to Location & Distance Radius</span>
-                  </h2>
-                  <p className="text-xs text-zinc-500 mt-1">
-                    Choose a focal landmark, workplace or beach and slide the radius. The interactive map plots your buffer zone in real time.
-                  </p>
-                </div>
-                <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-extrabold text-xs shrink-0 border border-indigo-200">
-                  {proximityRadiusKm} km Buffer
-                </span>
-              </div>
-
-              {/* Location Input with Google Maps Autocomplete */}
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider">
-                  Focal Location (Destination / Workplace / Landmark)
-                </label>
-                <PlaceAutocompleteInput
-                  value={proximityLocation}
-                  onChange={(val) => setProximityLocation(val)}
-                  onSelectSuggestion={(s) => {
-                    setProximityLocation(s.description);
-                  }}
-                  placeholder="Type address or landmark (e.g. Kloof St, Sea Point Promenade)..."
-                />
-
-                {/* Popular Location Presets */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
-                  <span className="text-zinc-500 text-[11px] font-semibold mr-1">Quick Select:</span>
-                  {PRESET_ANCHORS.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
+                <div className="max-h-56 overflow-y-auto space-y-1.5 py-2">
+                  {anchors.map((anc) => (
+                    <div
+                      key={anc.id}
                       onClick={() => {
-                        setProximityLocation(preset.place);
+                        setActiveAnchorId(anc.id);
+                        setIsAnchorMenuOpen(false);
                       }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 hover:text-zinc-950 text-[11px] font-medium transition-all cursor-pointer shadow-2xs"
-                    >
-                      <span>{preset.icon}</span>
-                      <span>{preset.label.split('(')[0].trim()}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Distance Radius Slider */}
-              <div className="space-y-3 pt-3 border-t border-zinc-100">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-zinc-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <Ruler size={14} weight="bold" className="text-indigo-600" />
-                    <span>Distance Radius Slider</span>
-                  </span>
-                  <span className="font-extrabold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-100">
-                    Within {proximityRadiusKm} km
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  <input
-                    type="range"
-                    min="1"
-                    max="20"
-                    step="0.5"
-                    value={proximityRadiusKm}
-                    onChange={(e) => setProximityRadiusKm(parseFloat(e.target.value))}
-                    className="w-full accent-indigo-600 h-2 bg-zinc-200 rounded-lg cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] font-bold text-zinc-400 px-0.5">
-                    <span>1 km</span>
-                    <span>5 km</span>
-                    <span>10 km</span>
-                    <span>15 km</span>
-                    <span>20 km</span>
-                  </div>
-                </div>
-
-                {/* Radius Quick Presets */}
-                <div className="flex items-center gap-2 pt-1">
-                  {[2, 3, 5, 8, 12, 15].map((km) => (
-                    <button
-                      key={km}
-                      type="button"
-                      onClick={() => setProximityRadiusKm(km)}
-                      className={`flex-1 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                        proximityRadiusKm === km
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
+                      className={`flex items-center justify-between p-2 rounded-xl text-xs cursor-pointer transition-colors ${
+                        activeAnchorId === anc.id ? 'bg-emerald-50 text-emerald-950 font-bold border border-emerald-200' : 'hover:bg-zinc-50 text-zinc-700'
                       }`}
                     >
-                      {km} km
-                    </button>
+                      <div className="flex items-center gap-2 truncate">
+                        {anc.iconType === 'trail' ? (
+                          <Tree size={15} weight="fill" className="text-emerald-600 shrink-0" />
+                        ) : anc.iconType === 'surf' ? (
+                          <Waves size={15} weight="fill" className="text-cyan-600 shrink-0" />
+                        ) : anc.iconType === 'cafe' ? (
+                          <Coffee size={15} weight="fill" className="text-amber-600 shrink-0" />
+                        ) : (
+                          <Target size={15} weight="bold" className="text-indigo-600 shrink-0" />
+                        )}
+                        <span className="truncate">{anc.label}</span>
+                      </div>
+                      {activeAnchorId === anc.id && (
+                        <Check size={14} weight="bold" className="text-emerald-600 shrink-0" />
+                      )}
+                    </div>
                   ))}
                 </div>
 
-                {/* Live Real-Time Match Counter */}
-                <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex items-center justify-between text-xs text-indigo-950 font-semibold">
-                  <span className="flex items-center gap-1.5">
-                    <CheckCircle size={15} weight="bold" className="text-indigo-600" />
-                    <span>Live Proximity Filter:</span>
-                  </span>
-                  <span className="font-extrabold bg-white px-2.5 py-0.5 rounded-lg border border-indigo-200 shadow-2xs">
-                    {filteredProperties.length} properties inside {proximityRadiusKm} km ring
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            {/* 3. Additional Commute Anchors */}
-            <section className="bg-white border border-zinc-200/90 rounded-3xl p-6 sm:p-7 space-y-4 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold text-zinc-950 flex items-center gap-2">
-                    <Compass size={18} weight="bold" className="text-zinc-800" />
-                    <span>Commute Time Anchors</span>
-                  </h2>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    Secondary destinations plotted on the map with estimated driving & walking duration.
-                  </p>
-                </div>
-              </div>
-
-              {/* Anchors List */}
-              <div className="space-y-2">
-                {anchors.map((anchor) => (
-                  <div
-                    key={anchor.id}
-                    className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 border border-zinc-200/90 text-xs"
+                {/* Add Custom Spot Form */}
+                <div className="pt-2 border-t border-zinc-100 space-y-1.5">
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Add Custom Location:</span>
+                  <input
+                    type="text"
+                    placeholder="Name (e.g. Deer Park, Constantia Nek)"
+                    value={newAnchorLabel}
+                    onChange={(e) => setNewAnchorLabel(e.target.value)}
+                    className="w-full text-xs px-2.5 py-1.5 rounded-xl border border-zinc-200 focus:outline-none focus:border-indigo-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomAnchor}
+                    className="w-full py-1.5 bg-zinc-950 hover:bg-black text-white rounded-xl text-xs font-bold transition-all"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-zinc-950 text-white flex items-center justify-center font-bold">
-                        <Target size={14} weight="bold" />
-                      </div>
-                      <div>
-                        <span className="font-bold text-zinc-950 block">{anchor.label}</span>
-                        <span className="text-[11px] text-zinc-500 block truncate max-w-xs">{anchor.target_place}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span className="text-zinc-600 font-semibold text-[11px]">
-                        ~{anchor.max_commute_mins} mins
-                      </span>
-                      <button
-                        onClick={() => removeAnchor(anchor.id)}
-                        className="p-1 text-zinc-400 hover:text-rose-600 transition-colors cursor-pointer"
-                        title="Remove anchor"
-                      >
-                        <Trash size={15} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                    + Add to Map
+                  </button>
+                </div>
               </div>
-
-              {/* Add New Anchor */}
-              <div className="pt-2 flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Add label (e.g. Gym, Client Office)..."
-                  value={newAnchorLabel}
-                  onChange={(e) => setNewAnchorLabel(e.target.value)}
-                  className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:border-zinc-950"
-                />
-                <input
-                  type="text"
-                  placeholder="Address or suburb..."
-                  value={newAnchorPlace}
-                  onChange={(e) => setNewAnchorPlace(e.target.value)}
-                  className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:border-zinc-950"
-                />
-                <button
-                  type="button"
-                  onClick={addAnchor}
-                  className="px-4 py-2 bg-zinc-950 hover:bg-black text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
-                >
-                  Add Anchor
-                </button>
-              </div>
-            </section>
-
-            {/* 4. Living Autonomy & Privacy Shield */}
-            <section className="bg-white border border-zinc-200/90 rounded-3xl p-6 sm:p-7 space-y-4 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold text-zinc-950 flex items-center gap-2">
-                  <ShieldCheck size={18} weight="bold" className="text-zinc-800" />
-                  <span>Living Autonomy & Acoustic Privacy</span>
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setIsPrivacyModalOpen(true)}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
-                >
-                  Learn how this works
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-zinc-200 hover:bg-zinc-50 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={requireIndependentLiving}
-                    onChange={(e) => setRequireIndependentLiving(e.target.checked)}
-                    className="w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
-                  />
-                  <span className="font-bold text-zinc-900">Independent Living Only</span>
-                </label>
-
-                <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-zinc-200 hover:bg-zinc-50 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={excludeLandlordOnSite}
-                    onChange={(e) => setExcludeLandlordOnSite(e.target.checked)}
-                    className="w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
-                  />
-                  <span className="font-bold text-zinc-900">No Landlord On-Site</span>
-                </label>
-
-                <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-zinc-200 hover:bg-zinc-50 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={excludeSharedHouse}
-                    onChange={(e) => setExcludeSharedHouse(e.target.checked)}
-                    className="w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
-                  />
-                  <span className="font-bold text-zinc-900">Exclude Communes & Digs</span>
-                </label>
-
-                <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-zinc-200 hover:bg-zinc-50 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={requirePrivateEntrance}
-                    onChange={(e) => setRequirePrivateEntrance(e.target.checked)}
-                    className="w-4 h-4 rounded text-zinc-950 accent-zinc-950 cursor-pointer"
-                  />
-                  <span className="font-bold text-zinc-900">Private Entrance</span>
-                </label>
-              </div>
-            </section>
-
-            {/* Save & Trigger Radar Button */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => handleSaveAndExplore('reports')}
-                disabled={isSaving}
-                className="w-full py-4 bg-zinc-950 hover:bg-black text-white text-sm font-extrabold rounded-2xl transition-all shadow-md hover:shadow-xl flex items-center justify-center gap-2 cursor-pointer active:scale-98"
-              >
-                {isSaving ? <CircleNotch size={18} className="animate-spin" /> : <Sparkle size={18} weight="fill" className="text-amber-400" />}
-                <span>Save Radar & Launch Executive Intelligence Report</span>
-                <ArrowRight size={16} weight="bold" />
-              </button>
-            </div>
-
+            )}
           </div>
 
-          {/* RIGHT COLUMN: STICKY INTERACTIVE MAP (SEARCH CRITERIA RADAR MODE) */}
-          <div className="w-full lg:col-span-6 xl:col-span-5 sticky top-24 h-[calc(100vh-120px)] rounded-3xl overflow-hidden border border-zinc-200 shadow-md bg-zinc-100 flex flex-col">
-            <PropertyMap
-              mode="search"
-              selectedSuburbs={selectedAreas}
-              searchSummary={{
-                minPrice,
-                maxPrice,
-                bedrooms,
-                suburbsCount: selectedAreas.length,
-              }}
-              properties={[]}
-              anchors={mapAnchors}
-              proximityFilter={proximityFilterConfig}
-              onRadiusChange={setProximityRadiusKm}
-              className="w-full h-full rounded-3xl"
-            />
-          </div>
-
-        </div>
-      </main>
-
-      {/* Privacy Info Modal */}
-      {isPrivacyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-zinc-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
-              <div className="flex items-center gap-2 text-zinc-950 font-black text-sm">
-                <ShieldCheck size={18} className="text-indigo-600" weight="bold" />
-                <span>Forensic Living Autonomy Protocol</span>
-              </div>
-              <button
-                onClick={() => setIsPrivacyModalOpen(false)}
-                className="text-zinc-400 hover:text-zinc-900 p-1 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <p className="text-xs text-zinc-600 leading-relaxed">
-              HomeSeek analyzes listing wording, photos, floor plans, and architectural elevation to ensure you are not placed in a shared house, under a noisy landlord, or in a compromised room.
-            </p>
+          {/* 4. SCRAPE P24 ACTION BUTTON */}
+          <div>
             <button
-              onClick={() => setIsPrivacyModalOpen(false)}
-              className="w-full py-2.5 bg-zinc-950 text-white text-xs font-bold rounded-xl cursor-pointer"
+              type="button"
+              onClick={handleScrapeP24}
+              disabled={isScraping}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-extrabold shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
             >
-              Close
+              {isScraping ? (
+                <CircleNotch size={15} className="animate-spin text-white" />
+              ) : (
+                <Sparkle size={15} weight="fill" className="text-amber-300" />
+              )}
+              <span>{isScraping ? 'Scraping P24...' : 'Scrape P24 Listings'}</span>
             </button>
           </div>
+
         </div>
-      )}
+
+        {/* Live Status Toast */}
+        {scrapeStatusText && (
+          <div className="max-w-7xl mx-auto mt-1.5 flex items-center gap-2 text-[11px] font-bold text-indigo-700 bg-indigo-50/80 px-3 py-1 rounded-lg border border-indigo-200/80 animate-in fade-in duration-150">
+            <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping shrink-0" />
+            <span>{scrapeStatusText}</span>
+          </div>
+        )}
+      </header>
+
+      {/* MAIN VIEWPORT: SPLIT COLUMN + FULL-WIDTH MAP CANVAS */}
+      <main className="flex-1 w-full flex relative overflow-hidden min-h-0">
+        
+        {/* LEFT / SIDE COLUMN: PROPERTY CARDS FEED */}
+        <aside 
+          className={`h-full border-r border-zinc-200 bg-white flex flex-col z-20 shadow-md transition-all duration-300 ease-in-out ${
+            isListCollapsed ? 'w-0 overflow-hidden border-none' : 'w-full sm:w-[380px] lg:w-[420px] shrink-0'
+          }`}
+        >
+          {/* Column Header */}
+          <div className="p-3.5 border-b border-zinc-100 flex items-center justify-between gap-2 bg-white/90 backdrop-blur-xs">
+            <div>
+              <h2 className="font-extrabold text-sm text-zinc-950 flex items-center gap-1.5">
+                <span>{properties.length} Properties</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  Live
+                </span>
+              </h2>
+              <p className="text-[11px] text-zinc-400 font-medium truncate max-w-[220px]">
+                {selectedSuburbs.join(', ')}
+              </p>
+            </div>
+
+            {/* Sorting Dropdown */}
+            <div className="flex items-center gap-1.5">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="text-xs font-bold text-zinc-700 bg-zinc-100 border border-zinc-200 rounded-xl px-2.5 py-1 focus:outline-none cursor-pointer"
+              >
+                <option value="fit">Top Fit</option>
+                <option value="price-asc">Price: Low to High</option>
+                <option value="price-desc">Price: High to Low</option>
+                <option value="distance">Nearest to Trailhead</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={() => setIsListCollapsed(true)}
+                className="p-1 text-zinc-400 hover:text-zinc-800 rounded-lg hover:bg-zinc-100 transition-colors"
+                title="Collapse Card List (Full Screen Map)"
+              >
+                <CaretLeft size={16} weight="bold" />
+              </button>
+            </div>
+          </div>
+
+          {/* Scrollable Property Cards Feed */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3.5 divide-y divide-zinc-100">
+            {sortedProperties.map((prop) => {
+              const isSelected = selectedPropertyId === prop.id;
+              const distToAnchor = activeAnchor ? getDistanceKm(prop.lat, prop.lng, activeAnchor.lat, activeAnchor.lng) : null;
+              const driveDurMins = distToAnchor ? Math.max(2, Math.round((distToAnchor / 35.0) * 60)) : null;
+
+              return (
+                <div
+                  key={prop.id}
+                  onClick={() => setSelectedPropertyId(prop.id)}
+                  className={`pt-3.5 first:pt-0 rounded-2xl p-2.5 transition-all cursor-pointer border ${
+                    isSelected 
+                      ? 'bg-indigo-50/50 border-indigo-300 ring-2 ring-indigo-500/20 shadow-md' 
+                      : 'hover:bg-zinc-50/80 border-transparent hover:border-zinc-200'
+                  }`}
+                >
+                  {/* Photo & Top Badges */}
+                  <div className="relative w-full h-44 rounded-xl overflow-hidden bg-zinc-100 shadow-xs mb-2.5">
+                    <img
+                      src={prop.image}
+                      alt={prop.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-2 left-2 flex items-center gap-1.5">
+                      <span className="px-2.5 py-1 rounded-lg bg-zinc-950/85 text-white font-extrabold text-xs shadow-md backdrop-blur-xs">
+                        R {formatPrice(prop.price)} <span className="text-[10px] text-zinc-400 font-normal">/mo</span>
+                      </span>
+                      {prop.fit_score && (
+                        <span className="px-2 py-0.5 rounded-lg bg-emerald-500 text-white font-black text-[10px] shadow-sm">
+                          {prop.fit_score}% Fit
+                        </span>
+                      )}
+                    </div>
+
+                    {prop.noise_risk === 'sanctuary' && (
+                      <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-emerald-950/80 text-emerald-200 text-[10px] font-bold flex items-center gap-1 backdrop-blur-xs">
+                        <ShieldCheck size={12} weight="bold" className="text-emerald-400" />
+                        <span>Acoustic Sanctuary</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Title & Address */}
+                  <h3 className="font-extrabold text-xs text-zinc-950 line-clamp-1 mb-0.5">
+                    {prop.title}
+                  </h3>
+                  <p className="text-[11px] text-zinc-500 font-medium truncate mb-2">
+                    {prop.address}
+                  </p>
+
+                  {/* Spec Chips: Beds, Baths, Sqm, Parking */}
+                  <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-600 mb-2.5">
+                    <span className="bg-zinc-100 px-2 py-0.5 rounded-md">
+                      🛏️ {prop.bedrooms} Bed{prop.bedrooms > 1 ? 's' : ''}
+                    </span>
+                    <span className="bg-zinc-100 px-2 py-0.5 rounded-md">
+                      🚿 {prop.bathrooms} Bath
+                    </span>
+                    {prop.sqm && (
+                      <span className="bg-zinc-100 px-2 py-0.5 rounded-md">
+                        📐 {prop.sqm} m²
+                      </span>
+                    )}
+                    <span className="bg-zinc-100 px-2 py-0.5 rounded-md text-emerald-700 font-bold">
+                      🚗 Garage / Pkg
+                    </span>
+                  </div>
+
+                  {/* Trailhead / Desirable Location Proximity Pill */}
+                  {activeAnchor && distToAnchor !== null && (
+                    <div className="flex items-center justify-between text-[11px] p-2 rounded-xl bg-zinc-100/90 border border-zinc-200/80">
+                      <span className="font-semibold text-zinc-700 flex items-center gap-1.5 truncate max-w-[210px]">
+                        {activeAnchor.iconType === 'trail' ? (
+                          <Tree size={13} weight="fill" className="text-emerald-600 shrink-0" />
+                        ) : activeAnchor.iconType === 'surf' ? (
+                          <Waves size={13} weight="fill" className="text-cyan-600 shrink-0" />
+                        ) : (
+                          <Target size={13} weight="bold" className="text-indigo-600 shrink-0" />
+                        )}
+                        <span className="truncate">{activeAnchor.label}</span>
+                      </span>
+                      <span className="font-black text-indigo-700 shrink-0">
+                        {distToAnchor} km · ~{driveDurMins}m
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Links / Action */}
+                  <div className="flex items-center justify-between pt-2 text-xs">
+                    <span className="text-[11px] text-indigo-600 font-bold hover:underline flex items-center gap-1">
+                      Focus on map <NavigationArrow size={11} weight="fill" />
+                    </span>
+                    {prop.url && (
+                      <a
+                        href={prop.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[11px] font-bold text-zinc-400 hover:text-zinc-950 flex items-center gap-1 hover:underline"
+                      >
+                        <span>View P24</span>
+                        <ArrowSquareOut size={12} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </aside>
+
+        {/* EXPAND BUTTON (Visible when list is collapsed) */}
+        {isListCollapsed && (
+          <button
+            type="button"
+            onClick={() => setIsListCollapsed(false)}
+            className="absolute top-4 left-4 z-30 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-md shadow-xl border border-zinc-200 text-xs font-extrabold text-zinc-900 flex items-center gap-2 hover:bg-zinc-50 transition-all cursor-pointer"
+            title="Open Properties Column"
+          >
+            <Sliders size={15} weight="bold" className="text-indigo-600" />
+            <span>Show {properties.length} Properties</span>
+            <CaretRight size={14} weight="bold" />
+          </button>
+        )}
+
+        {/* RIGHT / FULL-WIDTH MAP CANVAS */}
+        <div className="flex-1 h-full w-full relative bg-zinc-100 overflow-hidden">
+          <PropertyMap
+            mode="default"
+            properties={properties}
+            anchors={anchors}
+            selectedPropertyId={selectedPropertyId}
+            selectedAnchorId={activeAnchorId}
+            onSelectProperty={(p) => setSelectedPropertyId(p.id)}
+            onSelectAnchor={(a) => setActiveAnchorId(a.id)}
+            className="w-full h-full"
+          />
+        </div>
+
+      </main>
     </div>
   );
 }

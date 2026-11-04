@@ -58,6 +58,7 @@ export interface PropertyMapItem {
   image: string;
   lat: number;
   lng: number;
+  url?: string;
   source_platform?: string;
   is_favorite?: boolean;
   rank?: number;
@@ -65,7 +66,7 @@ export interface PropertyMapItem {
   noise_risk?: string;
   noise_reason?: string | null;
   location_proximity?: any[];
-  acoustic_audit?: AcousticAudit;
+  acoustic_audit?: Partial<AcousticAudit>;
 }
 
 export interface ProximityAnchor {
@@ -128,6 +129,14 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
     Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c * 10) / 10;
+}
+
+// Deterministic number formatting to avoid SSR/client locale hydration mismatch
+export function formatNumberDeterministic(val: number | string | undefined | null): string {
+  if (val === undefined || val === null || val === '') return '0';
+  const num = typeof val === 'string' ? parseFloat(val) : val;
+  if (isNaN(num)) return '0';
+  return Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 // Topography-Aware Driving Distance & Duration Calculation
@@ -928,8 +937,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     <div
       ref={containerRef}
       className={`relative w-full h-full overflow-hidden select-none bg-[#f1f2f4] border border-zinc-200 transition-shadow duration-200 ${isMapActive
-          ? 'cursor-grab active:cursor-grabbing ring-2 ring-indigo-500/25'
-          : 'cursor-pointer'
+        ? 'cursor-grab active:cursor-grabbing ring-2 ring-indigo-500/25'
+        : 'cursor-pointer'
         } ${className}`}
       onClick={() => {
         setIsMapActive(true);
@@ -1370,8 +1379,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                 style={{ left: `${midX}px`, top: `${midY}px` }}
               >
                 <div className={`px-2.5 py-1 rounded-full text-[10px] font-black shadow-lg border flex items-center gap-1.5 backdrop-blur-md ${isPropShielded
-                    ? 'bg-emerald-950/90 text-emerald-100 border-emerald-400/60 shadow-emerald-950/20'
-                    : 'bg-rose-950/90 text-rose-100 border-rose-500/70 shadow-rose-950/20'
+                  ? 'bg-emerald-950/90 text-emerald-100 border-emerald-400/60 shadow-emerald-950/20'
+                  : 'bg-rose-950/90 text-rose-100 border-rose-500/70 shadow-rose-950/20'
                   }`}>
                   {isPropShielded ? (
                     <>
@@ -1558,16 +1567,16 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
             </div>
 
             {/* Perimeter Distance Badge */}
-              { radiusPixels > 30 && showRadius && (
-                <div
-                  className="absolute z-35 transform -translate-x-1/2 -translate-y-full mb-1 transition-none"
-                  style={{ left: `${pPos.x}px`, top: `${pPos.y - radiusPixels}px` }}
-                >
-                  <div className="px-2.5 py-0.5 rounded-full bg-indigo-600/95 text-white text-[10px] font-black shadow-md border border-white/50 backdrop-blur-md whitespace-nowrap">
-                    {effectiveRadiusKm.toFixed(1)} km radius
-                  </div>
+            {radiusPixels > 30 && showRadius && (
+              <div
+                className="absolute z-35 transform -translate-x-1/2 -translate-y-full mb-1 transition-none"
+                style={{ left: `${pPos.x}px`, top: `${pPos.y - radiusPixels}px` }}
+              >
+                <div className="px-2.5 py-0.5 rounded-full bg-indigo-600/95 text-white text-[10px] font-black shadow-md border border-white/50 backdrop-blur-md whitespace-nowrap">
+                  {effectiveRadiusKm.toFixed(1)} km radius
                 </div>
-              )}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -1709,8 +1718,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               {isCompact ? (
                 <div
                   className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-md border-2 transition-transform group-hover:scale-125 ${isTopMatch
-                      ? 'bg-amber-400 text-zinc-950 border-white ring-1 ring-amber-400/50'
-                      : 'bg-zinc-900 text-white border-white hover:bg-zinc-800'
+                    ? 'bg-amber-400 text-zinc-950 border-white ring-1 ring-amber-400/50'
+                    : 'bg-zinc-900 text-white border-white hover:bg-zinc-800'
                     }`}
                   title={`#${property.rank} - ${formatPricePill(property.price, property.currency)}`}
                 >
@@ -1720,16 +1729,16 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                 <div>
                   <div
                     className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-md whitespace-nowrap ${isSelected
-                        ? 'bg-zinc-950 text-white ring-2 ring-emerald-400 ring-offset-2 ring-offset-white shadow-xl'
-                        : 'bg-white text-zinc-900 border border-zinc-200/90 hover:border-zinc-950 hover:bg-zinc-50 hover:shadow-lg'
+                      ? 'bg-zinc-950 text-white ring-2 ring-emerald-400 ring-offset-2 ring-offset-white shadow-xl'
+                      : 'bg-white text-zinc-900 border border-zinc-200/90 hover:border-zinc-950 hover:bg-zinc-50 hover:shadow-lg'
                       }`}
                   >
                     {property.rank && (
                       <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-0.5 ${isSelected
-                          ? 'bg-emerald-400 text-zinc-950'
-                          : isTopMatch
-                            ? 'bg-amber-400 text-zinc-950'
-                            : 'bg-zinc-100 text-zinc-800'
+                        ? 'bg-emerald-400 text-zinc-950'
+                        : isTopMatch
+                          ? 'bg-amber-400 text-zinc-950'
+                          : 'bg-zinc-100 text-zinc-800'
                         }`}>
                         {isTopMatch && <Sparkle size={9} weight="fill" />}
                         #{property.rank}
@@ -1747,8 +1756,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
 
                   <div
                     className={`w-2 h-2 rotate-45 -mt-1 mx-auto shadow-2xs transition-colors ${isSelected
-                        ? 'bg-zinc-950 ring-1 ring-emerald-400/50'
-                        : 'bg-white border-r border-b border-zinc-300 group-hover:bg-zinc-50'
+                      ? 'bg-zinc-950 ring-1 ring-emerald-400/50'
+                      : 'bg-white border-r border-b border-zinc-300 group-hover:bg-zinc-50'
                       }`}
                   />
                 </div>
@@ -1874,7 +1883,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                   <div className="flex items-center justify-between text-[11px] p-2.5 rounded-2xl bg-zinc-50 border border-zinc-200/70">
                     <span className="font-semibold text-zinc-600">Budget Window</span>
                     <span className="font-extrabold text-zinc-950">
-                      R {Number(searchSummary.minPrice || 0).toLocaleString()} – R {Number(searchSummary.maxPrice || 0).toLocaleString()}
+                      R {formatNumberDeterministic(searchSummary.minPrice || 0)} – R {formatNumberDeterministic(searchSummary.maxPrice || 0)}
                     </span>
                   </div>
                 )}
@@ -1964,8 +1973,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                     </span>
                   </div>
                   <div className={`p-2 rounded-xl text-xs flex items-center gap-2 border ${isPropShielded
-                      ? 'bg-emerald-50/80 text-emerald-950 border-emerald-200/80'
-                      : 'bg-rose-50/80 text-rose-950 border-rose-200/80'
+                    ? 'bg-emerald-50/80 text-emerald-950 border-emerald-200/80'
+                    : 'bg-rose-50/80 text-rose-950 border-rose-200/80'
                     }`}>
                     {isPropShielded ? (
                       <ShieldCheck size={18} weight="bold" className="text-emerald-600 shrink-0" />
@@ -2008,8 +2017,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                           key={a.id}
                           onClick={() => onSelectAnchor && onSelectAnchor(a)}
                           className={`flex items-center justify-between text-[11px] font-medium px-2.5 py-1.5 rounded-xl cursor-pointer transition-all ${isSelectedAnchor
-                              ? 'bg-zinc-950 text-white shadow-sm'
-                              : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-800 border border-zinc-200/60'
+                            ? 'bg-zinc-950 text-white shadow-sm'
+                            : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-800 border border-zinc-200/60'
                             }`}
                         >
                           <span className="truncate max-w-[130px] font-semibold flex items-center gap-1.5">
@@ -2079,174 +2088,176 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         </div>
       </div>
 
-        {/* Bottom Left Dock: Dynamic Location Radius Slider + Layer Visibility Toolbar */}
-        <div
-          className="absolute bottom-6 left-6 z-40 flex flex-col items-start gap-2 pointer-events-auto"
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-        >
-          {/* Dynamic Radius Ring Slider (Directly above the toggle visibility switches) */}
-          {showRadius && (proximityFilter || (showAnchors && (activeAnchor || anchors.length > 0))) && (
-            isRadiusCollapsed ? (
-              <div
-                onClick={() => setIsRadiusCollapsed(false)}
-                className="w-64 sm:w-72 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl flex items-center justify-between gap-2 cursor-pointer hover:bg-zinc-50/90 transition-all select-none group"
-                title="Expand Radius Slider"
-              >
+      {/* Bottom Left Dock: Dynamic Location Radius Slider + Layer Visibility Toolbar */}
+      <div
+        className="absolute bottom-6 left-6 z-40 flex flex-col items-start gap-2 pointer-events-auto"
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
+        {/* Dynamic Radius Ring Slider (Directly above the toggle visibility switches) */}
+        {showRadius && (proximityFilter || (showAnchors && (activeAnchor || anchors.length > 0))) && (
+          isRadiusCollapsed ? (
+            <div
+              onClick={() => setIsRadiusCollapsed(false)}
+              className="w-64 sm:w-72 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl flex items-center justify-between gap-2 cursor-pointer hover:bg-zinc-50/90 transition-all select-none group"
+              title="Expand Radius Slider"
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Target size={14} weight="bold" className="text-indigo-600 shrink-0 group-hover:scale-110 transition-transform" />
+                <span className="text-xs font-bold text-zinc-800 truncate" title={locationLabel}>
+                  {locationLabel}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-extrabold text-[11px] whitespace-nowrap">
+                  {effectiveRadiusKm.toFixed(1)} km
+                </span>
+                <CaretUp size={14} weight="bold" className="text-zinc-500 shrink-0" />
+              </div>
+            </div>
+          ) : (
+            <div className="w-64 sm:w-72 p-3 rounded-2xl bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl transition-all duration-200 select-none animate-in fade-in duration-150">
+              {/* Header: Location Label & Radius Pill */}
+              <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <Target size={14} weight="bold" className="text-indigo-600 shrink-0 group-hover:scale-110 transition-transform" />
+                  <Target size={14} weight="bold" className="text-indigo-600 shrink-0" />
                   <span className="text-xs font-bold text-zinc-800 truncate" title={locationLabel}>
                     {locationLabel}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-extrabold text-[11px] whitespace-nowrap">
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-extrabold text-[11px] whitespace-nowrap shrink-0">
                     {effectiveRadiusKm.toFixed(1)} km
                   </span>
-                  <CaretUp size={14} weight="bold" className="text-zinc-500 shrink-0" />
-                </div>
-              </div>
-            ) : (
-              <div className="w-64 sm:w-72 p-3 rounded-2xl bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl transition-all duration-200 select-none animate-in fade-in duration-150">
-                {/* Header: Location Label & Radius Pill */}
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <Target size={14} weight="bold" className="text-indigo-600 shrink-0" />
-                    <span className="text-xs font-bold text-zinc-800 truncate" title={locationLabel}>
-                      {locationLabel}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-extrabold text-[11px] whitespace-nowrap shrink-0">
-                      {effectiveRadiusKm.toFixed(1)} km
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsRadiusCollapsed(true)}
-                      className="p-1 text-zinc-400 hover:text-zinc-800 transition-colors rounded-lg hover:bg-zinc-100 cursor-pointer"
-                      title="Collapse Radius Slider"
-                      aria-label="Collapse Radius Slider"
-                    >
-                      <CaretDown size={14} weight="bold" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Slider Track */}
-                <input
-                  type="range"
-                  min="1"
-                  max="20"
-                  step="0.5"
-                  value={effectiveRadiusKm}
-                  onChange={(e) => handleRadiusChange(parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none"
-                  aria-label="Location Radius Ring Slider"
-                />
-
-                {/* Scale & Quick Presets */}
-                <div className="flex items-center justify-between mt-1 text-[10px] font-semibold text-zinc-400">
-                  <span>1 km</span>
-                  <div className="flex items-center gap-1">
-                    {[2, 5, 10, 15].map((km) => (
-                      <button
-                        key={km}
-                        type="button"
-                        onClick={() => handleRadiusChange(km)}
-                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${Math.abs(effectiveRadiusKm - km) < 0.25
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'
-                          }`}
-                      >
-                        {km}k
-                      </button>
-                    ))}
-                  </div>
-                  <span>20 km</span>
-                </div>
-              </div>
-            )
-          )}
-
-                  {/* Layer Visibility Toolbar (Gray Container with Title & Tooltips) */}
-                  <div className="flex items-center p-1.5 rounded-2xl bg-zinc-200/90 backdrop-blur-xl border border-zinc-300/80 shadow-xl gap-1.5">
-                    {/* Title */}
-                    <div className="flex items-center gap-1.5 pl-2 pr-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-zinc-600 border-r border-zinc-300/90 select-none">
-                      <Stack size={14} weight="bold" className="text-zinc-700" />
-                      <span>Layers</span>
-                    </div>
-
-                      {/* 1. Basemap Switcher */}
-                      <div className="relative group/layer-btn">
-                        <button
-                          onClick={() => setMapStyle(mapStyle === 'canvas' ? 'osm' : 'canvas')}
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${mapStyle === 'osm'
-                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
-                              : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
-                            }`}
-                          aria-label={`Switch Basemap (Current: ${mapStyle === 'canvas' ? 'Clean Canvas' : 'Detailed Streets'})`}
-                        >
-                          <MapTrifold size={16} weight={mapStyle === 'osm' ? 'fill' : 'bold'} />
-                        </button>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
-                          Basemap: {mapStyle === 'canvas' ? 'Clean Canvas' : 'Detailed Streets'}
-                        </div>
-                      </div>
-
-                      {/* 2. Noise Radar Heatmap Toggle */}
-                      <div className="relative group/layer-btn">
-                        <button
-                          onClick={() => setShowNoiseRadar(!showNoiseRadar)}
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showNoiseRadar
-                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
-                              : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
-                            }`}
-                          aria-label="Toggle Noise Radar Layer"
-                        >
-                          <SpeakerHigh size={16} weight={showNoiseRadar ? 'fill' : 'bold'} />
-                        </button>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
-                          Noise Radar: {showNoiseRadar ? 'Visible' : 'Hidden'}
-                        </div>
-                      </div>
-
-                {/* 3. Proximity Anchors Toggle */}
-                <div className="relative group/layer-btn">
                   <button
-                    onClick={() => setShowAnchors(!showAnchors)}
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showAnchors
-                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
-                        : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
-                      }`}
-                    aria-label="Toggle Proximity Anchors Layer"
+                    type="button"
+                    onClick={() => setIsRadiusCollapsed(true)}
+                    className="p-1 text-zinc-400 hover:text-zinc-800 transition-colors rounded-lg hover:bg-zinc-100 cursor-pointer"
+                    title="Collapse Radius Slider"
+                    aria-label="Collapse Radius Slider"
                   >
-                    <Target size={16} weight={showAnchors ? 'fill' : 'bold'} />
+                    <CaretDown size={14} weight="bold" />
                   </button>
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
-                    Commute Anchors: {showAnchors ? 'Visible' : 'Hidden'}
-                  </div>
                 </div>
+              </div>
 
-                {/* 4. Radius Buffer Ring Toggle */}
-                {showAnchors && (
-                  <div className="relative group/layer-btn">
+              {/* Slider Track */}
+              <input
+                type="range"
+                min="1"
+                max="20"
+                step="0.5"
+                value={effectiveRadiusKm}
+                onChange={(e) => handleRadiusChange(parseFloat(e.target.value))}
+                className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none"
+                aria-label="Location Radius Ring Slider"
+              />
+
+              {/* Scale & Quick Presets */}
+              <div className="flex items-center justify-between mt-1 text-[10px] font-semibold text-zinc-400">
+                <span>1 km</span>
+                <div className="flex items-center gap-1">
+                  {[2, 5, 10, 15].map((km) => (
                     <button
-                      onClick={() => setShowRadius(!showRadius)}
-                      className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showRadius
-                          ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
-                          : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                      key={km}
+                      type="button"
+                      onClick={() => handleRadiusChange(km)}
+                      className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${Math.abs(effectiveRadiusKm - km) < 0.25
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'
                         }`}
-                      aria-label="Toggle Radius Buffer Ring"
                     >
-                      <CircleDashed size={16} weight={showRadius ? 'fill' : 'bold'} />
+                      {km}k
                     </button>
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
-                      Radius Ring: {showRadius ? 'Visible' : 'Hidden'}
-                    </div>
-                  </div>
-                )}
+                  ))}
+                </div>
+                <span>20 km</span>
               </div>
             </div>
+          )
+        )}
+
+        {/* Layer Visibility Toolbar (Gray Container with Title & Tooltips) */}
+        <div className="flex items-center p-1.5 rounded-2xl bg-zinc-200/90 backdrop-blur-xl border border-zinc-300/80 shadow-xl gap-1.5">
+          {/* Title */}
+          <div className="flex items-center gap-1.5 pl-2 pr-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-zinc-600 border-r border-zinc-300/90 select-none">
+            <Stack size={14} weight="bold" className="text-zinc-700" />
+            <span>Layers</span>
+          </div>
+
+          {/* 1. Basemap Switcher */}
+          <div className="relative group/layer-btn">
+            <button
+              onClick={() => setMapStyle(mapStyle === 'canvas' ? 'osm' : 'canvas')}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${mapStyle === 'osm'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
+                : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                }`}
+              aria-label={`Switch Basemap (Current: ${mapStyle === 'canvas' ? 'Clean Canvas' : 'Detailed Streets'})`}
+            >
+              <MapTrifold size={16} weight={mapStyle === 'osm' ? 'fill' : 'bold'} />
+            </button>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+              Basemap: {mapStyle === 'canvas' ? 'Clean Canvas' : 'Detailed Streets'}
+            </div>
+          </div>
+
+          {/* 2. Noise Radar Heatmap Toggle */}
+          <div className="relative group/layer-btn">
+            <button
+              onClick={() => setShowNoiseRadar(!showNoiseRadar)}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showNoiseRadar
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
+                : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                }`}
+              aria-label="Toggle Noise Radar Layer"
+            >
+              <SpeakerHigh size={16} weight={showNoiseRadar ? 'fill' : 'bold'} />
+            </button>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+              Noise Radar: {showNoiseRadar ? 'Visible' : 'Hidden'}
+            </div>
+          </div>
+
+          {/* 3. Proximity Anchors Toggle */}
+          <div className="relative group/layer-btn">
+            <button
+              onClick={() => setShowAnchors(!showAnchors)}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showAnchors
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
+                : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                }`}
+              aria-label="Toggle Proximity Anchors Layer"
+            >
+              <Target size={16} weight={showAnchors ? 'fill' : 'bold'} />
+            </button>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+              Commute Anchors: {showAnchors ? 'Visible' : 'Hidden'}
+            </div>
+          </div>
+
+          {/* 4. Radius Buffer Ring Toggle */}
+          {showAnchors && (
+            <div className="relative group/layer-btn">
+              <button
+                onClick={() => setShowRadius(!showRadius)}
+                className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showRadius
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
+                  : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                  }`}
+                aria-label="Toggle Radius Buffer Ring"
+              >
+                <CircleDashed size={16} weight={showRadius ? 'fill' : 'bold'} />
+              </button>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+                Radius Ring: {showRadius ? 'Visible' : 'Hidden'}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
-        );
+  );
 };
+
+export default PropertyMap;
