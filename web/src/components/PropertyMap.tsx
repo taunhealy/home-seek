@@ -24,8 +24,14 @@ import {
   Waveform,
   Stack,
   CircleDashed,
-  SlidersHorizontal
+  SlidersHorizontal,
+  ArrowSquareOut,
+  X,
+  Camera,
+  CaretLeft,
+  CaretRight
 } from '@phosphor-icons/react';
+import { Wine, Dumbbell } from 'lucide-react';
 import { resolveLocationCoords } from '@/lib/geo';
 
 export interface AcousticAudit {
@@ -56,6 +62,7 @@ export interface PropertyMapItem {
   bathrooms: number;
   sqm?: number;
   image: string;
+  images?: string[];
   lat: number;
   lng: number;
   url?: string;
@@ -67,6 +74,25 @@ export interface PropertyMapItem {
   noise_reason?: string | null;
   location_proximity?: any[];
   acoustic_audit?: Partial<AcousticAudit>;
+  ai_insight?: string;
+  agency_name?: string;
+  agency_rating?: number;
+  agency_hellopeter_rating?: number;
+  agency_risk_level?: string;
+  agency_flags?: string[];
+  agency_complaint_sample?: string;
+  p24_id?: string;
+  is_main_road?: boolean;
+  stove_type?: string;
+  parking_type?: string;
+  pet_friendly?: boolean;
+  fibre_ready?: boolean;
+  dwelling_privacy?: string;
+  is_landlord_on_site?: boolean;
+  has_garage?: boolean;
+  has_secure_bay?: boolean;
+  deep_ai_audit?: any;
+  [key: string]: any;
 }
 
 export interface ProximityAnchor {
@@ -99,6 +125,13 @@ export interface PropertyMapProps {
   className?: string;
   mode?: 'default' | 'search';
   selectedSuburbs?: string[];
+  enableAiAnalysis?: boolean;
+  focusTarget?: any;
+  onDeselectProperty?: () => void;
+  onHoverProperty?: (p: PropertyMapItem | null) => void;
+  showCardPopupOnMap?: boolean;
+  onAddSuburb?: (suburb: string) => void;
+  onOpenAiReport?: (p: PropertyMapItem) => void;
   searchSummary?: {
     minPrice?: string | number;
     maxPrice?: string | number;
@@ -174,66 +207,378 @@ const drivingRouteCache = new Map<string, DrivingRouteData>();
 // Cape Town Calibrated Noise Hotspots & Verified Sanctuary Enclaves
 export const CAPE_TOWN_HOTSPOTS = [
   {
+    id: 'sp_mojo_market_regent',
+    name: 'Mojo Market & Regent Road (30 Regent Rd, Sea Point)',
+    shortName: 'Mojo Market',
+    lat: -33.919297,
+    lng: 18.385825,
+    base_db: 85,
+    radius_m: 180,
+    type: 'nightlife',
+    desc: 'High-energy 7-days-a-week indoor market with live acoustic/DJ stages, craft beer bars & dense Regent Rd foot traffic.'
+  },
+  {
+    id: 'sp_the_nines_rooftop',
+    name: 'The Nines & Station House Rooftop (19 Kloof Rd, Sea Point)',
+    shortName: 'The Nines',
+    lat: -33.9189,
+    lng: 18.3845,
+    base_db: 82,
+    radius_m: 140,
+    type: 'nightlife',
+    desc: 'Rooftop cocktail bar & dinner lounge overlooking Sea Point oceanfront.'
+  },
+  {
+    id: 'sp_rockpool_beach_rd',
+    name: 'Rockpool & Sea Point Promenade (205 Beach Rd, Sea Point)',
+    shortName: 'Rockpool',
+    lat: -33.909274,
+    lng: 18.393433,
+    base_db: 82,
+    radius_m: 150,
+    type: 'nightlife',
+    desc: 'Beachfront cocktail terrace chatter and sunset dining traffic along Beach Road.'
+  },
+  {
+    id: 'sp_hugo_social_club',
+    name: 'Hugo Social Club Rooftop (2 Kings Rd, Sea Point)',
+    shortName: 'Hugo Social Club',
+    lat: -33.9142,
+    lng: 18.3905,
+    base_db: 82,
+    radius_m: 140,
+    type: 'nightlife',
+    desc: 'Panoramic rooftop bar and pool club with evening DJ sets and skyline views.'
+  },
+  {
+    id: 'gp_tigers_milk_main',
+    name: "Tiger's Milk & Mano's (Green Point Main Rd)",
+    shortName: "Tiger's Milk Green Point",
+    lat: -33.908869,
+    lng: 18.412098,
+    base_db: 84,
+    radius_m: 160,
+    type: 'nightlife',
+    desc: 'Vibrant sports bars, outdoor dining terrace crowds, and evening ride-share pickups.'
+  },
+  {
+    id: 'somerset_greenpoint_strip',
+    name: 'Somerset Road Bar & Dining Strip (Green Point)',
+    shortName: 'Somerset Rd Strip',
+    lat: -33.9090,
+    lng: 18.4110,
+    base_db: 83,
+    radius_m: 220,
+    type: 'nightlife',
+    desc: 'Sports bars, outdoor patios & evening crowd buzz.'
+  },
+  {
+    id: 'kloof_power_and_glory',
+    name: 'The Power & The Glory (13D Kloof Nek Rd, Tamboerskloof)',
+    shortName: 'The Power & The Glory',
+    lat: -33.9317,
+    lng: 18.4069,
+    base_db: 84,
+    radius_m: 160,
+    type: 'nightlife',
+    desc: 'Iconic corner bar with vibrant pavement crowd at 13D Kloof Nek Rd (cnr Carstens/Camp St).'
+  },
+  {
+    id: 'kloof_yours_truly',
+    name: 'Yours Truly & Up Yours Balcony Bar (73 Kloof St, Gardens)',
+    shortName: 'Yours Truly',
+    lat: -33.9300,
+    lng: 18.4109,
+    base_db: 84,
+    radius_m: 155,
+    type: 'nightlife',
+    desc: 'Open-air balcony bar, live DJ sets & high-volume pavement spillover along Kloof St.'
+  },
+  {
+    id: 'kloof_blondie_park_rd',
+    name: 'Blondie & Park Road Bars (71 Kloof St, Gardens)',
+    shortName: 'Blondie',
+    lat: -33.9293,
+    lng: 18.4114,
+    base_db: 85,
+    radius_m: 160,
+    type: 'nightlife',
+    desc: 'Packed pavement bar crowds at Blondie & Park Rd corner with late-night street spillover.'
+  },
+  {
     id: 'kloof_aruba_nightlife',
     name: 'Kloof & Malan St (Aruba, Paradiso)',
+    shortName: 'Aruba & Paradiso',
     lat: -33.9323,
     lng: 18.4108,
     base_db: 84,
     radius_m: 220,
     type: 'nightlife',
-    desc: 'Late-night DJ bass & patio crowds down Malan St waveguide'
-  },
-  {
-    id: 'somerset_greenpoint_strip',
-    name: 'Somerset Road Strip (Green Point)',
-    lat: -33.9090,
-    lng: 18.4110,
-    base_db: 82,
-    radius_m: 250,
-    type: 'nightlife',
-    desc: 'Sports bars, outdoor patios & evening crowd buzz'
-  },
-  {
-    id: 'main_road_seapoint',
-    name: 'Main Road Commercial (Sea Point)',
-    lat: -33.9175,
-    lng: 18.3880,
-    base_db: 78,
-    radius_m: 220,
-    type: 'transit',
-    desc: 'Buses, delivery scooters & late grocery traffic'
+    desc: 'Late-night DJ bass & patio crowds down Malan St waveguide.'
   },
   {
     id: 'bree_long_cbd',
-    name: 'Bree & Long Street Spine',
+    name: 'Bree & Long Street Clubs & Bars',
+    shortName: 'Bree & Long St',
     lat: -33.9220,
     lng: 18.4175,
     base_db: 86,
     radius_m: 300,
     type: 'nightlife',
-    desc: 'High-decibel clubs & street revellers until 03:00'
+    desc: 'High-decibel clubs & street revellers until 03:00.'
+  },
+  {
+    id: 'cb_cafe_caprice',
+    name: 'Café Caprice (37 Victoria Rd, Camps Bay)',
+    shortName: 'Café Caprice',
+    lat: -33.9515,
+    lng: 18.3780,
+    base_db: 86,
+    radius_m: 200,
+    type: 'nightlife',
+    desc: 'Sunset beachfront cocktail lounge, weekend DJ sessions & bustling sidewalk tables.'
+  },
+  {
+    id: 'main_road_seapoint',
+    name: 'Main Road Commercial Arterial (Sea Point)',
+    shortName: 'Main Rd Arterial',
+    lat: -33.9175,
+    lng: 18.3880,
+    base_db: 78,
+    radius_m: 220,
+    type: 'transit',
+    desc: 'Buses, delivery scooters & late grocery traffic.'
   },
   {
     id: 'mill_buitenkant_transit',
     name: 'Mill St & Buitenkant Transit Canyon',
+    shortName: 'Mill & Buitenkant',
     lat: -33.9305,
     lng: 18.4140,
     base_db: 77,
     radius_m: 190,
     type: 'transit',
-    desc: 'Dual carriageway transit & 24hr petrol idling'
+    desc: 'Dual carriageway transit & 24hr petrol idling.'
   },
   {
     id: 'helen_suzman_blvd',
     name: 'Helen Suzman Blvd Highway',
+    shortName: 'Helen Suzman Blvd',
     lat: -33.9050,
     lng: 18.4120,
     base_db: 76,
     radius_m: 160,
     type: 'highway',
-    desc: 'Fast arterial road & stadium event traffic'
+    desc: 'Fast arterial road & stadium event traffic.'
   }
 ];
+
+export interface CrimeHotspot {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  radius_m: number;
+  risk_level: 'High Risk' | 'Moderate Risk' | 'Caution' | string;
+  incident_type: string;
+}
+
+export const CAPE_TOWN_CRIME_HOTSPOTS: CrimeHotspot[] = [
+  {
+    id: 'crime_long_street_nightlife',
+    name: 'Long & Loop Street Nightlife Corridor',
+    lat: -33.9220,
+    lng: 18.4175,
+    radius_m: 240,
+    risk_level: 'High Risk',
+    incident_type: 'Late-night phone snatchings, pickpocketing & bar-exit muggings'
+  },
+  {
+    id: 'crime_greenmarket_square',
+    name: 'Greenmarket Square / Shortmarket St',
+    lat: -33.9225,
+    lng: 18.4200,
+    radius_m: 200,
+    risk_level: 'High Risk',
+    incident_type: 'Street harassment, opportunistic theft & ATM distraction scams'
+  },
+  {
+    id: 'crime_cape_town_station',
+    name: 'Cape Town Station & Grand Parade Taxi Rank',
+    lat: -33.9240,
+    lng: 18.4280,
+    radius_m: 280,
+    risk_level: 'High Risk',
+    incident_type: 'Aggressive street muggings, commuter theft & pickpocketing'
+  },
+  {
+    id: 'crime_woodstock_lower_main',
+    name: 'Woodstock Lower Main Rd / Albert Rd Strip',
+    lat: -33.9285,
+    lng: 18.4480,
+    radius_m: 260,
+    risk_level: 'High Risk',
+    incident_type: 'After-hours street robberies & vehicle window smashing'
+  },
+  {
+    id: 'crime_sea_point_promenade_late',
+    name: 'Sea Point Pavilion & Beach Rd (Late Night)',
+    lat: -33.9210,
+    lng: 18.3810,
+    radius_m: 200,
+    risk_level: 'Caution',
+    incident_type: 'Late-night phone snatching from parked cars & pavement revellers'
+  }
+];
+
+export function getCrimeDepthTier(spot: CrimeHotspot): 'high' | 'moderate' | 'low' {
+  const r = (spot.risk_level || '').toLowerCase();
+  if (r.includes('high')) return 'high';
+  if (r.includes('moderate') || r.includes('caution')) return 'moderate';
+  return 'low';
+}
+
+export interface BusyRoadCorridor {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  radius_m: number;
+  roadName: string;
+}
+
+export const CAPE_TOWN_BUSY_ROADS: BusyRoadCorridor[] = [
+  { id: 'road_kloof_nek_m62', name: 'Kloof Nek Rd (M62)', roadName: 'Kloof Nek Rd (M62)', lat: -33.9350, lng: 18.4040, radius_m: 60 },
+  { id: 'road_main_rd_sea_point', name: 'Main Rd (M61) Sea Point', roadName: 'Main Rd (M61)', lat: -33.9160, lng: 18.3890, radius_m: 60 },
+  { id: 'road_regent_rd_sea_point', name: 'Regent Rd Sea Point', roadName: 'Regent Rd', lat: -33.9200, lng: 18.3840, radius_m: 55 },
+  { id: 'road_helen_suzman_blvd', name: 'Helen Suzman Blvd (M61)', roadName: 'Helen Suzman Blvd', lat: -33.9050, lng: 18.4120, radius_m: 70 },
+  { id: 'road_buitengracht_m62', name: 'Buitengracht St (M62)', roadName: 'Buitengracht St', lat: -33.9210, lng: 18.4160, radius_m: 65 },
+  { id: 'road_orange_street', name: 'Orange St / Grey\'s Pass', roadName: 'Orange St', lat: -33.9285, lng: 18.4130, radius_m: 55 },
+  { id: 'road_victoria_rd_camps_bay', name: 'Victoria Rd (M6) Camps Bay', roadName: 'Victoria Rd (M6)', lat: -33.9515, lng: 18.3780, radius_m: 60 },
+  { id: 'road_main_rd_muizenberg', name: 'Main Rd (M4) Muizenberg', roadName: 'Main Rd (M4)', lat: -34.1078, lng: 18.4679, radius_m: 55 },
+];
+
+export function getPropertyBusyRoadExposure(prop: any) {
+  if (!prop) {
+    return {
+      isDirectlyOnRoad: false,
+      isNearBusyRoad: false,
+      roadName: '',
+      distanceM: 0,
+      shortFlag: null as string | null,
+      badgeLabel: null as string | null,
+      tooltipReason: '',
+      road: null as { shortName: string; base_db: number } | null
+    };
+  }
+
+  const text = `${prop.address || ''} ${prop.title || ''}`.toLowerCase();
+  const roadMatch = text.match(/\b(kloof\s+nek(\s+r(oa)?d)?|main\s+r(oa)?d|regent\s+r(oa)?d|victoria\s+r(oa)?d|somerset\s+r(oa)?d|kloof\s+st(reet)?|buitengracht|orange\s+st(reet)?|helen\s+suzman|mill\s+st(reet)?|ou\s+kaapse\s+weg|m3|m4|m5|m6|m62)\b/i);
+
+  if (roadMatch) {
+    const rName = roadMatch[0].toUpperCase();
+    return {
+      isDirectlyOnRoad: true,
+      isNearBusyRoad: true,
+      roadName: rName,
+      distanceM: 20,
+      shortFlag: `🚗 On ${rName} (80 dB)`,
+      badgeLabel: `🚗 On ${rName} (80 dB)`,
+      tooltipReason: `High-frequency vehicular traffic & peak hour delivery idling along ${rName}.`,
+      road: { shortName: rName, base_db: 80 }
+    };
+  }
+
+  if (prop.lat && prop.lng) {
+    for (const r of CAPE_TOWN_BUSY_ROADS) {
+      const d = Math.hypot(prop.lat - r.lat, (prop.lng - r.lng) * Math.cos(prop.lat * Math.PI / 180)) * 111320;
+      if (d <= r.radius_m) {
+        const roundedD = Math.round(d);
+        return {
+          isDirectlyOnRoad: d <= 30,
+          isNearBusyRoad: true,
+          roadName: r.roadName,
+          distanceM: roundedD,
+          shortFlag: `🚗 On ${r.roadName} (80 dB)`,
+          badgeLabel: `🚗 On ${r.roadName} (80 dB)`,
+          tooltipReason: `Within ${roundedD}m of ${r.roadName} traffic corridor.`,
+          road: { shortName: r.roadName, base_db: 80 }
+        };
+      }
+    }
+  }
+
+  return {
+    isDirectlyOnRoad: false,
+    isNearBusyRoad: false,
+    roadName: '',
+    distanceM: 0,
+    shortFlag: null as string | null,
+    badgeLabel: null as string | null,
+    tooltipReason: '',
+    road: null as { shortName: string; base_db: number } | null
+  };
+}
+
+export function getPropertyBarNoiseExposure(prop: any) {
+  if (!prop) {
+    return {
+      isExposed: false,
+      severity: 'none' as const,
+      distanceMeters: 9999,
+      distanceM: 9999,
+      shortFlag: null as string | null,
+      badgeLabel: null as string | null,
+      tooltipReason: '',
+      hotspot: null as { name: string; shortName: string; base_db: number } | null
+    };
+  }
+
+  const text = `${prop.address || ''} ${prop.title || ''}`.toLowerCase();
+  for (const bar of CAPE_TOWN_HOTSPOTS) {
+    if (bar.type !== 'nightlife') continue;
+    const nameKeywords = (bar.shortName || bar.name).toLowerCase().split(/[\s,&()]+/);
+    const hasNameMatch = nameKeywords.some(kw => kw.length > 3 && text.includes(kw));
+    
+    let distM = 9999;
+    if (prop.lat && prop.lng) {
+      distM = Math.hypot(prop.lat - bar.lat, (prop.lng - bar.lng) * Math.cos(prop.lat * Math.PI / 180)) * 111320;
+    }
+
+    if (hasNameMatch || distM <= bar.radius_m) {
+      const isClose = distM <= bar.radius_m * 0.6 || hasNameMatch;
+      const severity = isClose ? ('high' as const) : ('moderate' as const);
+      const bName = bar.shortName || bar.name.split('(')[0].trim();
+      const distStr = distM < 999 ? ` (~${Math.round(distM)}m)` : '';
+      const roundedD = Math.round(distM);
+      return {
+        isExposed: true,
+        severity,
+        distanceMeters: roundedD,
+        distanceM: roundedD,
+        shortFlag: `🍻 ${bName} (${bar.base_db} dB)`,
+        badgeLabel: `🍻 ${bName}${distStr} (${bar.base_db} dB)`,
+        tooltipReason: `${bName}: ${bar.desc} (${bar.base_db} dB peak late-night noise).`,
+        hotspot: {
+          name: bar.name,
+          shortName: bar.shortName || bName,
+          base_db: bar.base_db
+        }
+      };
+    }
+  }
+
+  return {
+    isExposed: false,
+    severity: 'none' as const,
+    distanceMeters: 9999,
+    distanceM: 9999,
+    shortFlag: null as string | null,
+    badgeLabel: null as string | null,
+    tooltipReason: '',
+    hotspot: null as { name: string; shortName: string; base_db: number } | null
+  };
+}
 
 export const CAPE_TOWN_SANCTUARIES = [
   {
@@ -386,6 +731,42 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   const [isHudCollapsed, setIsHudCollapsed] = useState(false);
   const [isSearchRadarCollapsed, setIsSearchRadarCollapsed] = useState(false);
   const [isRadiusCollapsed, setIsRadiusCollapsed] = useState(false);
+
+  // Bar / Nightlife Place Details & Photos Popover State (Google Places API)
+  const [inspectedBar, setInspectedBar] = useState<any | null>(null);
+  const [barDetailsCache, setBarDetailsCache] = useState<Record<string, any>>({});
+  const [isLoadingBarDetails, setIsLoadingBarDetails] = useState(false);
+  const [barActivePhotoIdx, setBarActivePhotoIdx] = useState<number>(0);
+
+  const resolvePlacePhotoUrl = useCallback((url?: string) => {
+    if (!url) return '';
+    if (url.startsWith('/api/')) {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      return `${backendBase}${url}`;
+    }
+    return url;
+  }, []);
+
+  const fetchBarDetails = useCallback(async (bar: any) => {
+    if (barDetailsCache[bar.id]) return;
+    setIsLoadingBarDetails(true);
+    setBarActivePhotoIdx(0);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const cleanQuery = bar.shortName || bar.name.split('(')[0].trim();
+      const res = await fetch(`${backendBase}/api/places/details?query=${encodeURIComponent(cleanQuery)}&lat=${bar.lat}&lng=${bar.lng}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'success' && data.place) {
+          setBarDetailsCache((prev) => ({ ...prev, [bar.id]: data.place }));
+        }
+      }
+    } catch (err) {
+      console.warn('[Places] Failed to fetch bar details:', err);
+    } finally {
+      setIsLoadingBarDetails(false);
+    }
+  }, [barDetailsCache]);
 
   // Click-to-activate map focus (prevents page scroll hijacking)
   const [isMapActive, setIsMapActive] = useState(false);
@@ -1337,25 +1718,37 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
             );
           })}
 
-          {/* Hotspot Labels */}
+          {/* Hotspot Labels & Clickable Bars */}
           {CAPE_TOWN_HOTSPOTS.map((h) => {
             const pos = getScreenPos(h.lat, h.lng);
             if (pos.x < -100 || pos.x > dimensions.width + 100 || pos.y < -100 || pos.y > dimensions.height + 100) return null;
             return (
               <div
                 key={`label-hotspot-${h.id}`}
-                className="absolute z-15 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                className="absolute z-20 transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer group/bar"
                 style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCenter({ lat: h.lat, lng: h.lng });
+                  setInspectedBar(h);
+                  fetchBarDetails(h);
+                }}
               >
-                {zoom >= 14 ? (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-600/95 text-white font-black text-[10px] shadow-lg border border-white/70 backdrop-blur-md">
-                    <SpeakerHigh size={12} weight="bold" className="text-amber-200 shrink-0" />
-                    <span className="truncate max-w-[130px]">{h.name}</span>
+                {zoom >= 13.8 ? (
+                  <div
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-600/95 hover:bg-rose-700 text-white font-black text-[10px] shadow-lg border border-white/70 backdrop-blur-md transition-all duration-150 hover:scale-105 active:scale-95"
+                    title={`${h.name} (${h.base_db} dB) — Click to view Google Place photos`}
+                  >
+                    <Wine size={12} className="text-amber-200 shrink-0" />
+                    <span className="truncate max-w-[130px]">{h.shortName || h.name}</span>
                     <span className="bg-rose-900/90 px-1.5 py-0.2 rounded text-[9px] text-amber-200 font-extrabold">{h.base_db} dB</span>
                   </div>
                 ) : (
-                  <div className="w-5 h-5 rounded-full bg-rose-600/90 text-white shadow-md border border-white flex items-center justify-center">
-                    <SpeakerHigh size={11} weight="bold" />
+                  <div
+                    className="w-5 h-5 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white shadow-md border border-white flex items-center justify-center transition-all hover:scale-125"
+                    title={`${h.name} (${h.base_db} dB) — Click to view Google Place photos`}
+                  >
+                    <Wine size={11} className="text-white" />
                   </div>
                 )}
               </div>
@@ -2256,6 +2649,181 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
           )}
         </div>
       </div>
+
+      {/* Inspected Bar Rich Place Card with Google API Images Gallery */}
+      {inspectedBar && (() => {
+        const bPos = getScreenPos(inspectedBar.lat, inspectedBar.lng);
+        const cardX = Math.max(180, Math.min(dimensions.width - 180, bPos.x));
+        const isNearTop = bPos.y < 360;
+        const isNearLeft = cardX < 210;
+        const isNearRight = cardX > dimensions.width - 210;
+
+        const verticalClass = isNearTop ? 'top-6' : 'bottom-6';
+        const horizontalClass = isNearLeft ? 'left-6' : isNearRight ? 'right-6' : 'left-1/2 -translate-x-1/2';
+
+        const details = barDetailsCache[inspectedBar.id] || null;
+        const rawPhotos: string[] = Array.isArray(details?.photo_urls)
+          ? details.photo_urls
+          : (details?.photo_url ? [details.photo_url] : []);
+        const photos = rawPhotos.map(resolvePlacePhotoUrl);
+        const currentPhoto = photos[barActivePhotoIdx] || (photos.length > 0 ? photos[0] : null);
+
+        return (
+          <div
+            key={`bar-preview-${inspectedBar.id}`}
+            className={`absolute z-[95] ${verticalClass} ${horizontalClass} w-84 sm:w-96 rounded-2xl bg-zinc-950/95 backdrop-blur-xl text-white border border-rose-500/35 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 select-none`}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* Header / Hero Photo Carousel */}
+            <div className="relative h-48 w-full bg-zinc-900 overflow-hidden group/gallery">
+              {isLoadingBarDetails && !currentPhoto ? (
+                <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-zinc-400 gap-2">
+                  <div className="w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-[11px] font-semibold text-zinc-400">Loading Google Place Photos...</span>
+                </div>
+              ) : currentPhoto ? (
+                <>
+                  <img
+                    src={currentPhoto}
+                    alt={details?.name || inspectedBar.name}
+                    className="w-full h-full object-cover transition-all duration-300 group-hover/gallery:scale-105"
+                  />
+                  {/* Photo Counter Pill */}
+                  {photos.length > 1 && (
+                    <div className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-black/75 backdrop-blur-md border border-white/20 text-white flex items-center gap-1.5 z-10 shadow-md">
+                      <Camera size={12} className="text-rose-400" />
+                      <span>{barActivePhotoIdx + 1} / {photos.length} Google Photos</span>
+                    </div>
+                  )}
+
+                  {/* Carousel Left / Right Arrows */}
+                  {photos.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBarActivePhotoIdx((prev) => (prev > 0 ? prev - 1 : photos.length - 1));
+                        }}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-lg hover:scale-110 opacity-80 hover:opacity-100 z-10"
+                        title="Previous photo"
+                      >
+                        <CaretLeft size={16} weight="bold" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBarActivePhotoIdx((prev) => (prev < photos.length - 1 ? prev + 1 : 0));
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-lg hover:scale-110 opacity-80 hover:opacity-100 z-10"
+                        title="Next photo"
+                      >
+                        <CaretRight size={16} weight="bold" />
+                      </button>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-tr from-zinc-900 via-rose-950/20 to-zinc-900 text-zinc-400">
+                  <Wine size={38} className="text-rose-400/70 mb-1" />
+                  <span className="text-xs font-semibold">{inspectedBar.shortName || inspectedBar.name}</span>
+                </div>
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/30 to-transparent pointer-events-none" />
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setInspectedBar(null)}
+                className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-black/70 hover:bg-black text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-lg hover:scale-110 z-10"
+                title="Close venue card"
+              >
+                <X size={14} weight="bold" />
+              </button>
+
+              {/* Verified Google Places Badge */}
+              <div className="absolute bottom-2.5 left-3 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-black/80 backdrop-blur-md border border-rose-500/40 text-rose-300 z-10">
+                <Wine size={11} className="text-rose-400" />
+                <span>Bar & Dining Hotspot</span>
+              </div>
+
+              {/* Star Rating Badge */}
+              {details?.rating && (
+                <div className="absolute bottom-2.5 right-3 flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-black bg-amber-400 text-zinc-950 shadow-md z-10">
+                  <span>★</span>
+                  <span>{details.rating}</span>
+                  {details.user_ratings_total && (
+                    <span className="text-[9px] font-bold opacity-80">({details.user_ratings_total.toLocaleString()})</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Thumbnail Strip (if multiple photos) */}
+            {photos.length > 1 && (
+              <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 overflow-x-auto scrollbar-none bg-zinc-950/60 border-b border-white/5">
+                {photos.slice(0, 8).map((p, idx) => (
+                  <button
+                    key={`bar-thumb-${idx}`}
+                    type="button"
+                    onClick={() => setBarActivePhotoIdx(idx)}
+                    className={`relative w-12 h-9 rounded-lg overflow-hidden shrink-0 border transition-all cursor-pointer ${idx === barActivePhotoIdx ? 'border-rose-400 ring-2 ring-rose-500/50 scale-105' : 'border-white/10 opacity-60 hover:opacity-100'}`}
+                  >
+                    <img src={p} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Venue Details Body */}
+            <div className="p-3.5 space-y-2.5">
+              <div>
+                <h4 className="text-base font-extrabold text-white leading-snug tracking-tight">
+                  {details?.name || inspectedBar.shortName || inspectedBar.name}
+                </h4>
+                <p className="text-[12px] text-zinc-300 line-clamp-2 mt-0.5 leading-relaxed flex items-start gap-1">
+                  <MapPin size={13} className="text-rose-400 shrink-0 mt-0.5" />
+                  <span>{details?.formatted_address || inspectedBar.name}</span>
+                </p>
+              </div>
+
+              {/* Acoustic & Noise Context */}
+              <div className="flex items-center gap-2 p-2 rounded-xl bg-rose-950/40 border border-rose-500/30 text-[11px]">
+                <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white font-black text-[10px] shrink-0">
+                  {inspectedBar.base_db} dB
+                </span>
+                <span className="text-zinc-300 text-[11px] leading-snug">
+                  {inspectedBar.desc || `${inspectedBar.radius_m}m acoustic dispersion zone`}
+                </span>
+              </div>
+
+              {/* Opening Hours / Status */}
+              {details?.opening_hours && (
+                <div className="flex items-center gap-2 text-[11px] text-emerald-400 font-semibold bg-emerald-950/50 border border-emerald-500/25 px-2.5 py-1.5 rounded-xl">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  <span className="truncate">{details.opening_hours}</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="pt-1.5 flex items-center gap-2 border-t border-white/10">
+                <a
+                  href={details?.google_maps_url || `https://maps.google.com/?q=${encodeURIComponent(`${details?.name || inspectedBar.name} Cape Town`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-white/10 hover:border-white/25 active:scale-95 shadow-sm"
+                  title="View on Google Maps"
+                >
+                  <ArrowSquareOut size={13} weight="bold" />
+                  <span>View on Google Maps</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

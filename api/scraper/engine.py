@@ -186,11 +186,7 @@ class SniperEngine:
                 except Exception as e:
                     print_flush(f"[SINGLETON] Warning: Anchor Page failed to load ({e}). Engine starting anyway.")
             else:
-                try:
-                    await self.anchor_page.goto("https://www.property24.com", wait_until="domcontentloaded", timeout=15000)
-                    print_flush("[SINGLETON] Anchor Page ready (Property24).")
-                except Exception:
-                    pass
+                print_flush("[SINGLETON] Anchor Page standing by (idle until requested).")
             
             self.heartbeat_task = asyncio.create_task(self._session_heartbeat())
             print_flush("[SINGLETON] Persistent Engine READY. Heartbeat active.")
@@ -521,10 +517,25 @@ class SniperEngine:
                             break
                     except: pass
 
-                    # [BOT GUARD] Detect Cloudflare / Bot Challenges immediately
+                    # [BOT / RATE-LIMIT GUARD] Detect Server Unavailable or Bot Challenges immediately
                     page_title = (await page.title() or "").lower()
-                    if any(x in page_title for x in ["just a moment", "attention required", "cloudflare", "turnstile", "verify you are human", "access denied", "robot"]):
-                        print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [SHIELD WARNING] ⚠️ Property24 Bot Challenge detected ('{page_title}'). Halting to protect IP.")
+                    body_snippet = ""
+                    try:
+                        body_snippet = (await page.evaluate("() => (document.body?.innerText || '').slice(0, 600)")) or ""
+                    except Exception:
+                        pass
+                    combined_check = f"{page_title} {body_snippet.lower()}"
+                    if any(x in combined_check for x in [
+                        "server unavailable", "please check back later", "too many requests",
+                        "just a moment", "attention required", "cloudflare", "turnstile",
+                        "verify you are human", "access denied", "robot"
+                    ]):
+                        print_flush(f"[{dt.datetime.now().strftime('%H:%M:%S')}] [SHIELD WARNING] ⚠️ Property24 Rate-Limit / Challenge detected. Tripping circuit breaker and halting scan.")
+                        try:
+                            from services.live_search import trip_p24_circuit
+                            trip_p24_circuit("Property24 page returned 'Server unavailable' or challenge")
+                        except Exception:
+                            pass
                         break
 
                     await self.human_scroll(page, distance=random.randint(1200, 2000))
@@ -576,6 +587,17 @@ class SniperEngine:
                             const bathsEl = t.querySelector('[title="Bathrooms"], [title*="Bathroom"]');
                             const bathsStr = bathsEl?.innerText?.trim() || '';
 
+                            // Single OpenGraph/link-preview thumbnail URL (inline pointer only, not downloaded)
+                            let thumbUrl = '';
+                            const imgs = t.querySelectorAll('img');
+                            for (const img of imgs) {
+                                const candidate = img.getAttribute('data-original') || img.getAttribute('lazy-src') || img.getAttribute('data-src') || img.getAttribute('src') || '';
+                                if (candidate && candidate.startsWith('http') && !candidate.includes('listed_by_owner') && !candidate.includes('logo') && !candidate.includes('blank.gif')) {
+                                    thumbUrl = candidate;
+                                    break;
+                                }
+                            }
+
                             if (priceStr || titleStr || link) {
                                 cards.push({
                                     priceStr,
@@ -587,6 +609,7 @@ class SniperEngine:
                                     bedsStr,
                                     bathsStr,
                                     link,
+                                    thumbUrl,
                                     isLandlord,
                                     fullText: t.innerText
                                 });

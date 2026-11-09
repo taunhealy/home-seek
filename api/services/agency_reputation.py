@@ -107,6 +107,82 @@ AGENCY_REGISTRY: Dict[str, Dict[str, Any]] = {
         ],
         "risk_level": "high"
     },
+    "progressive housing": {
+        "canonical_name": "Progressive Housing Investments",
+        "google_rating": 1.5,
+        "google_review_count": 14,
+        "google_reviews_url": "https://www.google.com/search?q=Progressive+Housing+Investments+Keerom+Street+Cape+Town+reviews",
+        "hellopeter_rating": 1.8,
+        "hellopeter_review_count": 8,
+        "hellopeter_url": "https://www.hellopeter.com/search-results?query=Progressive+Housing+Investments",
+        "recent_complaint_sample": "Very low public tenant rating (1.5★); complaints regarding strict exit inspections, deposit deductions, and rigid administrative terms.",
+        "flags": [
+            "Poor public rating (1.5★ on local business aggregators)",
+            "Strict exit inspection and deposit deduction clauses",
+            "Old-school administration (phone-only viewing applications via Liesl/Giselle)"
+        ],
+        "risk_level": "high"
+    },
+    "phi prop": {
+        "canonical_name": "Progressive Housing Investments (PHI)",
+        "google_rating": 1.5,
+        "google_review_count": 14,
+        "google_reviews_url": "https://www.google.com/search?q=Progressive+Housing+Investments+Keerom+Street+Cape+Town+reviews",
+        "hellopeter_rating": 1.8,
+        "hellopeter_review_count": 8,
+        "hellopeter_url": "https://www.hellopeter.com/search-results?query=Progressive+Housing+Investments",
+        "recent_complaint_sample": "Very low public tenant rating (1.5★); complaints regarding strict exit inspections, deposit deductions, and rigid administrative terms.",
+        "flags": [
+            "Poor public rating (1.5★ on local business aggregators)",
+            "Strict exit inspection and deposit deduction clauses"
+        ],
+        "risk_level": "high"
+    },
+    "sandak lewin": {
+        "canonical_name": "Sandak Lewin Property Trust",
+        "google_rating": 2.8,
+        "google_review_count": 64,
+        "google_reviews_url": "https://www.google.com/search?q=Sandak+Lewin+Trust+Cape+Town+reviews",
+        "hellopeter_rating": 2.2,
+        "hellopeter_review_count": 27,
+        "hellopeter_url": "https://www.hellopeter.com/search-results?query=Sandak+Lewin",
+        "recent_complaint_sample": "Frequent tenant & owner complaints regarding slow communication turnaround, maintenance delays, and billing disputes.",
+        "flags": [
+            "Below-average rating (2.8★ Google / 2.2★ HelloPeter)",
+            "Slow communication turnaround on maintenance and billing queries"
+        ],
+        "risk_level": "high"
+    },
+    " sandak-lewin": {
+        "canonical_name": "Sandak Lewin Property Trust",
+        "google_rating": 2.8,
+        "google_review_count": 64,
+        "google_reviews_url": "https://www.google.com/search?q=Sandak+Lewin+Trust+Cape+Town+reviews",
+        "hellopeter_rating": 2.2,
+        "hellopeter_review_count": 27,
+        "hellopeter_url": "https://www.hellopeter.com/search-results?query=Sandak+Lewin",
+        "recent_complaint_sample": "Frequent tenant & owner complaints regarding slow communication turnaround, maintenance delays, and billing disputes.",
+        "flags": [
+            "Below-average rating (2.8★ Google / 2.2★ HelloPeter)",
+            "Slow communication turnaround on maintenance and billing queries"
+        ],
+        "risk_level": "high"
+    },
+    "city living": {
+        "canonical_name": "City Living Rentals",
+        "google_rating": 2.9,
+        "google_review_count": 31,
+        "google_reviews_url": "https://www.google.com/search?q=City+Living+Rentals+Cape+Town+reviews",
+        "hellopeter_rating": 2.4,
+        "hellopeter_review_count": 14,
+        "hellopeter_url": "https://www.hellopeter.com/search-results?query=City+Living+Rentals",
+        "recent_complaint_sample": "Mixed-to-poor tenant reviews citing strict deposit deductions and slow maintenance follow-up.",
+        "flags": [
+            "Below-average tenant rating (2.9★)",
+            "Verify ingoing/outgoing inspection photos carefully"
+        ],
+        "risk_level": "high"
+    },
     "rawson": {
         "canonical_name": "Rawson Properties",
         "google_rating": 3.7,
@@ -375,23 +451,7 @@ def lookup_agency_reputation(agency_name: Optional[str], area: Optional[str] = N
     clean_name = agency_name.lower().strip()
     cache_key = f"{clean_name}::{area.lower().strip() if area else ''}".strip(":")
 
-    # 1. Check local persistent SQLite cache (14-day TTL)
-    cached_data = _cache.get(cache_key, max_age_days=14)
-    if cached_data:
-        return cached_data
-
-    if area:
-        cached_brand = _cache.get(clean_name, max_age_days=14)
-        if cached_brand:
-            return cached_brand
-
-    # 2. Query Google Places API live
-    live_result = fetch_google_places_live(agency_name, area=area)
-    if live_result:
-        _cache.set(cache_key, live_result)
-        return live_result
-
-    # 3. Curated offline registry fallback
+    # 1. Check Curated Offline Registry first for verified reputation entries
     for key, data in AGENCY_REGISTRY.items():
         if key in clean_name:
             result = {
@@ -402,6 +462,22 @@ def lookup_agency_reputation(agency_name: Optional[str], area: Optional[str] = N
             }
             _cache.set(cache_key, result)
             return result
+
+    # 2. Check local persistent SQLite cache (14-day TTL)
+    cached_data = _cache.get(cache_key, max_age_days=14)
+    if cached_data:
+        return cached_data
+
+    if area:
+        cached_brand = _cache.get(clean_name, max_age_days=14)
+        if cached_brand:
+            return cached_brand
+
+    # 3. Query Google Places API live
+    live_result = fetch_google_places_live(agency_name, area=area)
+    if live_result:
+        _cache.set(cache_key, live_result)
+        return live_result
 
     # 4. Dynamic fallback for unlisted / independent boutique agency
     encoded_name = urllib.parse.quote_plus(agency_name.strip())

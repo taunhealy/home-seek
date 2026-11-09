@@ -45,6 +45,7 @@ os.environ["http_proxy"] = ""
 os.environ["https_proxy"] = ""
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Response
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List, Union, Dict, Any
 from pydantic import BaseModel
@@ -385,11 +386,12 @@ class LiveSearchRequest(BaseModel):
     bedrooms: Optional[str] = "1+"
     anchor_lat: Optional[float] = None
     anchor_lng: Optional[float] = None
+    force_fresh: Optional[bool] = False
 
 @app.post("/api/search/live-scrape")
 async def live_scrape_search(req: LiveSearchRequest):
     """Live scraper that searches Property24 on-demand for target suburbs and price filters."""
-    from services.live_search import scrape_p24_live
+    from services.live_search import scrape_p24_live, get_p24_circuit_status
     try:
         results = scrape_p24_live(
             suburbs=req.suburbs,
@@ -397,12 +399,15 @@ async def live_scrape_search(req: LiveSearchRequest):
             max_price=req.max_price or 999999,
             beds=req.bedrooms or "1+",
             anchor_lat=req.anchor_lat,
-            anchor_lng=req.anchor_lng
+            anchor_lng=req.anchor_lng,
+            force_fresh=bool(req.force_fresh)
         )
+        circuit = get_p24_circuit_status()
         return {
-            "status": "success",
+            "status": "cooldown" if (circuit["circuit_open"] and len(results) == 0) else "success",
             "count": len(results),
-            "listings": results
+            "listings": results,
+            "rate_guard": circuit,
         }
     except Exception as err:
         return {
@@ -410,6 +415,55 @@ async def live_scrape_search(req: LiveSearchRequest):
             "message": str(err),
             "count": 0,
             "listings": []
+        }
+
+class ImportP24FavouritesRequest(BaseModel):
+    raw_input: str
+    anchor_lat: Optional[float] = None
+    anchor_lng: Optional[float] = None
+
+@app.post("/api/p24/import-favourites")
+async def import_p24_favourites(req: ImportP24FavouritesRequest):
+    """
+    Imports user's favourited properties from Property24 by parsing
+    pasted URLs, listing numbers, or raw HTML copied from My Favourites page.
+    """
+    from services.favourites_importer import import_p24_favourites_pipeline
+    try:
+        res = await import_p24_favourites_pipeline(
+            raw_input=req.raw_input,
+            anchor_lat=req.anchor_lat,
+            anchor_lng=req.anchor_lng
+        )
+        return res
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "count": 0,
+            "listings": []
+        }
+
+@app.post("/api/address/normalize")
+async def normalize_address_endpoint(payload: dict):
+    """
+    Normalizes messy marketing addresses and performs multi-tiered precision geocoding.
+    """
+    try:
+        from services.address_normalizer import normalize_and_geocode
+        raw_address = payload.get("address", "")
+        suburb = payload.get("suburb", "")
+        title = payload.get("title", "")
+        description = payload.get("description", "")
+        result = normalize_and_geocode(raw_address, suburb, title, description)
+        return {
+            "status": "success",
+            "result": result
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
         }
 
 @app.post("/deploy-sniper")
@@ -861,6 +915,42 @@ async def autocomplete_places_endpoint(q: str = "", limit: int = 8):
         print_safe(f"[PLACES AUTOCOMPLETE ERROR] {e}")
         return {"status": "success", "query": q, "suggestions": []}
 
+@app.get("/api/places/details")
+async def place_details_endpoint(query: str = "", lat: Optional[float] = None, lng: Optional[float] = None):
+    """
+    Returns rich metadata, verified address, opening hours, star ratings, and photo
+    for a place / gym / bar / anchor.
+    Caches results in SQLite places_cache.db for $0 recurring API cost.
+    """
+    try:
+        from services.places_service import get_place_details
+        details = await get_place_details(query=query, lat=lat, lng=lng)
+        if details:
+            if isinstance(details.get("photo_urls"), str):
+                try:
+                    details["photo_urls"] = json.loads(details["photo_urls"])
+                except Exception:
+                    details["photo_urls"] = [details["photo_url"]] if details.get("photo_url") else []
+            return {"status": "success", "place": details}
+        return {"status": "not_found", "message": "Place details not found"}
+    except Exception as e:
+        print_safe(f"[PLACES DETAILS ERROR] {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/places/photo")
+async def place_photo_proxy(photo_reference: str, maxwidth: int = 1000):
+    """
+    Proxies Google Places photo references so the browser can load verified place images directly
+    without exposing the Google Places API key or hitting client-side referrer restrictions.
+    """
+    api_key = os.getenv("GOOGLE_PLACES_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Google Places API key not configured")
+    photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth={maxwidth}&photo_reference={photo_reference}&key={api_key}"
+    return RedirectResponse(url=photo_url, status_code=307)
+
+
 @app.post("/api/reports/update-locations")
 async def update_report_locations_endpoint(req: UpdateLocationsRequest):
     """
@@ -1001,7 +1091,59 @@ async def get_listing_photos(url: str):
         clean_photos = [f"https://images.prop24.com/{pid}/Crop600x400" for pid in candidate_ids if pid not in agent_pids]
         if clean_photos:
             _listing_photos_cache[url] = clean_photos[:24]
-        return {"status": "success", "photos": clean_photos[:24]}
+
+        # Extract full description features (garage, secure parking bay, stove, inverter, pet_friendly)
+        html_lower = html.lower()
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        desc_el = soup.find(class_=re.compile(r"p24_description|js_readMoreText|p24_features|p24_keyFeatures", re.I))
+        desc_text = desc_el.get_text(" ", strip=True).lower() if desc_el else html_lower
+
+        has_garage = bool(re.search(r"\b(?:garage|garages|lock-up|lock\s+up\s+garage|automated\s+garage|single\s+garage|double\s+garage)\b", desc_text))
+        has_secure_bay = bool(re.search(r"\b(?:secure\s+parking(?:\s+bay)?|parking\s+bay|off-street\s+parking|off\s+street\s+parking|undercover\s+parking|basement\s+parking|allocated\s+(?:parking|bay)|shaded\s+parking|carport|vehicular\s+access(?:\s+driveway)?|sliding\s+gate\s+vehicular\s+access|remote\s+controlled\s+(?:sliding\s+)?gate\s+(?:vehicular\s+)?access|parking\s+behind\s+gate|secure\s+off-street)\b", desc_text))
+        parking_type = "garage" if has_garage else ("secure_bay" if has_secure_bay else None)
+        stove_type = "gas" if any(k in desc_text for k in ["gas hob", "gas stove", "gas cooker", "gas burner"]) else (
+            "induction" if any(k in desc_text for k in ["induction hob", "induction stove"]) else None
+        )
+        has_inverter = bool(re.search(r"\b(?:inverter|solar|backup|ups|load shedding)\b", desc_text))
+        pet_friendly = True if re.search(r"\b(?:pet friendly|pets allowed|pets welcome|dogs allowed|cats allowed)\b", desc_text) else None
+
+        # Extract agency reputation from detail page HTML
+        agency_info = {}
+        try:
+            from services.live_search import _extract_agency_from_html
+            from services.agency_reputation import lookup_agency_reputation
+            raw_ag = _extract_agency_from_html(html)
+            if not raw_ag and ("liesl and giselle" in desc_text or "liesl or giselle" in desc_text):
+                raw_ag = "Progressive Housing Investments"
+            if raw_ag:
+                rep = lookup_agency_reputation(raw_ag)
+                if rep:
+                    agency_info = {
+                        "agency_name": rep.get("canonical_name") or raw_ag,
+                        "agency_rating": rep.get("google_rating"),
+                        "agency_review_count": rep.get("google_review_count"),
+                        "agency_risk_level": rep.get("risk_level", "low"),
+                        "agency_flags": rep.get("flags", []),
+                        "agency_complaint_sample": rep.get("recent_complaint_sample"),
+                        "agency_hellopeter_rating": rep.get("hellopeter_rating"),
+                    }
+        except Exception:
+            pass
+
+        return {
+            "status": "success",
+            "photos": clean_photos[:24],
+            "features": {
+                "has_garage": has_garage,
+                "has_secure_bay": has_secure_bay,
+                "parking_type": parking_type,
+                "stove_type": stove_type,
+                "has_inverter": has_inverter,
+                "pet_friendly": pet_friendly,
+                **agency_info,
+            },
+        }
     except Exception as e:
         print_safe(f"[LISTING PHOTOS ERROR] {e}")
         return {"status": "error", "photos": []}

@@ -57,6 +57,23 @@ export const Navbar: React.FC<NavbarProps> = ({
     if (profile?.whatsapp) setWhatsappInput(profile.whatsapp);
   }, [profile?.whatsapp]);
 
+  // Persist current route in localStorage so returning to the app restores the user's last page
+  useEffect(() => {
+    if (!pathname) return;
+    try {
+      if (pathname !== '/') {
+        localStorage.setItem('homeseek_last_page', pathname);
+      }
+    } catch (e) {}
+  }, [pathname]);
+
+  const handleExplicitHomeClick = () => {
+    try {
+      localStorage.setItem('homeseek_last_page', '/');
+      sessionStorage.setItem('homeseek_explicit_home', '1');
+    } catch (e) {}
+  };
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -80,12 +97,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-[100] bg-white/90 backdrop-blur-md border-b border-zinc-200">
+    <nav className="fixed top-0 left-0 right-0 z-[120] bg-white/95 backdrop-blur-md border-b border-zinc-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-3 group">
+          <Link href="/" onClick={handleExplicitHomeClick} className="flex items-center gap-3 group">
             <div className="w-9 h-9 bg-zinc-950 text-white rounded-xl flex items-center justify-center font-bold text-base shadow-sm group-hover:bg-zinc-800 transition-colors">
               H
             </div>
@@ -108,6 +125,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={item.href === '/' ? handleExplicitHomeClick : undefined}
                   className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     active
                       ? 'bg-white text-zinc-950 shadow-xs'
@@ -256,7 +274,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
+                  onClick={() => {
+                    if (item.href === '/') handleExplicitHomeClick();
+                    setMobileMenuOpen(false);
+                  }}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                     active
                       ? 'bg-zinc-900 text-white'

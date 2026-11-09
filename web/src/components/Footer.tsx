@@ -2,8 +2,12 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export const Footer = () => {
+  const pathname = usePathname();
+  if (pathname?.startsWith('/search')) return null;
+
   return (
     <footer className="bg-white border-t border-zinc-200 py-12 px-6 sm:px-8 mt-auto">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">

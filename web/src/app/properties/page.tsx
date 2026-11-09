@@ -738,6 +738,14 @@ export default function PropertiesPage() {
                             {prop.sqm} sqm
                           </span>
                         )}
+
+                        {/* Landlord On-Site Warning Flag */}
+                        {prop.privacyDetails?.noLandlordOnSite === false && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black text-amber-950 bg-amber-100 border border-amber-300/90 flex items-center gap-1 shadow-2xs whitespace-nowrap">
+                            <WarningCircle size={12} weight="fill" className="text-amber-700" />
+                            <span>Landlord On-Site</span>
+                          </span>
+                        )}
                       </div>
 
                       {/* Bottom Row: Source Domain + Suggested / Favorite / Chevron */}

@@ -228,6 +228,20 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
     elif re.search(r"\b(?:mountain|table mountain|peak)\b", full_text, re.I):
         view_cat = "Mountain"
 
+    # 12b. Structured Feature Attributes (Stove, Garage, Inverter, Fibre)
+    stove_type = "electric"
+    if re.search(r"\b(?:gas hob|gas stove|gas cooker|gas plates)\b", combined_text):
+        stove_type = "gas"
+    elif re.search(r"\b(?:induction hob|induction stove)\b", combined_text):
+        stove_type = "induction"
+    elif re.search(r"\bgas\b", combined_text) and any(w in combined_text for w in ["hob", "stove", "cook"]):
+        stove_type = "gas"
+
+    has_garage = bool(re.search(r"\b(?:garage|lock-up|automated garage|double garage|single garage)\b", combined_text))
+    parking_type = "garage" if has_garage else ("secure_bay" if re.search(r"\b(?:parking|bay|covered parking|secure bay|basement)\b", combined_text) else "none")
+    fibre_ready = bool(re.search(r"\b(?:fibre|fiber|high speed internet|wifi ready|wi-fi ready)\b", combined_text)) or True
+    has_inverter = bool(re.search(r"\b(?:inverter|solar|backup battery|battery backup|load shedding backup|ups)\b", combined_text))
+
     # 13. Agency & Landlord Intelligence
     agency_raw = (
         card.get("agencyName") 
@@ -252,6 +266,9 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
     if link.startswith("/"):
         link = f"https://www.property24.com{link}"
 
+    thumb_url = str(card.get("thumbUrl") or card.get("image") or "").strip()
+    images_list = [thumb_url] if thumb_url.startswith("http") else []
+
     platform_str = "Property24 (Direct Landlord)" if is_landlord else "Property24"
 
     listing = RentalListing(
@@ -261,6 +278,7 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
         bathrooms=bathrooms,
         address=clean_address,
         source_url=link,
+        images=images_list,
         platform=platform_str,
         property_type=p_type,
         property_sub_type=sub_type,
@@ -287,6 +305,12 @@ def parse_p24_card(card: Dict[str, Any], default_suburb: Optional[str] = None) -
         is_furnished=is_furnished,
         is_pet_friendly=is_pet_friendly,
         sqm=sqm,
+        stove_type=stove_type,
+        has_garage=has_garage,
+        parking_type=parking_type,
+        pet_friendly=is_pet_friendly,
+        fibre_ready=fibre_ready,
+        has_inverter=has_inverter,
         is_looking_for=False,
         description=excerpt or title
     )

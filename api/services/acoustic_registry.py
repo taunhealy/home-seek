@@ -6,23 +6,73 @@ from typing import Dict, Any, List, Optional, Tuple
 NOISE_HOTSPOTS: List[Dict[str, Any]] = [
     {
         "id": "kloof_aruba_nightlife",
-        "name": "Kloof Street & Malan St Strip (Aruba, Cafe Paradiso, Yours Truly)",
-        "lat": -33.9323,
-        "lng": 18.4108,
-        "base_db": 84,
+        "name": "Aruba Bar (Malan St) & Kloof Street Strip (Asoka, Café Paradiso, Yours Truly)",
+        "lat": -33.932366,
+        "lng": 18.408386,
+        "base_db": 86,
         "radius_m": 220,
         "corridor_type": "nightlife_bar",
-        "corridor_description": "Late-night DJ bass, outdoor cocktail patio crowds, Uber idling, and direct Malan St acoustic waveguide."
+        "corridor_description": "Aruba Bar on Malan St & Asoka — late-night DJ bass, outdoor cocktail patio crowds, Uber idling, and direct Malan St -> Derwent Rd acoustic waveguide."
+    },
+    {
+        "id": "kloof_blondie_park_rd",
+        "name": "Blondie, Rick's Café & Park Road Bar Strip (Kloof St / Park Rd)",
+        "lat": -33.930243,
+        "lng": 18.410660,
+        "base_db": 85,
+        "radius_m": 180,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "High-volume pavement bar crowds at Blondie, rooftop terrace at Rick's Café, and late-night Park Rd spillover."
+    },
+    {
+        "id": "kloof_power_and_glory",
+        "name": "The Power & The Glory & Kloof Nek Corner (13D Kloof Nek Rd)",
+        "lat": -33.930094,
+        "lng": 18.407996,
+        "base_db": 84,
+        "radius_m": 165,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Late-night pavement drinking at The Power & The Glory at 13D Kloof Nek Rd (cnr Carstens/Camp St), plus uphill M62 traffic acoustics."
+    },
+    {
+        "id": "gp_tigers_milk_main",
+        "name": "Tiger's Milk, Mano's & Green Point Main Rd Strip",
+        "lat": -33.908869,
+        "lng": 18.412098,
+        "base_db": 84,
+        "radius_m": 160,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Vibrant sports bars, outdoor dining terrace crowds, and evening ride-share pickups."
     },
     {
         "id": "somerset_greenpoint_strip",
         "name": "Somerset Road Bar & Dining Strip (Green Point)",
-        "lat": -33.9090,
-        "lng": 18.4110,
-        "base_db": 82,
-        "radius_m": 250,
+        "lat": -33.9135,
+        "lng": 18.4168,
+        "base_db": 83,
+        "radius_m": 180,
         "corridor_type": "nightlife_bar",
         "corridor_description": "Vibrant sports bars, weekend nightlife crowds, and heavy evening vehicular traffic."
+    },
+    {
+        "id": "sp_mojo_market_regent",
+        "name": "Mojo Market & Regent Road Strip (Sea Point)",
+        "lat": -33.9202,
+        "lng": 18.3852,
+        "base_db": 85,
+        "radius_m": 180,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "High-energy 7-days-a-week indoor market with live acoustic/DJ stages, craft beer bars & dense Regent Rd foot traffic."
+    },
+    {
+        "id": "sp_rockpool_beach_rd",
+        "name": "Rockpool & Sea Point Beach Rd Bar Strip",
+        "lat": -33.909274,
+        "lng": 18.393433,
+        "base_db": 82,
+        "radius_m": 150,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Beachfront cocktail terrace chatter and sunset traffic along Beach Road."
     },
     {
         "id": "main_road_seapoint",

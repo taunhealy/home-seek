@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { 
   Target, 
@@ -23,6 +24,22 @@ import { Navbar } from '@/components/Navbar';
 
 export default function Home() {
   const { user, profile, loading, login, logout } = useAuth();
+  const router = useRouter();
+
+  // Restore last visited page from localStorage when opening root `/`
+  useEffect(() => {
+    try {
+      const explicitHome = sessionStorage.getItem('homeseek_explicit_home');
+      if (explicitHome === '1') {
+        sessionStorage.removeItem('homeseek_explicit_home');
+        return;
+      }
+      const lastPage = localStorage.getItem('homeseek_last_page');
+      if (lastPage && lastPage !== '/' && lastPage.startsWith('/')) {
+        router.replace(lastPage);
+      }
+    } catch (e) {}
+  }, [router]);
 
   return (
     <div className="min-h-screen bg-white text-zinc-900 font-sans flex flex-col pt-16">

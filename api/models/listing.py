@@ -41,6 +41,14 @@ class RentalListing(BaseModel):
     contact_info: Optional[str] = Field(None, description="Extracted contact details")
     published_at: Optional[str] = Field(None, description="When it was posted")
     
+    # Structured Feature Dimensions
+    stove_type: Optional[str] = Field("unknown", description="gas, electric, induction, or unknown")
+    has_garage: Optional[bool] = Field(False, description="True if listing has lock-up or automated garage")
+    parking_type: Optional[str] = Field("none", description="garage, secure_bay, street, or none")
+    pet_friendly: Optional[bool] = Field(None, description="True if pet-friendly")
+    fibre_ready: Optional[bool] = Field(True, description="True if high-speed fibre ready")
+    has_inverter: Optional[bool] = Field(False, description="True if solar or inverter backup installed")
+
     # Privacy & Autonomy Dimensions
     dwelling_privacy: Optional[str] = Field("independent", description="independent, garden_cottage, attached_flatlet, room_shared")
     has_shared_entrance: Optional[bool] = Field(False)

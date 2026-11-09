@@ -22,14 +22,14 @@ class Property24RateLimiter:
     """
     Enterprise-grade Anti-Rate-Limit & Polite Throttling Client for Property24.
     - Concurrency Cap: Max 1 simultaneous request.
-    - Enforced Jitter Delay: 1.2s - 2.5s between requests.
+    - Enforced Jitter Delay: 3.5s - 5.0s between requests.
     - Persistent Disk & RAM Cache: Avoids repeat requests entirely.
     - Automated Circuit Breaker: Pauses traffic on 429/503/Server unavailable.
     """
     def __init__(self):
         self._lock = asyncio.Lock()
         self._last_request_time = 0.0
-        self._min_interval = 1.4  # seconds
+        self._min_interval = 3.5  # Enforce minimum 3.5s spacing per GEMINI.md
         self._circuit_open_until = 0.0
         self._memory_cache: Dict[str, Dict[str, Any]] = {}
         self._load_disk_cache()
@@ -99,7 +99,7 @@ class Property24RateLimiter:
             # Enforce polite spacing between requests
             now = time.time()
             elapsed = now - self._last_request_time
-            needed_interval = self._min_interval + random.uniform(0.2, 0.9)
+            needed_interval = self._min_interval + random.uniform(0.5, 1.5)
             if elapsed < needed_interval:
                 await asyncio.sleep(needed_interval - elapsed)
 
@@ -123,10 +123,15 @@ class Property24RateLimiter:
                     resp = await client.get(url)
                     self._last_request_time = time.time()
 
-                    # Check for rate limit or ban page
-                    if resp.status_code in [429, 503] or "Server unavailable" in resp.text:
-                        print(f"[P24 CLIENT] Rate-limit detected (HTTP {resp.status_code} / 'Server unavailable'). Tripping circuit breaker for 90s.")
-                        self._circuit_open_until = time.time() + 90.0
+                    # Check for rate limit, Cloudflare ban or 'Server unavailable' page
+                    is_blocked = (
+                        resp.status_code in [403, 429, 503]
+                        or "server unavailable" in resp.text.lower()
+                        or "please check back later" in resp.text.lower()
+                    )
+                    if is_blocked:
+                        print(f"[P24 CLIENT] Rate-limit/block detected (HTTP {resp.status_code} / 'Server unavailable'). Tripping circuit breaker for 180s.")
+                        self._circuit_open_until = time.time() + 180.0
                         return None
 
                     if resp.status_code == 200:

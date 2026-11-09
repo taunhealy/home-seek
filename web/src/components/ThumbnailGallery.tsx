@@ -1,18 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { CaretLeft, CaretRight, CircleNotch } from '@phosphor-icons/react';
-
-const ARCHITECTURAL_FALLBACK = 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop&q=80';
-
-// Curated architectural interior perspectives to supplement single-image listings
-const SUPPLEMENTAL_INTERIORS = [
-  'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop&q=80', // Lounge / Living
-  'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80', // Chef Kitchen
-  'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&auto=format&fit=crop&q=80', // Bedroom
-  'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=800&auto=format&fit=crop&q=80', // Bathroom
-  'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&auto=format&fit=crop&q=80'  // Balcony / View
-];
+import { CaretLeft, CaretRight, CircleNotch, House } from '@phosphor-icons/react';
 
 // Global client cache and inflight tracker across all thumbnail cards
 const clientPhotosCache = new Map<string, string[]>();
@@ -43,17 +32,22 @@ export function ThumbnailGallery({
   bottomBanner,
   className = ''
 }: ThumbnailGalleryProps) {
-  // Determine seed photos
+  // Determine seed photos - strictly authentic photos only, no stock filler content
   const seedPhotos = React.useMemo(() => {
     if (listingUrl && clientPhotosCache.has(listingUrl)) {
       return clientPhotosCache.get(listingUrl)!;
     }
-    if (Array.isArray(images) && images.length > 1) {
-      return images.filter(Boolean);
+    // Filter out any unsplash filler content
+    const cleanImages = (Array.isArray(images) ? images : [])
+      .filter((img): img is string => Boolean(img) && !img.includes('unsplash.com'));
+    if (cleanImages.length > 0) {
+      return cleanImages;
     }
-    const primary = (Array.isArray(images) && images[0]) || initialImage || ARCHITECTURAL_FALLBACK;
-    // Provide full multi-photo experience by combining primary image with supplemental interior perspectives
-    return [primary, ...SUPPLEMENTAL_INTERIORS.slice(0, 4)];
+    const cleanInitial = initialImage && !initialImage.includes('unsplash.com') ? initialImage : null;
+    if (cleanInitial) {
+      return [cleanInitial];
+    }
+    return [];
   }, [initialImage, images, listingUrl]);
 
   const [photos, setPhotos] = useState<string[]>(seedPhotos);
@@ -135,7 +129,7 @@ export function ThumbnailGallery({
     touchStartX.current = null;
   };
 
-  const currentPhoto = photos[currentIndex] || ARCHITECTURAL_FALLBACK;
+  const currentPhoto = photos[currentIndex] || photos[0] || null;
 
   // Windowed pagination dots (up to 5 dots visible)
   const maxDots = 5;
@@ -159,13 +153,20 @@ export function ThumbnailGallery({
       onTouchEnd={handleTouchEnd}
     >
       {/* Active Photo */}
-      <img
-        src={currentPhoto}
-        alt={`${title} - Photo ${currentIndex + 1}`}
-        loading="lazy"
-        decoding="async"
-        className="w-full h-full object-cover transition-transform duration-300 group-hover/gallery:scale-102"
-      />
+      {currentPhoto ? (
+        <img
+          src={currentPhoto}
+          alt={`${title} - Photo ${currentIndex + 1}`}
+          loading="lazy"
+          decoding="async"
+          className="w-full h-full object-cover transition-transform duration-300 group-hover/gallery:scale-102"
+        />
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-zinc-500 gap-2">
+          <House size={32} weight="duotone" className="text-zinc-600" />
+          <span className="text-[11px] font-bold text-zinc-500">Property photo</span>
+        </div>
+      )}
 
       {/* Top Left Badges (Rank & Fit) */}
       {badges && (

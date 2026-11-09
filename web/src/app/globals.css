@@ -82,3 +82,11 @@ body::before {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #71717a;
 }
+
+/* Prevent dev overlay or route indicators from obstructing corner UI elements */
+nextjs-portal,
+[data-nextjs-toast],
+#next-route-announcer {
+  display: none !important;
+  pointer-events: none !important;
+}
