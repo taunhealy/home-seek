@@ -20,6 +20,19 @@ api/raw_logs.txt
 *.jpg
 *.jpeg
 
+# Databases & Local Caches
+*.db
+*.db-journal
+api/data/*.db
+api/data/*.db-journal
+
+# Scratch & Temporary Scripts
+scratch/
+api/scratch/
+
+# Build & Deploy
+.firebase/
+
 # Node
 node_modules/
 dist/
