@@ -99,7 +99,7 @@ export default function Home() {
           </Link>
 
           <Link
-            href="/properties"
+            href="/search"
             className="w-full sm:w-auto px-7 py-3.5 rounded-2xl bg-white text-zinc-900 border border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50 font-semibold text-sm transition-all shadow-2xs flex items-center justify-center gap-2 active:scale-98"
           >
             <Buildings size={16} weight="bold" />
@@ -179,7 +179,7 @@ export default function Home() {
               </div>
 
               <Link
-                href="/properties"
+                href="/search"
                 className="w-full py-2 bg-white text-zinc-950 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-zinc-100 transition-colors"
               >
                 <span>View On Interactive Map</span>
@@ -269,10 +269,10 @@ export default function Home() {
               Configure Search Criteria
             </Link>
             <Link
-              href="/properties"
+              href="/compare"
               className="px-6 py-3 bg-white border border-zinc-200 text-zinc-900 rounded-xl text-xs font-bold hover:bg-zinc-50 transition-colors"
             >
-              Browse Properties Feed
+              Compare Shortlisted Properties
             </Link>
             <Link
               href="/alerts"

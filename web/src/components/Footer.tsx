@@ -29,7 +29,7 @@ export const Footer = () => {
         <div className="flex flex-wrap justify-center items-center gap-6 text-xs font-semibold text-zinc-700">
           <Link href="/" className="hover:text-zinc-950 transition-colors">Home</Link>
           <Link href="/search" className="hover:text-zinc-950 transition-colors">Search</Link>
-          <Link href="/properties" className="hover:text-zinc-950 transition-colors">Properties</Link>
+          <Link href="/compare" className="hover:text-zinc-950 transition-colors">Compare</Link>
           <Link href="/contact" className="hover:text-zinc-950 transition-colors">Contact</Link>
         </div>
 

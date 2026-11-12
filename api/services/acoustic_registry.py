@@ -113,6 +113,107 @@ NOISE_HOTSPOTS: List[Dict[str, Any]] = [
         "radius_m": 160,
         "corridor_type": "arterial_traffic",
         "corridor_description": "Free-flowing coastal dual carriageway and heavy stadium event traffic."
+    },
+    # Hout Bay Bars & Nightlife Hotspots (Verified via Google Maps Places API)
+    {
+        "id": "hb_dunes_beach_bar",
+        "name": "Dunes Beach Restaurant & Bar (1 Beach Cres, Scott Estate, Hout Bay)",
+        "lat": -34.045568,
+        "lng": 18.358365,
+        "base_db": 83,
+        "radius_m": 170,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Busy beachfront restaurant terrace, sundowner bar & weekend crowd chatter."
+    },
+    {
+        "id": "hb_beach_bar_scott",
+        "name": "Beach Bar Hout Bay (Chapmans Peak Dr, Scott Estate, Hout Bay)",
+        "lat": -34.0467565,
+        "lng": 18.3609681,
+        "base_db": 82,
+        "radius_m": 150,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Coastal cocktail & burger bar terrace at Scott Estate near Chapman's Peak Drive."
+    },
+    {
+        "id": "hb_mexicola_locale",
+        "name": "Mexicola Locale (The Promenade, Melkhout Cres, Scott Estate, Hout Bay)",
+        "lat": -34.0454378,
+        "lng": 18.3593109,
+        "base_db": 81,
+        "radius_m": 140,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Lively tequila bar & taco cantina along The Promenade in Scott Estate."
+    },
+    {
+        "id": "hb_pakalolo_main",
+        "name": "Pakalolo Hout Bay (10 Main Rd, Hout Bay)",
+        "lat": -34.0463979,
+        "lng": 18.3621000,
+        "base_db": 84,
+        "radius_m": 160,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Late-night sports & cocktail pub near the Beach Crescent / Main Rd circle."
+    },
+    {
+        "id": "hb_woodcutters_arms",
+        "name": "Woodcutters Arms (37 Main Rd, Hout Bay)",
+        "lat": -34.0432265,
+        "lng": 18.3591025,
+        "base_db": 83,
+        "radius_m": 150,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Traditional village tavern, live sport screens & evening beer garden at 37 Main Rd."
+    },
+    {
+        "id": "hb_the_vic_bar",
+        "name": "The Vic Restaurant and Bar (6 Victoria Ave, Hout Bay)",
+        "lat": -34.0434289,
+        "lng": 18.3507791,
+        "base_db": 82,
+        "radius_m": 145,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Neighbourhood pub, live music nights & evening dining at 6 Victoria Ave."
+    },
+    {
+        "id": "hb_shirleys_bar",
+        "name": "Shirley's (36 Victoria Rd, Hout Bay)",
+        "lat": -34.0411857,
+        "lng": 18.3505785,
+        "base_db": 82,
+        "radius_m": 140,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Classic late-night local pub along Victoria Road."
+    },
+    {
+        "id": "hb_the_lookout_harbour",
+        "name": "The Lookout Hout Bay (65 Harbour Rd, Hout Bay Harbour)",
+        "lat": -34.0501104,
+        "lng": 18.3459515,
+        "base_db": 83,
+        "radius_m": 170,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "High-volume harbour deck bar & seafood hotspot with weekend DJ sets and live music."
+    },
+    {
+        "id": "hb_urban_brewing",
+        "name": "Urban Brewing Company (31 Harbour Rd, Hout Bay Harbour)",
+        "lat": -34.0550000,
+        "lng": 18.3472222,
+        "base_db": 83,
+        "radius_m": 175,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Craft brewery, taproom & live-band hotspot adjacent to Bay Harbour Market."
+    },
+    {
+        "id": "hb_kronendal_1713",
+        "name": "Kronendal 1713 (140 Hout Bay Main Rd, Hout Bay)",
+        "lat": -34.0325876,
+        "lng": 18.3565152,
+        "base_db": 79,
+        "radius_m": 130,
+        "corridor_type": "nightlife_bar",
+        "corridor_description": "Historic courtyard restaurant & evening cocktail bar at 140 Hout Bay Main Rd."
     }
 ]
 

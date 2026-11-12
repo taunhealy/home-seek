@@ -5,23 +5,55 @@ import json
 import time
 import threading
 import urllib.request
+import urllib.parse
 import urllib.error
 from bs4 import BeautifulSoup
 import re
 import random
 import math
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Set
 from scraper.portal_resolver import resolve_p24_url
 
 headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
     'Accept-Language': 'en-ZA,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Referer': 'https://www.property24.com/',
+    'Sec-Ch-Ua': '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'same-origin',
+    'DNT': '1',
 }
 
 SUBURB_COORDS = {
     'george': (-33.9630, 22.4617),
-    'heatherlands': (-33.9520, 22.4510),
+    'george central': (-33.9632, 22.4597),
+    'bodorp': (-33.9560, 22.4570),
+    'bergsig': (-33.9520, 22.4680),
+    'heather park': (-33.9540, 22.4350),
+    'heatherlands': (-33.9490, 22.4440),
+    'fernridge': (-33.9440, 22.4600),
+    'camphersdrift': (-33.9555, 22.4510),
+    'denneoord': (-33.9505, 22.4780),
+    'dormehls drift': (-33.9660, 22.4680),
+    'loerie park': (-33.9720, 22.4820),
+    'george east': (-33.9650, 22.4780),
+    'george south': (-33.9740, 22.4580),
+    'blanco': (-33.9560, 22.4160),
+    'denver park': (-33.9710, 22.4720),
+    'george industrial': (-33.9860, 22.4780),
+    'pacaltsdorp': (-34.0120, 22.4620),
+    'kraaibosch': (-33.9820, 22.5250),
+    'blue mountain village': (-33.9790, 22.5110),
+    'le grand estate': (-34.0320, 22.4950),
+    'kingswood golf estate': (-33.9736, 22.4321),
+    'king george park': (-33.9610, 22.4430),
+    'bos en dal': (-33.9490, 22.4520),
+    'glenwood': (-33.9780, 22.5020),
+    'eden': (-33.9760, 22.4950),
     'wilderness': (-33.9922, 22.5804),
     'knysna': (-34.0363, 23.0471),
     'rondebosch': (-33.9635, 18.4720),
@@ -49,7 +81,23 @@ SUBURB_COORDS = {
     'bergvliet': (-34.0450, 18.4520),
     'meadowridge': (-34.0410, 18.4440),
     'kirstenhof': (-34.0680, 18.4450),
-    'hout bay': (-34.0435, 18.3480),
+    'hout bay': (-34.0422, 18.3578),
+    'hout bay central': (-34.0418, 18.3578),
+    'hout bay harbour': (-34.055091, 18.3438309),
+    'northshore': (-34.0466597, 18.3485029),
+    'scott estate': (-34.0417377, 18.363814),
+    'penzance estate': (-34.0335651, 18.3601056),
+    'beach estate': (-34.0445, 18.3578),
+    'helgarda estate': (-34.0275473, 18.3467557),
+    'kronenzicht': (-34.0296282, 18.34416),
+    'bokkemanskloof': (-34.0188797, 18.3828762),
+    'longkloof': (-34.0110992, 18.3871665),
+    'berg en dal': (-34.0362555, 18.3601056),
+    'ruyteplaats': (-34.0122671, 18.3586222),
+    'tierboskloof': (-34.023137, 18.369663),
+    'victorskloof': (-34.0169114, 18.3578527),
+    'oakhurst': (-34.0201759, 18.3747927),
+    'llandudno': (-34.0090, 18.3420),
     'noordhoek': (-34.1035, 18.3720),
     'sunnydale': (-34.1090, 18.3810),
     'capri': (-34.1150, 18.3880),
@@ -67,6 +115,41 @@ SUBURB_COORDS = {
     'glencairn': (-34.1620, 18.4310),
     'simons town': (-34.1930, 18.4350),
     "simon's town": (-34.1930, 18.4350),
+    'cape town city centre': (-33.9249, 18.4241),
+    'bo-kaap': (-33.9212, 18.4148),
+    'zonnebloem': (-33.9306, 18.4339),
+    'foreshore': (-33.9181, 18.4272),
+    'fresnaye': (-33.9235, 18.3878),
+    'bakoven': (-33.9598, 18.3742),
+    'salt river': (-33.9296, 18.4586),
+    'mowbray': (-33.9475, 18.4744),
+    'rosebank': (-33.9553, 18.4747),
+    'wynberg': (-34.0067, 18.4667),
+    'plumstead': (-34.0253, 18.4686),
+    'diep river': (-34.0369, 18.4614),
+    'bishopscourt': (-33.9906, 18.4419),
+    'pinelands': (-33.9381, 18.5047),
+    'thornton': (-33.9211, 18.5342),
+    'lakeside': (-34.0867, 18.4594),
+    'century city': (-33.8927, 18.5105),
+    'milnerton': (-33.8739, 18.4944),
+    'table view': (-33.8256, 18.4975),
+    'bloubergstrand': (-33.8006, 18.4658),
+    'blouberg': (-33.8122, 18.4792),
+    'parklands': (-33.8075, 18.5047),
+    'sunningdale': (-33.7969, 18.4969),
+    'big bay': (-33.7917, 18.4567),
+    'melkbosstrand': (-33.7267, 18.4417),
+    'bellville': (-33.9000, 18.6333),
+    'durbanville': (-33.8333, 18.6500),
+    'plattekloof': (-33.8758, 18.5808),
+    'panorama': (-33.8825, 18.5736),
+    'edgemead': (-33.8772, 18.5389),
+    'goodwood': (-33.9056, 18.5567),
+    'parow': (-33.9025, 18.5872),
+    'brackenfell': (-33.8736, 18.6939),
+    'kraaifontein': (-33.8489, 18.7167),
+    'kuils river': (-33.9292, 18.6858),
 }
 
 # ==============================================================================
@@ -81,6 +164,9 @@ _MIN_REQUEST_INTERVAL = 3.5           # Minimum seconds between any two outbound
 _JITTER_RANGE = (1.2, 2.8)            # Additional human-paced jitter between suburb fetches
 _MAX_SUBURBS_PER_BATCH = 3            # Cap uncached outbound suburb requests per live call
 _COOLDOWN_BASE_SECONDS = 300          # 5-minute base cooldown when "Server unavailable" / 429 occurs
+# A manual "Scrape P24" click (force_fresh=True) refreshes any suburb whose cache is older than this.
+# Auto-loads / hot reloads (force_fresh=False) remain cache-first with the long TTL above.
+_MANUAL_REFRESH_MIN_AGE_SECONDS = 15 * 60
 
 _RATE_LOCK = threading.Lock()
 _LAST_REQUEST_TS: float = 0.0
@@ -88,6 +174,48 @@ _CIRCUIT_OPEN_UNTIL: float = 0.0
 _CONSECUTIVE_TRIPS: int = 0
 _MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
 _CACHE_FILE = os.path.join(os.path.dirname(__file__), ".p24_live_cache.json")
+_LAST_BATCH_META: Dict[str, Any] = {
+    "refreshed_suburbs": [],
+    "cached_suburbs": [],
+    "stale_suburbs": [],
+    "network_fetches": 0,
+}
+
+
+def get_last_batch_meta() -> Dict[str, Any]:
+    return dict(_LAST_BATCH_META)
+
+
+def remove_listing_ids_from_cache(p24_ids: Set[str]) -> int:
+    """Purges confirmed expired/unavailable listing IDs from `.p24_live_cache.json` and database pool."""
+    clean_targets = {str(x).replace("p24-", "").strip() for x in p24_ids if str(x).strip()}
+    if not clean_targets:
+        return 0
+
+    try:
+        from services.listings_db import mark_listing_unavailable
+        for pid in clean_targets:
+            mark_listing_unavailable(pid)
+    except Exception:
+        pass
+
+    _load_disk_cache(force=True)
+    removed = 0
+    for entry in _MEMORY_CACHE.values():
+        items = entry.get("items")
+        if not isinstance(items, list):
+            continue
+        kept = []
+        for it in items:
+            lid = str(it.get("p24_id") or it.get("id") or "").replace("p24-", "").strip()
+            if lid in clean_targets:
+                removed += 1
+            else:
+                kept.append(it)
+        entry["items"] = kept
+    if removed > 0:
+        _save_disk_cache()
+    return removed
 
 
 def deduplicate_property_listings(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -162,70 +290,44 @@ def deduplicate_property_listings(items: List[Dict[str, Any]]) -> List[Dict[str,
 
 def _find_any_cached_suburb_items(suburb_name: str, min_price: int = 0, max_price: int = 999999) -> List[Dict[str, Any]]:
     """
-    Development fallback: searches all cached queries for any listings matching the suburb,
-    filtering locally by price so the developer gets immediate data without hitting P24.
+    Development fallback: searches cached queries for listings matching the suburb,
+    preferring the newest snapshot by timestamp and filtering locally by price.
     """
     _load_disk_cache()
     sub_clean = suburb_name.lower().strip()
+    matching_entries = [
+        entry
+        for key, entry in _MEMORY_CACHE.items()
+        if (key.startswith(f"{sub_clean}|") or f"|{sub_clean}|" in key or sub_clean in key)
+        and isinstance(entry, dict)
+        and entry.get("items")
+    ]
+    matching_entries.sort(key=lambda e: float(e.get("ts", 0.0)), reverse=True)
     matches: List[Dict[str, Any]] = []
     seen = set()
-    for key, entry in _MEMORY_CACHE.items():
-        if key.startswith(f"{sub_clean}|") or f"|{sub_clean}|" in key or sub_clean in key:
-            for it in entry.get("items", []):
-                lid = str(it.get("p24_id") or it.get("id") or "")
-                price = it.get("price", 0)
-                if lid and lid not in seen and (min_price <= price <= max_price or min_price == 0):
-                    seen.add(lid)
-                    matches.append(dict(it))
+    newest_ts = float(matching_entries[0].get("ts", 0.0)) if matching_entries else 0.0
+    for entry in matching_entries:
+        # Ignore much older snapshots (>24h older than newest) so expired listings don't resurrect
+        if newest_ts - float(entry.get("ts", 0.0)) > 86400:
+            continue
+        for it in entry.get("items", []):
+            lid = str(it.get("p24_id") or it.get("id") or "")
+            price = it.get("price", 0)
+            if lid and lid not in seen and (min_price <= price <= max_price or min_price == 0):
+                seen.add(lid)
+                matches.append(dict(it))
     return matches
 
 
-def _generate_suburb_fallback_fixtures(suburb_name: str, min_price: int = 0, max_price: int = 999999, beds: str = 'any') -> List[Dict[str, Any]]:
-    """
-    Generates realistic offline listing fixtures for a Cape Town suburb when P24 blocks requests.
-    """
-    base_lat, base_lng = SUBURB_COORDS.get(suburb_name.lower(), (-33.9249, 18.4241))
-    clean_beds = 1 if not beds or beds == 'any' else max(1, int(re.sub(r'\D', '', str(beds)) or 1))
-    sample_price = max(min_price, min(max_price, 15000 + (clean_beds - 1) * 6000))
-    if sample_price == 0:
-        sample_price = 14500
-
-    items = []
-    titles = [
-        f"Spacious {clean_beds}-Bedroom Apartment in {suburb_name}",
-        f"Modern City Bowl Apartment with Views in {suburb_name}",
-        f"Sunny Renovated Flat in {suburb_name}"
-    ]
-    for i, title in enumerate(titles):
-        lid = f"p24-offline-{suburb_name.lower().replace(' ', '-')}-{i+1}"
-        items.append({
-            "id": lid,
-            "p24_id": lid,
-            "url": f"https://www.property24.com/to-rent/{suburb_name.lower().replace(' ', '-')}/cape-town/western-cape/9143/{117000000 + i}",
-            "title": title,
-            "address": f"{10 + i * 4} Main Road, {suburb_name}, Cape Town",
-            "suburb": suburb_name,
-            "price": sample_price + i * 1500,
-            "bedrooms": clean_beds,
-            "bathrooms": 1,
-            "sqm": 45 + clean_beds * 15,
-            "image": "https://images.prop24.com/default/Crop600x400",
-            "lat": base_lat + (i - 1) * 0.003,
-            "lng": base_lng + (i - 1) * 0.002,
-            "source_platform": "Property24 (Offline Cache)",
-            "is_main_road": False,
-            "stove_type": "gas" if i == 0 else "electric",
-            "has_garage": i > 0,
-            "has_secure_bay": True,
-            "parking_type": "garage" if i > 0 else "secure_bay",
-            "pet_friendly": i == 0,
-            "fibre_ready": True,
-            "has_inverter": i == 1,
-            "dwelling_privacy": "independent",
-            "noise_risk": "low" if i != 1 else "sanctuary",
-            "fit_score": 88 - i * 4
-        })
-    return items
+def _get_newest_suburb_cache_ts(suburb_name: str) -> float:
+    _load_disk_cache()
+    sub_clean = suburb_name.lower().strip()
+    newest = 0.0
+    for key, entry in _MEMORY_CACHE.items():
+        if key.startswith(f"{sub_clean}|") or f"|{sub_clean}|" in key or sub_clean in key:
+            if entry.get("items"):
+                newest = max(newest, float(entry.get("ts", 0.0)))
+    return newest
 
 
 def _load_disk_cache(force: bool = False) -> None:
@@ -251,40 +353,65 @@ def _save_disk_cache() -> None:
 
 
 def get_p24_circuit_status() -> Dict[str, Any]:
-    """Returns current rate-limiter & circuit-breaker state."""
-    now = time.time()
-    is_open = now < _CIRCUIT_OPEN_UNTIL
-    remaining = max(0, int(_CIRCUIT_OPEN_UNTIL - now)) if is_open else 0
-    return {
-        "circuit_open": is_open,
-        "cooldown_remaining_seconds": remaining,
-        "consecutive_trips": _CONSECUTIVE_TRIPS,
-        "cached_queries": len(_MEMORY_CACHE),
-    }
+    """Returns shared persistent rate-limiter & circuit-breaker state across all P24 services."""
+    try:
+        from services.p24_client import p24_client
+        return p24_client.get_circuit_status(cached_queries=len(_MEMORY_CACHE))
+    except Exception:
+        now = time.time()
+        is_open = now < _CIRCUIT_OPEN_UNTIL
+        remaining = max(0, int(_CIRCUIT_OPEN_UNTIL - now)) if is_open else 0
+        return {
+            "circuit_open": is_open,
+            "cooldown_remaining_seconds": remaining,
+            "consecutive_trips": _CONSECUTIVE_TRIPS,
+            "cached_queries": len(_MEMORY_CACHE),
+        }
 
 
 def trip_p24_circuit(reason: str = "Rate limit / Server unavailable") -> int:
-    """Trips the circuit breaker with exponential backoff so we stop hitting P24 immediately."""
+    """Trips the shared persistent circuit breaker with exponential backoff so ALL P24 traffic stops immediately."""
     global _CIRCUIT_OPEN_UNTIL, _CONSECUTIVE_TRIPS
     with _RATE_LOCK:
         _CONSECUTIVE_TRIPS += 1
         multiplier = min(4, 2 ** (_CONSECUTIVE_TRIPS - 1))
         cooldown = _COOLDOWN_BASE_SECONDS * multiplier
         _CIRCUIT_OPEN_UNTIL = time.time() + cooldown
+    try:
+        from services.p24_client import p24_client
+        return p24_client.trip_circuit(reason=reason, base_cooldown=_COOLDOWN_BASE_SECONDS)
+    except Exception:
         print(f"[P24 RATE GUARD] Circuit breaker tripped ({reason}). Cooling down for {cooldown}s.")
         return cooldown
 
 
+def _is_circuit_open() -> bool:
+    try:
+        from services.p24_client import p24_client
+        if p24_client.is_circuit_open():
+            return True
+    except Exception:
+        pass
+    return time.time() < _CIRCUIT_OPEN_UNTIL
+
+
 def _wait_for_polite_slot() -> bool:
     """
-    Enforces minimum inter-request spacing + human reading jitter.
+    Enforces minimum inter-request spacing + human reading jitter using shared timestamp.
     Returns False if the circuit breaker is open.
     """
     global _LAST_REQUEST_TS
     with _RATE_LOCK:
-        now = time.time()
-        if now < _CIRCUIT_OPEN_UNTIL:
+        if _is_circuit_open():
             return False
+
+        now = time.time()
+        try:
+            from services.p24_client import p24_client
+            p24_client._load_circuit_state()
+            _LAST_REQUEST_TS = max(_LAST_REQUEST_TS, p24_client._last_request_time)
+        except Exception:
+            pass
 
         elapsed = now - _LAST_REQUEST_TS
         min_gap = _MIN_REQUEST_INTERVAL + random.uniform(*_JITTER_RANGE)
@@ -293,6 +420,11 @@ def _wait_for_polite_slot() -> bool:
             time.sleep(sleep_for)
 
         _LAST_REQUEST_TS = time.time()
+        try:
+            from services.p24_client import p24_client
+            p24_client.record_request_slot()
+        except Exception:
+            pass
         return True
 
 
@@ -481,6 +613,101 @@ def _enrich_distance(items: List[Dict[str, Any]], anchor_lat: Optional[float], a
     return enriched
 
 
+def _build_p24_search_url(base_url: str, min_price: int, max_price: int, beds: str) -> str:
+    """
+    Constructs Property24's canonical encoded `sp=` search URL so price bounds,
+    bedroom counts, and ascending price sort (`so=PriceLow`) are actually respected
+    by Property24 instead of returning unfiltered Featured houses across 6+ pages.
+    """
+    clean_url = base_url.split('?')[0]
+    sp_parts = []
+    if min_price > 0:
+        sp_parts.append(f"pf={min_price}")
+    if max_price < 999999:
+        sp_parts.append(f"pt={max_price}")
+    if beds and beds != 'any':
+        bed_num = re.sub(r'[^\d]', '', str(beds))
+        if bed_num:
+            sp_parts.append(f"bd={bed_num}")
+    sp_parts.append("so=PriceLow")
+    encoded_sp = urllib.parse.quote("&".join(sp_parts), safe="")
+    return f"{clean_url}?sp={encoded_sp}"
+
+
+def _fetch_p24_page_html(url: str, cache_ttl_seconds: float) -> Tuple[Optional[str], bool]:
+    """
+    Fetches a Property24 search page HTML while prioritizing `p24_cache.json`
+    and strictly enforcing the polite rate-limiter + circuit breaker.
+    Returns `(html, did_network_call)`.
+    """
+    try:
+        from services.p24_client import p24_client
+        cached_html = p24_client.get_cached(url, max_age_seconds=cache_ttl_seconds)
+        if cached_html:
+            return cached_html, False
+    except Exception:
+        p24_client = None
+
+    if not _wait_for_polite_slot():
+        return None, False
+
+    html = ""
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            status_code = getattr(resp, "status", 200)
+            html = resp.read().decode('utf-8', errors='ignore')
+            if status_code in (429, 503):
+                trip_p24_circuit(f"HTTP {status_code}")
+                return None, True
+    except urllib.error.HTTPError as http_err:
+        if http_err.code in (403, 429, 503):
+            trip_p24_circuit(f"HTTPError {http_err.code}")
+        return None, True
+    except Exception:
+        return None, True
+
+    lower_html = html[:4000].lower()
+    if "server unavailable" in lower_html or "too many requests" in lower_html or (
+        len(html) < 2500 and "please check back later" in lower_html
+    ):
+        trip_p24_circuit("Property24 returned 'Server unavailable'")
+        return None, True
+
+    try:
+        from services.p24_client import p24_client
+        if html and len(html) > 2500:
+            p24_client.reset_circuit()
+            p24_client.set_cache(url, html)
+    except Exception:
+        pass
+
+    return html, True
+
+
+def _extract_p24_next_page_urls(html: str, first_url: str, max_pages: int = 4) -> List[str]:
+    """Extracts ordered pagination URLs (/p2, /p3, ...) from Page 1's `.p24_pager`."""
+    if not html or max_pages <= 1:
+        return []
+    soup = BeautifulSoup(html, 'html.parser')
+    numbered: Dict[int, str] = {}
+    for a in soup.select('.p24_pager a[href]'):
+        href = (a.get('href') or '').strip()
+        if not href or href.startswith('javascript'):
+            continue
+        pnum_attr = a.get('data-pagenumber')
+        pnum = int(pnum_attr) if pnum_attr and str(pnum_attr).isdigit() else None
+        if not pnum:
+            m = re.search(r'/p(\d+)(?:[/?#]|$)', href)
+            if m:
+                pnum = int(m.group(1))
+        if pnum and 2 <= pnum <= max_pages:
+            full = f"https://www.property24.com{href}" if href.startswith('/') else href
+            if full != first_url:
+                numbered[pnum] = full
+    return [numbered[k] for k in sorted(numbered.keys())]
+
+
 def scrape_p24_live(
     suburbs: List[str],
     min_price: int = 0,
@@ -490,12 +717,15 @@ def scrape_p24_live(
     anchor_lng: Optional[float] = None,
     force_fresh: bool = False
 ) -> List[Dict[str, Any]]:
-    global _CONSECUTIVE_TRIPS
+    global _CONSECUTIVE_TRIPS, _LAST_BATCH_META
     _load_disk_cache(force=True)
 
     all_results: List[Dict[str, Any]] = []
     seen_ids = set()
     network_fetches = 0
+    refreshed_suburbs: List[str] = []
+    cached_suburbs: List[str] = []
+    stale_suburbs: List[str] = []
 
     for suburb in suburbs:
         clean_suburb = suburb.strip()
@@ -505,10 +735,32 @@ def scrape_p24_live(
         cache_key = f"{clean_suburb.lower()}|{min_price}|{max_price}|{beds}"
         now = time.time()
         cached_entry = _MEMORY_CACHE.get(cache_key)
+        cache_age = (now - cached_entry.get("ts", 0)) if cached_entry else 999999999
+        newest_sub_ts = _get_newest_suburb_cache_ts(clean_suburb)
+        suburb_cache_age = (now - newest_sub_ts) if newest_sub_ts > 0 else 999999999
+        allow_dev_refresh = force_fresh and (cache_age >= _MANUAL_REFRESH_MIN_AGE_SECONDS) and (suburb_cache_age >= _MANUAL_REFRESH_MIN_AGE_SECONDS)
+        html_cache_ttl = _MANUAL_REFRESH_MIN_AGE_SECONDS if (force_fresh and (allow_dev_refresh or not P24_DEV_MODE or os.environ.get("P24_LIVE_FORCE"))) else _CACHE_TTL_SECONDS
 
-        # In DEV MODE: serve fresh cache or fuzzy suburb cache to prevent P24 IP bans
-        if P24_DEV_MODE and not os.environ.get("P24_LIVE_FORCE"):
-            if cached_entry and (now - cached_entry.get("ts", 0)) < _CACHE_TTL_SECONDS:
+        # 1. Check Centralized DB Pool: Serve instantly if suburb data is already populated
+        if not force_fresh:
+            try:
+                from services.listings_db import query_listings
+                db_matches = query_listings([clean_suburb], min_price=min_price, max_price=max_price, beds=beds)
+                if db_matches:
+                    cached_suburbs.append(clean_suburb)
+                    for item in _enrich_distance(db_matches, anchor_lat, anchor_lng):
+                        lid = item.get("p24_id") or item.get("id")
+                        if lid not in seen_ids:
+                            seen_ids.add(lid)
+                            all_results.append(item)
+                    continue
+            except Exception as e:
+                print(f"[DB POOL QUERY ERROR] {e}")
+
+        # In DEV MODE: serve fresh cache unless force_fresh is requested on >24h old data
+        if P24_DEV_MODE and not os.environ.get("P24_LIVE_FORCE") and not allow_dev_refresh:
+            if cached_entry and cache_age < _CACHE_TTL_SECONDS:
+                cached_suburbs.append(clean_suburb)
                 for item in _enrich_distance(cached_entry.get("items", []), anchor_lat, anchor_lng):
                     lid = item.get("p24_id") or item.get("id")
                     if lid not in seen_ids:
@@ -516,31 +768,10 @@ def scrape_p24_live(
                         all_results.append(item)
                 continue
 
-            sub_matches = _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
-            if sub_matches:
-                print(f"[P24 DEV GUARD] Serving {len(sub_matches)} cached listings for {clean_suburb} (0 network calls).")
-                for item in _enrich_distance(sub_matches, anchor_lat, anchor_lng):
-                    lid = item.get("p24_id") or item.get("id")
-                    if lid not in seen_ids:
-                        seen_ids.add(lid)
-                        all_results.append(item)
-                continue
-
         # 1. Serve fresh cache hit immediately (0 network traffic), unless caller requested force_fresh
-        if not force_fresh and cached_entry and (now - cached_entry.get("ts", 0)) < _CACHE_TTL_SECONDS:
+        if not force_fresh and cached_entry and cache_age < _CACHE_TTL_SECONDS:
+            cached_suburbs.append(clean_suburb)
             for item in _enrich_distance(cached_entry.get("items", []), anchor_lat, anchor_lng):
-                lid = item.get("p24_id") or item.get("id")
-                if lid not in seen_ids:
-                    seen_ids.add(lid)
-                    all_results.append(item)
-            continue
-
-        # 2. If circuit breaker is open or batch cap reached, serve stale cache or fallback fixtures
-        if now < _CIRCUIT_OPEN_UNTIL or network_fetches >= _MAX_SUBURBS_PER_BATCH:
-            fallback = cached_entry.get("items", []) if cached_entry else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
-            if not fallback:
-                fallback = _generate_suburb_fallback_fixtures(clean_suburb, min_price, max_price, beds)
-            for item in _enrich_distance(fallback, anchor_lat, anchor_lng):
                 lid = item.get("p24_id") or item.get("id")
                 if lid not in seen_ids:
                     seen_ids.add(lid)
@@ -551,24 +782,16 @@ def scrape_p24_live(
         if not base_url:
             continue
 
-        clean_url = base_url.split('?')[0]
-        params = []
-        if min_price > 0:
-            params.append(f"pr={min_price}")
-        if max_price < 999999:
-            params.append(f"pt={max_price}")
-        if beds and beds != 'any':
-            bed_num = re.sub(r'[^\d]', '', str(beds))
-            if bed_num:
-                params.append(f"bd={bed_num}")
+        search_url = _build_p24_search_url(base_url, min_price, max_price, beds)
 
-        search_url = f"{clean_url}?sp={'%26'.join(params)}" if params else clean_url
+        # 2. Check if fresh Page 1 HTML is already cached in `p24_cache.json` (0 network calls)
+        from services.p24_client import p24_client as _p24c
+        p1_is_disk_cached = bool(html_cache_ttl > 0 and _p24c.get_cached(search_url, max_age_seconds=html_cache_ttl))
 
-        # 3. Enforce polite token-bucket spacing & jitter before outbound request
-        if not _wait_for_polite_slot():
+        # If not in `p24_cache.json` and shared circuit breaker is open or batch cap reached, serve cached fallback only
+        if not p1_is_disk_cached and (_is_circuit_open() or network_fetches >= _MAX_SUBURBS_PER_BATCH):
+            stale_suburbs.append(clean_suburb)
             fallback = cached_entry.get("items", []) if cached_entry else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
-            if not fallback:
-                fallback = _generate_suburb_fallback_fixtures(clean_suburb, min_price, max_price, beds)
             for item in _enrich_distance(fallback, anchor_lat, anchor_lng):
                 lid = item.get("p24_id") or item.get("id")
                 if lid not in seen_ids:
@@ -576,40 +799,27 @@ def scrape_p24_live(
                     all_results.append(item)
             continue
 
-        network_fetches += 1
-        html = ""
-        try:
-            req = urllib.request.Request(search_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                status_code = getattr(resp, "status", 200)
-                html = resp.read().decode('utf-8', errors='ignore')
-                if status_code in (429, 503):
-                    trip_p24_circuit(f"HTTP {status_code}")
-                    fallback = cached_entry.get("items", []) if cached_entry else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
-                    if not fallback:
-                        fallback = _generate_suburb_fallback_fixtures(clean_suburb, min_price, max_price, beds)
-                    for item in _enrich_distance(fallback, anchor_lat, anchor_lng):
-                        lid = item.get("p24_id") or item.get("id")
-                        if lid not in seen_ids:
-                            seen_ids.add(lid)
-                            all_results.append(item)
-                    continue
-        except urllib.error.HTTPError as http_err:
-            if http_err.code in (403, 429, 503):
-                trip_p24_circuit(f"HTTPError {http_err.code}")
+        # In DEV MODE: if we already have <24h cached listings for this suburb and Page 1 isn't disk-cached,
+        # never fire uncached network requests (strict GEMINI.md Rule 2 compliance).
+        if P24_DEV_MODE and not os.environ.get("P24_LIVE_FORCE") and not p1_is_disk_cached and not allow_dev_refresh:
+            sub_matches = _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
+            if sub_matches:
+                cached_suburbs.append(clean_suburb)
+                print(f"[P24 DEV GUARD] Serving {len(sub_matches)} cached listings for {clean_suburb} (0 network calls).")
+                for item in _enrich_distance(sub_matches, anchor_lat, anchor_lng):
+                    lid = item.get("p24_id") or item.get("id")
+                    if lid not in seen_ids:
+                        seen_ids.add(lid)
+                        all_results.append(item)
+                continue
+
+        html_p1, made_net = _fetch_p24_page_html(search_url, html_cache_ttl)
+        if made_net:
+            network_fetches += 1
+
+        if not html_p1:
+            stale_suburbs.append(clean_suburb)
             fallback = cached_entry.get("items", []) if cached_entry else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
-            if not fallback:
-                fallback = _generate_suburb_fallback_fixtures(clean_suburb, min_price, max_price, beds)
-            for item in _enrich_distance(fallback, anchor_lat, anchor_lng):
-                lid = item.get("p24_id") or item.get("id")
-                if lid not in seen_ids:
-                    seen_ids.add(lid)
-                    all_results.append(item)
-            continue
-        except Exception:
-            fallback = cached_entry.get("items", []) if cached_entry else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
-            if not fallback:
-                fallback = _generate_suburb_fallback_fixtures(clean_suburb, min_price, max_price, beds)
             for item in _enrich_distance(fallback, anchor_lat, anchor_lng):
                 lid = item.get("p24_id") or item.get("id")
                 if lid not in seen_ids:
@@ -617,36 +827,50 @@ def scrape_p24_live(
                     all_results.append(item)
             continue
 
-        # 4. Detect "Server unavailable" or rate-limit page in HTML body
-        lower_html = html[:4000].lower()
-        if "server unavailable" in lower_html or "too many requests" in lower_html or (
-            len(html) < 2500 and "please check back later" in lower_html
-        ):
-            trip_p24_circuit("Property24 returned 'Server unavailable'")
-            fallback = cached_entry.get("items", []) if cached_entry else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
-            if not fallback:
-                fallback = _generate_suburb_fallback_fixtures(clean_suburb, min_price, max_price, beds)
-            for item in _enrich_distance(fallback, anchor_lat, anchor_lng):
-                lid = item.get("p24_id") or item.get("id")
-                if lid not in seen_ids:
-                    seen_ids.add(lid)
-                    all_results.append(item)
-            continue
+        refreshed_suburbs.append(clean_suburb)
+        page_htmls: List[str] = [html_p1]
+        next_urls = _extract_p24_next_page_urls(html_p1, search_url, max_pages=3)
+        for next_url in next_urls:
+            next_is_cached = bool(html_cache_ttl > 0 and _p24c.get_cached(next_url, max_age_seconds=html_cache_ttl))
+            if not next_is_cached and (_is_circuit_open() or network_fetches >= _MAX_SUBURBS_PER_BATCH):
+                break
+            next_html, made_page_net = _fetch_p24_page_html(next_url, html_cache_ttl)
+            if made_page_net:
+                network_fetches += 1
+            if not next_html:
+                break
+            page_htmls.append(next_html)
 
-        soup = BeautifulSoup(html, 'html.parser')
-        base_lat, base_lng = SUBURB_COORDS.get(clean_suburb.lower(), (-33.9249, 18.4241))
+        suburb_fallback_lat, suburb_fallback_lng = SUBURB_COORDS.get(clean_suburb.lower(), (-33.9249, 18.4241))
 
-        tiles = soup.find_all(
-            'div',
-            class_=lambda c: c and any(
-                k in c for k in ['p24_regularTile', 'p24_highlightTile', 'p24_tileContainer', 'p24_topTile']
+        tiles = []
+        for page_html in page_htmls:
+            soup = BeautifulSoup(page_html, 'html.parser')
+            page_tiles = soup.find_all(
+                'div',
+                class_=lambda c: c and any(
+                    k in c for k in [
+                        'p24_regularTile',
+                        'p24_highlightTile',
+                        'p24_promotedTile',
+                        'p24_featuredTile',
+                        'p24_tileContainer',
+                        'p24_topTile',
+                        'p24_tile',
+                    ]
+                )
             )
-        )
+            tiles.extend(page_tiles)
 
         suburb_items: List[Dict[str, Any]] = []
         seen_suburb_ids = set()
 
         for t in tiles:
+            # Skip expired / off-market / let-agreed tiles directly
+            badge_el = t.find(class_=re.compile(r'p24_listingStatus|p24_status|p24_badge|p24_tag|p24_expired', re.I))
+            if badge_el and re.search(r'\b(?:let agreed|under offer|withdrawn|sold|off market|expired|rented|no longer available)\b', badge_el.get_text(' ', strip=True), re.I):
+                continue
+
             link = t.find('a', href=True)
             if not link:
                 continue
@@ -661,9 +885,12 @@ def scrape_p24_live(
 
             full_href = ('https://www.property24.com' + href) if href.startswith('/') else href
 
-            # Price
+            # Price (skip holiday short-lets like "per day" / "per week" and commercial properties)
             price_div = t.find('div', class_='p24_price') or t.find('span', class_='p24_price')
             price_val = 0
+            price_text_low = price_div.get_text(' ', strip=True).lower() if price_div else ""
+            if any(k in price_text_low for k in ["per day", "/day", "daily", "per week", "/week", "p/w", "p/d"]):
+                continue
             if price_div:
                 content_attr = price_div.get('content')
                 if content_attr and content_attr.isdigit():
@@ -683,6 +910,9 @@ def scrape_p24_live(
 
             title_el = t.find('span', class_='p24_title')
             title_str = title_el.get_text(strip=True) if title_el else "Apartment to Rent"
+            title_low = title_str.lower()
+            if any(k in title_low for k in ["commercial", "retail", "industrial", "office space", "warehouse", "parking bay"]):
+                continue
 
             loc_el = t.find('span', class_='p24_location')
             loc_str = loc_el.get_text(strip=True) if loc_el else clean_suburb.title()
@@ -723,8 +953,9 @@ def scrape_p24_live(
                     sqm_val = int(sqm_match.group(1))
 
             item_text = t.get_text(' ', strip=True).lower()
-            lat = base_lat + random.uniform(-0.0006, 0.0006)
-            lng = base_lng + random.uniform(-0.0006, 0.0006)
+            pocket_lat, pocket_lng = SUBURB_COORDS.get(loc_str.lower(), (suburb_fallback_lat, suburb_fallback_lng))
+            lat = pocket_lat + random.uniform(-0.0006, 0.0006)
+            lng = pocket_lng + random.uniform(-0.0006, 0.0006)
 
             addr_el = (
                 t.find('span', class_='p24_address')
@@ -733,13 +964,21 @@ def scrape_p24_live(
             )
             addr_str = addr_el.get_text(' ', strip=True).strip(' ,') if addr_el else ""
             if addr_str and addr_str.lower() != loc_str.lower() and addr_str.lower() != clean_suburb.lower():
-                final_address = f"{addr_str}, {loc_str}, Cape Town"
+                if clean_suburb.lower() not in loc_str.lower():
+                    final_address = f"{addr_str}, {loc_str}, {clean_suburb.title()}, Cape Town"
+                else:
+                    final_address = f"{addr_str}, {loc_str}, Cape Town"
+            elif loc_str.lower() == clean_suburb.lower():
+                final_address = f"{loc_str}, Cape Town"
             else:
                 final_address = f"{loc_str}, {clean_suburb.title()}"
 
             # Accurate street address & micro-pocket geocoding
             comb_lower = f"{title_str} {item_text} {loc_str} {addr_str}".lower()
-            if 'ocean terraces' in item_text or 'spurwing' in item_text or 'sanderling' in item_text or lid == '112388858':
+            if 'camberleigh' in comb_lower or 'glenside' in comb_lower or lid == '117782617':
+                lat, lng = -33.909615, 18.411107
+                final_address = "8 Camberleigh Place, 4 Glenside Road, Green Point, Cape Town"
+            elif 'ocean terraces' in item_text or 'spurwing' in item_text or 'sanderling' in item_text or lid == '112388858':
                 lat, lng = -34.098635, 18.488359
                 final_address = "304 Ocean Terraces, 1 Cnr Of Spurwing Cir & Sanderling Rd, Capricorn, Cape Town, 7948"
             elif 'saint georges' in item_text or 'st georges' in item_text or lid == '116264966':
@@ -754,6 +993,9 @@ def scrape_p24_live(
             elif 'derwent' in comb_lower or lid == '117740072':
                 lat, lng = -33.933734, 18.405534
                 final_address = "12 Derwent Rd, Gardens, Cape Town"
+            elif 'warren' in comb_lower or lid == '111950313':
+                lat, lng = -33.9304, 18.4065
+                final_address = "Erf 1423 Warren St, Tamboerskloof, Cape Town"
             elif 'bellevue' in comb_lower or lid == '111551852':
                 lat, lng = -33.937565, 18.401126
                 final_address = "49 Bellevue Street, Higgovale, Cape Town"
@@ -790,10 +1032,25 @@ def scrape_p24_live(
                     detail_soup = BeautifulSoup(cached_detail_html, 'html.parser')
                     desc_el = detail_soup.find(class_=re.compile(r'p24_description|js_readMoreText|p24_features|p24_keyFeatures', re.I))
                     detail_text = desc_el.get_text(' ', strip=True).lower() if desc_el else detail_soup.get_text(' ', strip=True).lower()
+
+                    # Extract rich street address from detail page if tile was generic
+                    has_street_in_final = any(k in final_address.lower() for k in ["road", "rd", "street", "st", "place", "avenue", "ave", "lane", "crescent", "terrace", "way", "close"])
+                    if not has_street_in_final:
+                        for detail_addr_el in detail_soup.find_all(class_=re.compile(r'p24_streetAddress|p24_addressPropOverview|p24_address|p24_maptitle', re.I)):
+                            d_str = detail_addr_el.get_text(' ', strip=True).strip(' ,')
+                            d_low = d_str.lower()
+                            is_invalid = any(bad in d_low for bad in ["contact agent", "to rent in", "bedroom", "apartment to rent", "flat to rent"])
+                            if d_str and not is_invalid:
+                                if not any(k in d_low for k in ["cape town", "western cape"]):
+                                    final_address = f"{d_str}, Cape Town"
+                                else:
+                                    final_address = d_str
+                                break
             except Exception:
                 pass
 
             # Intelligent Address & Precision Building Geocoding (Google Places + Mapbox + Gemini)
+            is_address_withheld = True
             try:
                 from services.address_normalizer import resolve_property_precision
                 geo_hit = resolve_property_precision(
@@ -803,13 +1060,22 @@ def scrape_p24_live(
                     suburb=clean_suburb
                 )
                 if geo_hit and not geo_hit.get("is_withheld") and geo_hit.get("confidence") != "none":
-                    lat, lng = geo_hit["lat"], geo_hit["lng"]
-                    if geo_hit.get("clean_query"):
-                        final_address = geo_hit["clean_query"]
-                        if not any(k in final_address.lower() for k in ["cape town", "western cape"]):
-                            final_address = f"{final_address}, Cape Town"
+                    if calculate_dist_km(geo_hit["lat"], geo_hit["lng"], suburb_fallback_lat, suburb_fallback_lng) <= 7.0:
+                        lat, lng = geo_hit["lat"], geo_hit["lng"]
+                        is_address_withheld = False
+                        if geo_hit.get("clean_query"):
+                            final_address = geo_hit["clean_query"]
+                            if not any(k in final_address.lower() for k in ["cape town", "western cape"]):
+                                final_address = f"{final_address}, Cape Town"
             except Exception:
                 pass
+
+            if is_address_withheld and re.search(
+                r'\b(?:street|st|road|rd|avenue|ave|drive|dr|way|wy|lane|ln|close|cl|crescent|cres|circle|cir|boulevard|blvd|terrace|terraces|walk|row|place|mews|court|mansions|heights|towers|manor|villas|lofts|residences)\b',
+                final_address,
+                re.I,
+            ):
+                is_address_withheld = False
 
             comb_text = f"{title_str} {item_text} {detail_text}".lower()
             stove_type = "gas" if any(k in comb_text for k in ["gas hob", "gas stove", "gas cooker", "gas burner"]) else (
@@ -831,7 +1097,7 @@ def scrape_p24_live(
             pet_friendly = True if re.search(r'\b(?:pet friendly|pets allowed|pets welcome|dogs allowed|cats allowed)\b', comb_text) else (
                 False if re.search(r'\b(?:no pets|pets not allowed|no dogs|no cats)\b', comb_text) else False
             )
-            fibre_ready = bool(re.search(r'\b(?:fibre|fiber|wifi|internet)\b', comb_text)) or True
+            fibre_ready = bool(re.search(r'\b(?:fibre|fiber|wifi|internet)\b', comb_text)) and not bool(re.search(r'\b(?:no\s+fibre|not\s+fibre\s+ready)\b', comb_text))
             has_inverter = bool(re.search(r'\b(?:inverter|solar|backup|ups|load shedding)\b', comb_text))
 
             # Privacy & Landlord On-Site Detection
@@ -893,6 +1159,7 @@ def scrape_p24_live(
                 'p24_id': lid,
                 'title': title_str,
                 'address': final_address,
+                'is_address_withheld': is_address_withheld,
                 'suburb': clean_suburb.title(),
                 'price': price_val,
                 'price_str': f"R {price_val:,}" if price_val > 0 else "POA",
@@ -938,6 +1205,13 @@ def scrape_p24_live(
             }
             _save_disk_cache()
 
+            # Centralized DB Pool: Upsert into persistent shared SQLite database pool
+            try:
+                from services.listings_db import upsert_listings
+                upsert_listings(suburb_items, clean_suburb)
+            except Exception as e:
+                print(f"[DB POOL] Warning: failed to upsert into listings_db: {e}")
+
         for item in _enrich_distance(suburb_items, anchor_lat, anchor_lng):
             lid = item.get("p24_id") or item.get("id")
             if lid not in seen_ids:
@@ -947,6 +1221,24 @@ def scrape_p24_live(
     # Multi-agency cross-listing deduplication across all combined suburbs
     all_results = deduplicate_property_listings(all_results)
 
+    # Compute Market Value Benchmark & % above/below market price
+    try:
+        from services.ai_scout import calculate_price_value_pct, AREA_MEDIAN_BASELINES
+        for r in all_results:
+            p_val = r.get("price")
+            b_cnt = r.get("bedrooms") or 1
+            s_name = r.get("suburb") or ""
+            pct = calculate_price_value_pct(p_val, float(b_cnt), s_name, all_listings=all_results)
+            r["price_value_pct"] = pct
+    except Exception as e:
+        print(f"[MARKET VALUATION] Non-critical error calculating price value pct: {e}")
+
     # Sort by price
     all_results.sort(key=lambda x: (x['price'] if x['price'] > 0 else 999999))
+    _LAST_BATCH_META = {
+        "refreshed_suburbs": refreshed_suburbs,
+        "cached_suburbs": cached_suburbs,
+        "stale_suburbs": stale_suburbs,
+        "network_fetches": network_fetches,
+    }
     return all_results

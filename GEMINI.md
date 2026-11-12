@@ -20,7 +20,7 @@ Property24 (`property24.com`) enforces strict Cloudflare bot detection, IP rate 
 2. **Always Prioritize Local Cache (`.p24_live_cache.json` and `p24_cache.json`)**:
    - In development (`P24_DEV_MODE=True`), cache TTL is extended to **7 days**.
    - If a suburb has existing cached listings (even under a different price filter), the backend MUST reuse and filter the cached listings locally instead of hitting Property24 over the network.
-   - `force_fresh` in development should NOT bypass cache unless the cached data is older than 24 hours.
+   - `force_fresh` (a manual **Scrape P24** click) MAY bypass cache when the cached suburb data is older than **15 minutes**, so new listings posted during the day are picked up. Automatic loads, hot reloads, and tests (`force_fresh=False`) must stay cache-first.
 
 3. **Circuit Breaker is Mandatory**:
    - When HTTP 429, 503, or the body text `"Server unavailable"` / `"Please check back later"` is detected:

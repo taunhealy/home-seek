@@ -215,14 +215,6 @@ export default function DiscoverPage() {
                 Combine Property24 standard filters with a personalized AI prompt. Our engine scouts live portals, evaluates acoustic & lifestyle fit, and ranks the Top 10 matches.
               </p>
             </div>
-
-            <Link
-              href="/reports"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-xs font-semibold text-zinc-800 transition-all shrink-0 shadow-2xs"
-            >
-              <FileText size={14} weight="bold" />
-              <span>View Past Reports</span>
-            </Link>
           </div>
         </div>
 

@@ -61,11 +61,33 @@ export const KNOWN_CAPE_TOWN_PLACES: Record<string, [number, number]> = {
   "llandudno": [-34.0080, 18.3410],
   "v&a waterfront": [-33.9050, 18.4210],
   "waterfront": [-33.9050, 18.4210],
-  "virgin active kloof": [-33.9320, 18.4098],
-  "virgin active point": [-33.906296, 18.402848],
+  "virgin active kloof": [-33.929839, 18.410876],
+  "virgin active wembley": [-33.932292, 18.424188],
+  "virgin active point": [-33.920726, 18.383306],
   "virgin active green point": [-33.906296, 18.402848],
+  "virgin active silo": [-33.9090, 18.4230],
   "buc fitness club": [-33.920726, 18.383306],
+  "the point mall": [-33.920726, 18.383306],
+  "point mall": [-33.920726, 18.383306],
   "anytime fitness sea point": [-33.913819, 18.391226],
+  "ignite fitness green point": [-33.9090, 18.4120],
+  "roark gyms": [-33.924669, 18.414300],
+  "zone fitness kloof": [-33.9295, 18.4105],
+  "lifestyle on kloof": [-33.9298, 18.4108],
+  "gardens shopping centre": [-33.9328, 18.4178],
+  "gardens centre": [-33.9328, 18.4178],
+  "cape quarter": [-33.9165, 18.4178],
+  "jarryds": [-33.9213, 18.3828],
+  "jarryds eatery": [-33.9213, 18.3828],
+  "naked coffee": [-33.9200, 18.3848],
+  "jason bakery": [-33.9085, 18.4132],
+  "the strangers club": [-33.9098, 18.4075],
+  "mojo market": [-33.919297, 18.385825],
+  "truth coffee": [-33.9282, 18.4225],
+  "our local": [-33.9348, 18.4082],
+  "molten toffee": [-33.9378, 18.4060],
+  "manna epicure": [-33.9362, 18.4070],
+  "spar derry": [-33.9392, 18.4290],
   "table mountain": [-33.9570, 18.4030],
   "table mountain deer park": [-33.9430, 18.4250],
   "deer park": [-33.9430, 18.4250],
@@ -149,16 +171,9 @@ export function resolveLocationCoords(query: string): GeoLocation {
     return { lat: -33.9249, lng: 18.4241, label: 'Cape Town' };
   }
 
-  // 1. High-precision Estate, Complex, Landmark & Street matching (longest match first)
   const knownKeys = Object.keys(KNOWN_CAPE_TOWN_PLACES).sort((a, b) => b.length - a.length);
-  for (const place of knownKeys) {
-    if (cleaned.includes(place)) {
-      const [lat, lng] = KNOWN_CAPE_TOWN_PLACES[place];
-      return { lat, lng, label: query.split(',')[0].trim() || place, suburb: place };
-    }
-  }
 
-  // 2. Exact suburb or alias match in SUBURBS_DIRECTORY
+  // 1. Exact suburb or alias match on the full query in SUBURBS_DIRECTORY
   const exactSuburb = SUBURBS_DIRECTORY.find(
     (s) => s.name.toLowerCase() === cleaned || s.aliases?.some((a) => a.toLowerCase() === cleaned)
   );
@@ -166,14 +181,28 @@ export function resolveLocationCoords(query: string): GeoLocation {
     return { lat: exactSuburb.lat, lng: exactSuburb.lng, label: exactSuburb.name, suburb: exactSuburb.name };
   }
 
-  // 3. Suburb matching by address segments (e.g. "Costa Da Gama, Muizenberg" -> checks Costa Da Gama first)
+  // 2. Segment-by-segment matching (most specific segment first, e.g. "Northshore, Hout Bay" -> "Northshore" before "Hout Bay")
   const tokens = cleaned.split(',').map((t) => t.trim()).filter(Boolean);
   for (const token of tokens) {
-    const tokenMatch = SUBURBS_DIRECTORY.find(
+    const tokenSuburb = SUBURBS_DIRECTORY.find(
       (s) => s.name.toLowerCase() === token || s.aliases?.some((a) => a.toLowerCase() === token)
     );
-    if (tokenMatch) {
-      return { lat: tokenMatch.lat, lng: tokenMatch.lng, label: tokenMatch.name, suburb: tokenMatch.name };
+    if (tokenSuburb) {
+      return { lat: tokenSuburb.lat, lng: tokenSuburb.lng, label: tokenSuburb.name, suburb: tokenSuburb.name };
+    }
+    for (const place of knownKeys) {
+      if (token.includes(place)) {
+        const [lat, lng] = KNOWN_CAPE_TOWN_PLACES[place];
+        return { lat, lng, label: query.split(',')[0].trim() || place, suburb: place };
+      }
+    }
+  }
+
+  // 3. High-precision Estate, Complex, Landmark & Street matching across full string (longest match first)
+  for (const place of knownKeys) {
+    if (cleaned.includes(place)) {
+      const [lat, lng] = KNOWN_CAPE_TOWN_PLACES[place];
+      return { lat, lng, label: query.split(',')[0].trim() || place, suburb: place };
     }
   }
 
@@ -209,6 +238,9 @@ export interface SuburbEntry {
 export const SUBURBS_DIRECTORY: SuburbEntry[] = [
   // Cape Town - Deep South & False Bay
   { name: 'Noordhoek', region: 'Cape Town · Deep South', lat: -34.1030, lng: 18.3680, aliases: ['noordhoek', 'chapmans peak', 'silvermine'] },
+  { name: 'Sunnydale', region: 'Cape Town · Deep South', lat: -34.1195, lng: 18.3875, aliases: ['sunnydale', 'longbeach mall'] },
+  { name: 'Capri', region: 'Cape Town · Deep South', lat: -34.1290, lng: 18.3910, aliases: ['capri', 'capri village'] },
+  { name: 'Sun Valley', region: 'Cape Town · Deep South', lat: -34.1325, lng: 18.3960, aliases: ['sun valley'] },
   { name: 'Kommetjie', region: 'Cape Town · Deep South / Surf', lat: -34.1410, lng: 18.3300, aliases: ['kommetjie', 'long beach'] },
   { name: 'Witsand (Misty Cliffs)', region: 'Cape Town · Deep South / Surf', lat: -34.1780, lng: 18.3560, aliases: ['witsands', 'witsand', 'soetwater'] },
   { name: 'Misty Cliffs', region: 'Cape Town · Deep South', lat: -34.1850, lng: 18.3620, aliases: ['misty cliffs', 'mistycliffs'] },
@@ -221,6 +253,22 @@ export const SUBURBS_DIRECTORY: SuburbEntry[] = [
   { name: 'Costa Da Gama', region: 'Cape Town · False Bay', lat: -34.1010, lng: 18.4820, aliases: ['costa da gama', 'sunrise beach'] },
   { name: 'Simon\'s Town', region: 'Cape Town · False Bay', lat: -34.1930, lng: 18.4320, aliases: ['simons town', 'boulders'] },
   { name: 'Glencairn', region: 'Cape Town · False Bay', lat: -34.1610, lng: 18.4330, aliases: ['glencairn', 'glencairn heights'] },
+  { name: 'Northshore', region: 'Hout Bay · Cape Town', lat: -34.0467, lng: 18.3485, aliases: ['northshore', 'northshore hout bay'] },
+  { name: 'Hout Bay Harbour', region: 'Hout Bay · Cape Town', lat: -34.0551, lng: 18.3438, aliases: ['hout bay harbour', 'harbour'] },
+  { name: 'Hout Bay Central', region: 'Hout Bay · Cape Town', lat: -34.0418, lng: 18.3578, aliases: ['hout bay central'] },
+  { name: 'Hout Bay Beachfront', region: 'Hout Bay · Cape Town', lat: -34.0457, lng: 18.3512, aliases: ['hout bay beachfront', 'beachfront'] },
+  { name: 'Scott Estate', region: 'Hout Bay · Cape Town', lat: -34.0417, lng: 18.3638, aliases: ['scott estate'] },
+  { name: 'Penzance Estate', region: 'Hout Bay · Cape Town', lat: -34.0336, lng: 18.3601, aliases: ['penzance estate', 'penzance'] },
+  { name: 'Beach Estate', region: 'Hout Bay · Cape Town', lat: -34.0445, lng: 18.3578, aliases: ['beach estate'] },
+  { name: 'Longkloof', region: 'Hout Bay · Cape Town', lat: -34.0111, lng: 18.3872, aliases: ['longkloof'] },
+  { name: 'Helgarda Estate', region: 'Hout Bay · Cape Town', lat: -34.0275, lng: 18.3468, aliases: ['helgarda estate'] },
+  { name: 'Kronenzicht', region: 'Hout Bay · Cape Town', lat: -34.0296, lng: 18.3442, aliases: ['kronenzicht'] },
+  { name: 'Bokkemanskloof', region: 'Hout Bay · Cape Town', lat: -34.0189, lng: 18.3829, aliases: ['bokkemanskloof'] },
+  { name: 'Berg en Dal', region: 'Hout Bay · Cape Town', lat: -34.0363, lng: 18.3601, aliases: ['berg en dal'] },
+  { name: 'Ruyteplaats', region: 'Hout Bay · Cape Town', lat: -34.0123, lng: 18.3586, aliases: ['ruyteplaats'] },
+  { name: 'Tierboskloof', region: 'Hout Bay · Cape Town', lat: -34.0231, lng: 18.3697, aliases: ['tierboskloof'] },
+  { name: 'Victorskloof', region: 'Hout Bay · Cape Town', lat: -34.0169, lng: 18.3579, aliases: ['victorskloof'] },
+  { name: 'Oakhurst', region: 'Hout Bay · Cape Town', lat: -34.0202, lng: 18.3748, aliases: ['oakhurst'] },
   { name: 'Clovelly', region: 'Cape Town · False Bay', lat: -34.1330, lng: 18.4400, aliases: ['clovelly'] },
 
   // Cape Town - Southern Suburbs
@@ -278,9 +326,28 @@ export const SUBURBS_DIRECTORY: SuburbEntry[] = [
   { name: 'Milnerton', region: 'Cape Town · West Coast', lat: -33.8710, lng: 18.4980, aliases: ['milnerton'] },
 
   // Garden Route & Eden
-  { name: 'George', region: 'Garden Route · Eden', lat: -33.9630, lng: 22.4590, aliases: ['george', 'george central'] },
-  { name: 'Heatherlands', region: 'George · Garden Route', lat: -33.9520, lng: 22.4460, aliases: ['heatherlands', 'george foothills'] },
-  { name: 'Fernridge', region: 'George · Garden Route', lat: -33.9470, lng: 22.4590, aliases: ['fernridge', 'george mountain'] },
+  { name: 'George', region: 'Garden Route · Eden', lat: -33.9630, lng: 22.4617, aliases: ['george'] },
+  { name: 'George Central', region: 'George · Garden Route', lat: -33.9632, lng: 22.4597, aliases: ['george central'] },
+  { name: 'Bodorp', region: 'George · Garden Route', lat: -33.9560, lng: 22.4570, aliases: ['bodorp'] },
+  { name: 'Bergsig', region: 'George · Garden Route', lat: -33.9520, lng: 22.4680, aliases: ['bergsig', 'bersig'] },
+  { name: 'Heather Park', region: 'George · Garden Route', lat: -33.9540, lng: 22.4350, aliases: ['heather park'] },
+  { name: 'Heatherlands', region: 'George · Garden Route', lat: -33.9490, lng: 22.4440, aliases: ['heatherlands', 'george foothills'] },
+  { name: 'Fernridge', region: 'George · Garden Route', lat: -33.9440, lng: 22.4600, aliases: ['fernridge', 'george mountain'] },
+  { name: 'Camphersdrift', region: 'George · Garden Route', lat: -33.9555, lng: 22.4510, aliases: ['camphersdrift'] },
+  { name: 'Denneoord', region: 'George · Garden Route', lat: -33.9505, lng: 22.4780, aliases: ['denneoord'] },
+  { name: 'Dormehls Drift', region: 'George · Garden Route', lat: -33.9660, lng: 22.4680, aliases: ['dormehls drift'] },
+  { name: 'Loerie Park', region: 'George · Garden Route', lat: -33.9720, lng: 22.4820, aliases: ['loerie park'] },
+  { name: 'George East', region: 'George · Garden Route', lat: -33.9650, lng: 22.4780, aliases: ['george east'] },
+  { name: 'George South', region: 'George · Garden Route', lat: -33.9740, lng: 22.4580, aliases: ['george south'] },
+  { name: 'Blanco', region: 'George · Garden Route', lat: -33.9560, lng: 22.4160, aliases: ['blanco'] },
+  { name: 'Denver Park', region: 'George · Garden Route', lat: -33.9710, lng: 22.4720, aliases: ['denver park'] },
+  { name: 'George Industrial', region: 'George · Garden Route', lat: -33.9860, lng: 22.4780, aliases: ['george industrial'] },
+  { name: 'Pacaltsdorp', region: 'George · Garden Route', lat: -34.0120, lng: 22.4620, aliases: ['pacaltsdorp'] },
+  { name: 'Kraaibosch', region: 'George · Garden Route', lat: -33.9820, lng: 22.5250, aliases: ['kraaibosch'] },
+  { name: 'Blue Mountain Village', region: 'George · Garden Route', lat: -33.9790, lng: 22.5110, aliases: ['blue mountain village'] },
+  { name: 'Le Grand Estate', region: 'George · Garden Route', lat: -34.0320, lng: 22.4950, aliases: ['le grand estate'] },
+  { name: 'Kingswood Golf Estate', region: 'George · Garden Route', lat: -33.9736, lng: 22.4321, aliases: ['kingswood golf estate'] },
+  { name: 'King George Park', region: 'George · Garden Route', lat: -33.9610, lng: 22.4430, aliases: ['king george park'] },
   { name: 'Wilderness', region: 'Garden Route · Coastal Sanctuary', lat: -33.9920, lng: 22.5830, aliases: ['wilderness', 'wilderness beach', 'touw river'] },
   { name: 'Victoria Bay', region: 'Garden Route · Surf Bay', lat: -34.0040, lng: 22.5480, aliases: ['victoria bay', 'vic bay'] },
   { name: 'Sedgefield', region: 'Garden Route · Slow Town', lat: -34.0180, lng: 22.8020, aliases: ['sedgefield', 'myoli beach', 'cola beach'] },
@@ -331,7 +398,7 @@ export interface PlaceSuggestion {
   category: string;
   lat: number;
   lng: number;
-  iconType: 'beach' | 'surf' | 'trail' | 'gym' | 'attraction' | 'hub' | 'cafe' | 'general';
+  iconType: 'beach' | 'surf' | 'trail' | 'gym' | 'attraction' | 'hub' | 'cafe' | 'shop' | 'general';
 }
 
 export const SUGGESTED_PLACES_DIRECTORY: PlaceSuggestion[] = [
@@ -364,24 +431,73 @@ export const SUGGESTED_PLACES_DIRECTORY: PlaceSuggestion[] = [
   { name: 'Virgin Active Constantia', category: 'Constantia Village · High-End Fitness Club', lat: -34.0260, lng: 18.4410, iconType: 'gym' },
   { name: 'Zone Fitness Rondebosch', category: 'Riverside Mall Rondebosch · Student & Exec Gym', lat: -33.9620, lng: 18.4720, iconType: 'gym' },
 
-  // City Bowl & Atlantic Seaboard
-  { name: 'Kloof Street Dining Hub', category: 'Gardens · Vibrant Eateries, Coffee Shops & Delis', lat: -33.9315, lng: 18.4105, iconType: 'cafe' },
+  // ==========================================
+  // Atlantic Seaboard / Promenade & Seaboard
+  // ==========================================
+  // Outdoors & Attractions
+  { name: 'Sea Point Promenade', category: 'Sea Point · 11km Paved Oceanfront Sunset Strip', lat: -33.9160, lng: 18.3840, iconType: 'beach' },
+  { name: 'Green Point Urban Park', category: 'Green Point · Biodiverse Botanical Park & Outdoor Trails', lat: -33.9045, lng: 18.4095, iconType: 'trail' },
+  { name: 'Camps Bay Beach', category: 'Camps Bay · Palm-Lined White Sand Beach & Strip', lat: -33.9515, lng: 18.3780, iconType: 'beach' },
+  { name: 'Clifton 4th Beach', category: 'Clifton · Wind-Sheltered Granite Boulder Cove', lat: -33.9390, lng: 18.3760, iconType: 'beach' },
+  { name: 'Llandudno Beach', category: 'Llandudno · Picturesque Surf Beach & Sunset Rocks', lat: -34.0080, lng: 18.3410, iconType: 'beach' },
+
+  // Gyms & Fitness
+  { name: 'Virgin Active Green Point (Collection Club)', category: 'Green Point · Bill Peters Dr Collection Club & Olympic Lap Pool', lat: -33.906296, lng: 18.402848, iconType: 'gym' },
+  { name: 'Virgin Active The Point (Sea Point)', category: 'Sea Point · The Point Mall 76 Regent Rd Club', lat: -33.920726, lng: 18.383306, iconType: 'gym' },
+  { name: 'Anytime Fitness Sea Point', category: 'Sea Point · 142 Main Rd 24/7 Gym', lat: -33.913819, lng: 18.391226, iconType: 'gym' },
+  { name: 'Ignite Fitness Green Point', category: 'Green Point · 122 Somerset Rd Strength Arena', lat: -33.9090, lng: 18.4120, iconType: 'gym' },
+  { name: 'F45 Training Sea Point', category: 'Sea Point · 55 Regent Rd Functional Studio', lat: -33.9203, lng: 18.3842, iconType: 'gym' },
+  { name: 'BUA Fitness Camps Bay', category: 'Camps Bay · The Promenade Victoria Rd Beachfront Gym', lat: -33.9515, lng: 18.3780, iconType: 'gym' },
+  { name: 'SWEAT 1000 The Point', category: 'Sea Point · The Point Mall High-Intensity Studio', lat: -33.9206, lng: 18.3835, iconType: 'gym' },
+
+  // Cafes & Bakeries
+  { name: 'Jarryds Eatery & Bakery', category: 'Sea Point · 90 Regent Rd All-Day Brunch & Sourdough', lat: -33.9213, lng: 18.3828, iconType: 'cafe' },
+  { name: 'Naked Coffee Sea Point', category: 'Sea Point · Wisbeach & Regent Rd Artisanal Espresso', lat: -33.9200, lng: 18.3848, iconType: 'cafe' },
+  { name: 'Jason Bakery Green Point', category: 'Green Point · 83 Main Rd Celebrated Doughssants & Pastries', lat: -33.9085, lng: 18.4132, iconType: 'cafe' },
+  { name: 'The Strangers Club', category: 'Green Point · 1 Braemar Rd Shaded Garden Courtyard Cafe', lat: -33.9098, lng: 18.4075, iconType: 'cafe' },
+  { name: 'Pauline\'s Coffee & Wine', category: 'Sea Point · 297 Main Rd Minimalist Coffee Boutique', lat: -33.9182, lng: 18.3882, iconType: 'cafe' },
+  { name: 'Mojo Market Food Hall', category: 'Sea Point · 30 Regent Rd 30+ Artisan Coffee & Food Stalls', lat: -33.919297, lng: 18.385825, iconType: 'cafe' },
+  { name: 'De Waterkant Village Cafes', category: 'De Waterkant · Cape Quarter European Cobblestone Cafes', lat: -33.9160, lng: 18.4180, iconType: 'cafe' },
+
+  // Shops & Retail Centres
+  { name: 'The Point Mall (Sea Point)', category: 'Sea Point · 76 Regent Rd Checkers, Wellness & Dining', lat: -33.9207, lng: 18.3833, iconType: 'shop' },
+  { name: 'Cape Quarter Lifestyle Village', category: 'Green Point · 27 Somerset Rd SPAR Gourmet & Boutiques', lat: -33.9165, lng: 18.4178, iconType: 'shop' },
+  { name: 'V&A Waterfront Shopping Centre', category: 'Table Bay · Premier Flagship Mall, Dining & Marina', lat: -33.9040, lng: 18.4190, iconType: 'shop' },
+  { name: 'Regent Road Retail Strip & SPAR', category: 'Sea Point · Walkable Artisan Grocers & Pharmacies', lat: -33.9195, lng: 18.3860, iconType: 'shop' },
+  { name: 'Piazza Da Luz & Woolworths', category: 'Sea Point · 94 Regent Rd Woolworths Food & Boutiques', lat: -33.9218, lng: 18.3822, iconType: 'shop' },
+
+  // ==========================================
+  // City Bowl Enclaves
+  // ==========================================
+  // Outdoors & Attractions
   { name: 'Lion\'s Head Trailhead', category: 'City Bowl · Iconic Sunset Peak & Full Moon Hike', lat: -33.9350, lng: 18.3890, iconType: 'trail' },
   { name: 'Table Mountain Cableway', category: 'City Bowl · 7 New Wonders of Nature Aerial Station', lat: -33.9570, lng: 18.4030, iconType: 'attraction' },
   { name: 'Deer Park Trailhead', category: 'Vredehoek / Highlands · Scenic Foothill Trails', lat: -33.9430, lng: 18.4250, iconType: 'trail' },
   { name: 'Company\'s Garden', category: 'City Bowl · Historic Shaded Park & Tree Canopy', lat: -33.9275, lng: 18.4180, iconType: 'attraction' },
-  { name: 'Sea Point Promenade', category: 'Sea Point · 11km Paved Oceanfront Sunset Strip', lat: -33.9160, lng: 18.3840, iconType: 'attraction' },
-  { name: 'Camps Bay Beach', category: 'Camps Bay · Palm-Lined White Sand Beach & Strip', lat: -33.9515, lng: 18.3780, iconType: 'beach' },
-  { name: 'Clifton 4th Beach', category: 'Clifton · Wind-Sheltered Granite Boulder Cove', lat: -33.9390, lng: 18.3760, iconType: 'beach' },
-  { name: 'Llandudno Beach', category: 'Llandudno · Picturesque Surf Beach & Sunset Rocks', lat: -34.0080, lng: 18.3410, iconType: 'beach' },
-  { name: 'V&A Waterfront', category: 'Table Bay · Premier Dining, Shopping & Marina', lat: -33.9050, lng: 18.4210, iconType: 'attraction' },
-  { name: 'Virgin Active Wembley Square', category: 'Gardens · State-of-the-Art Health Club', lat: -33.932292, lng: 18.424188, iconType: 'gym' },
-  { name: 'Virgin Active Kloof Street', category: 'Gardens · 50 Kloof Street Health Club', lat: -33.929839, lng: 18.410876, iconType: 'gym' },
-  { name: 'Roark Gyms CBD', category: 'Cape Town CBD · Functional Strength & Conditioning', lat: -33.924669, lng: 18.414300, iconType: 'gym' },
-  { name: 'Virgin Active Green Point (Collection Club)', category: 'Green Point · Bill Peters Dr Collection Club & Olympic Lap Pool', lat: -33.906296, lng: 18.402848, iconType: 'gym' },
-  { name: 'BUC Fitness Club (The Point Mall)', category: 'Sea Point · 76 Regent Rd High-End Fitness & SWEAT 1000', lat: -33.920726, lng: 18.383306, iconType: 'gym' },
-  { name: 'Anytime Fitness Sea Point', category: 'Sea Point · 142 Main Rd 24/7 Gym', lat: -33.913819, lng: 18.391226, iconType: 'gym' },
-  { name: 'Ignite Fitness Green Point', category: 'Green Point Main Rd · Arena & Strength', lat: -33.9090, lng: 18.4120, iconType: 'gym' },
+
+  // Gyms & Fitness
+  { name: 'Virgin Active Wembley Square', category: 'Gardens · Wembley Square Flagship & 25m Lap Pool', lat: -33.932292, lng: 18.424188, iconType: 'gym' },
+  { name: 'Virgin Active Kloof Street', category: 'Gardens · 50 Kloof Street Multi-Floor Health Club', lat: -33.929839, lng: 18.410876, iconType: 'gym' },
+  { name: 'Roark Gyms Cape Town', category: 'Cape Town CBD · 130 Bree St Strength & Conditioning', lat: -33.924669, lng: 18.414300, iconType: 'gym' },
+  { name: 'Zone Fitness Kloof Street', category: 'Gardens · Lifestyle on Kloof Cardio & Weights', lat: -33.9295, lng: 18.4105, iconType: 'gym' },
+  { name: 'The Yard / SWEAT 1000 Kloof', category: 'Gardens · 70 Kloof St Functional Studio', lat: -33.9310, lng: 18.4100, iconType: 'gym' },
+  { name: 'Virgin Active Silo District', category: 'V&A Silo · Waterfront Boutique Collection Club', lat: -33.9090, lng: 18.4230, iconType: 'gym' },
+
+  // Cafes & Bakeries
+  { name: 'Truth Coffee Roasting', category: 'Gardens Edge · 36 Buitenkant St Steampunk Roastery', lat: -33.9282, lng: 18.4225, iconType: 'cafe' },
+  { name: 'Our Local (Kloof Street)', category: 'Gardens · 117 Kloof St Nursery Greenhouse Brunch', lat: -33.9348, lng: 18.4082, iconType: 'cafe' },
+  { name: 'Molten Toffee (Kloof Street)', category: 'Gardens · 161 Kloof St Neighborhood Espresso', lat: -33.9378, lng: 18.4060, iconType: 'cafe' },
+  { name: 'Manna Epicure (Kloof Street)', category: 'Gardens · 151 Kloof St French Bakery & Deli', lat: -33.9362, lng: 18.4070, iconType: 'cafe' },
+  { name: 'Honest Chocolate & Gin Bar', category: 'City Centre · 64A Wale St Courtyard Cafe & Bakes', lat: -33.9228, lng: 18.4172, iconType: 'cafe' },
+  { name: 'Red Sofa Cafe (Vredehoek)', category: 'Vredehoek · 21 Derry St Mountain View Cafe', lat: -33.9388, lng: 18.4282, iconType: 'cafe' },
+  { name: 'Clark\'s Dining Room & Cafe', category: 'CBD · 109 Bree St Breakfast & Coffee Institution', lat: -33.9238, lng: 18.4168, iconType: 'cafe' },
+
+  // Shops & Retail Centres
+  { name: 'Gardens Shopping Centre', category: 'Gardens · Mill & Buitenkant St Woolies, Delis & Books', lat: -33.9328, lng: 18.4178, iconType: 'shop' },
+  { name: 'Lifestyle on Kloof', category: 'Gardens · 50 Kloof St Woolworths Food & Wellness', lat: -33.9298, lng: 18.4108, iconType: 'shop' },
+  { name: 'Spar Derry Street (Vredehoek)', category: 'Vredehoek · Derry St Gourmet Community Grocer', lat: -33.9392, lng: 18.4290, iconType: 'shop' },
+  { name: 'Oranjezicht City Farm Market', category: 'Granger Bay · Cape Town Premier Organic Food Market', lat: -33.9015, lng: 18.4185, iconType: 'shop' },
+  { name: 'Bree Street Boutique Strip', category: 'City Centre · Bree St Fashion & Concept Boutiques', lat: -33.9235, lng: 18.4165, iconType: 'shop' },
 
   // Garden Route (George & Wilderness)
   { name: 'Victoria Bay (Vic Bay)', category: 'Garden Route · World-Renowned Right-Hand Pointbreak', lat: -33.9830, lng: 22.5480, iconType: 'surf' },
@@ -808,5 +924,245 @@ export function getAgencyReputationInfo(prop: any): AgencyReputationInfo {
     tooltipReason: agencyName ? `Managed by ${agencyName}${rating ? ` (${rating}★)` : ''}` : '',
   };
 }
+
+export const CAPE_TOWN_SUBURB_MEDIANS: Record<string, Record<number, number>> = {
+  // Specific micro-pockets first (matched longest-first)
+  capricorn: { 0: 6800, 1: 9000, 2: 12500, 3: 16500 },
+  'marina da gama': { 0: 7800, 1: 10000, 2: 14000, 3: 19500 },
+  'costa da gama': { 0: 7500, 1: 9500, 2: 13500, 3: 18500 },
+  northshore: { 0: 8500, 1: 11000, 2: 15000, 3: 21000 },
+  'hout bay harbour': { 0: 8000, 1: 10500, 2: 14500, 3: 20000 },
+  'scott estate': { 0: 10500, 1: 14000, 2: 19000, 3: 27000 },
+  'berg en dal': { 0: 11000, 1: 14500, 2: 20000, 3: 28000 },
+  'penzance estate': { 0: 10500, 1: 14000, 2: 19000, 3: 27000 },
+  gardens: { 0: 13000, 1: 16500, 2: 22000, 3: 32000 },
+  tamboerskloof: { 0: 13500, 1: 16800, 2: 23000, 3: 33000 },
+  oranjezicht: { 0: 13000, 1: 16500, 2: 22500, 3: 32000 },
+  higgovale: { 0: 15000, 1: 18000, 2: 26000, 3: 38000 },
+  vredehoek: { 0: 12500, 1: 15500, 2: 21000, 3: 28000 },
+  'sea point': { 0: 14000, 1: 17500, 2: 25000, 3: 36000 },
+  'green point': { 0: 14000, 1: 17500, 2: 25000, 3: 36000 },
+  'mouille point': { 0: 15000, 1: 19000, 2: 28000, 3: 42000 },
+  'de waterkant': { 0: 14500, 1: 18000, 2: 26000, 3: 36000 },
+  'camps bay': { 0: 17000, 1: 22000, 2: 35000, 3: 55000 },
+  clifton: { 0: 22000, 1: 28000, 2: 45000, 3: 75000 },
+  'bantry bay': { 0: 17000, 1: 22000, 2: 35000, 3: 52000 },
+  bakoven: { 0: 17000, 1: 22000, 2: 35000, 3: 52000 },
+  'hout bay': { 0: 9500, 1: 12500, 2: 17000, 3: 24000 },
+  llandudno: { 0: 18000, 1: 24000, 2: 38000, 3: 60000 },
+  noordhoek: { 0: 9000, 1: 12000, 2: 17500, 3: 26000 },
+  kommetjie: { 0: 8500, 1: 11000, 2: 16000, 3: 23000 },
+  scarborough: { 0: 8500, 1: 11000, 2: 16000, 3: 22000 },
+  'fish hoek': { 0: 7500, 1: 9500, 2: 13500, 3: 18000 },
+  'simons town': { 0: 8000, 1: 10000, 2: 14500, 3: 20000 },
+  muizenberg: { 0: 8000, 1: 10500, 2: 14500, 3: 20000 },
+  'kalk bay': { 0: 11000, 1: 14000, 2: 20000, 3: 28000 },
+  'st james': { 0: 11000, 1: 14000, 2: 20000, 3: 28000 },
+  clovelly: { 0: 8000, 1: 10000, 2: 14500, 3: 19000 },
+  rondebosch: { 0: 9500, 1: 12500, 2: 17500, 3: 24000 },
+  newlands: { 0: 11000, 1: 14000, 2: 20000, 3: 28000 },
+  claremont: { 0: 10000, 1: 13000, 2: 18000, 3: 25000 },
+  kenilworth: { 0: 9500, 1: 12000, 2: 16500, 3: 22000 },
+  constantia: { 0: 12000, 1: 15000, 2: 22000, 3: 34000 },
+  tokai: { 0: 9500, 1: 12000, 2: 17000, 3: 25000 },
+  woodstock: { 0: 9000, 1: 11500, 2: 16000, 3: 22000 },
+  observatory: { 0: 8500, 1: 11000, 2: 15500, 3: 21000 },
+  capri: { 0: 7500, 1: 9500, 2: 13500, 3: 18000 },
+  sunnydale: { 0: 8000, 1: 10000, 2: 14500, 3: 20000 },
+  'sun valley': { 0: 8500, 1: 10500, 2: 15000, 3: 21000 }
+};
+
+export interface EmpiricalAreaMedianEntry {
+  median_rent: number;
+  median_sqm_rate?: number | null;
+  count: number;
+}
+
+let empiricalMediansStore: Record<string, Record<string, EmpiricalAreaMedianEntry>> = {};
+
+export function setEmpiricalMarketMedians(
+  medians: Record<string, Record<string, EmpiricalAreaMedianEntry>>
+) {
+  empiricalMediansStore = medians || {};
+}
+
+export interface PropertyValuationContext {
+  isInsideCrimeCore?: boolean;
+  isInCrimeBuffer?: boolean;
+  hasEstateSecurity?: boolean;
+  isMainRoad?: boolean;
+  isLandlordOnSite?: boolean;
+  hasParking?: boolean;
+}
+
+export interface PropertyMarketValuation {
+  medianPrice: number;
+  baseMedianPrice: number;
+  areaLabel: string;
+  isEmpirical: boolean;
+  pctDiff: number;
+  isUnderpriced: boolean;
+  isOverpriced: boolean;
+  isFair: boolean;
+  isRiskAdjusted: boolean;
+  adjustmentNotes: string[];
+  badgeText: string;
+  badgeTooltip: string;
+}
+
+function formatAreaTitle(key: string): string {
+  return key
+    .split(' ')
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ''))
+    .join(' ');
+}
+
+export function getPropertyMarketValuation(
+  prop: { price?: number; bedrooms?: number; suburb?: string; address?: string; sqm?: number; price_value_pct?: number | null },
+  sampleContext?: Array<{ price?: number; bedrooms?: number; suburb?: string }>,
+  riskContext?: PropertyValuationContext
+): PropertyMarketValuation | null {
+  const price = prop.price;
+  if (!price || price <= 0) return null;
+
+  const beds = Math.max(0, Math.min(3, Math.round(prop.bedrooms ?? 1)));
+  const text = `${prop.address || ''} ${prop.suburb || ''}`.toLowerCase();
+  const propSuburb = (prop.suburb || '').toLowerCase().trim();
+
+  let baseMedianPrice: number | null = null;
+  let medianSqmRate: number | null = null;
+  let areaLabel = prop.suburb?.trim() || 'Area';
+  let isEmpirical = false;
+
+  // 1. Empirical cache-derived median + R/m² (when >= 4 cached listings exist for area + beds)
+  for (const areaKey of Object.keys(CAPE_TOWN_SUBURB_MEDIANS)) {
+    if (text.includes(areaKey)) {
+      areaLabel = formatAreaTitle(areaKey);
+      const emp = empiricalMediansStore[areaKey]?.[String(beds)];
+      if (emp && emp.median_rent > 0) {
+        baseMedianPrice = emp.median_rent;
+        medianSqmRate = emp.median_sqm_rate ?? null;
+        isEmpirical = true;
+      }
+      break;
+    }
+  }
+
+  // 2. Curated micro-pocket / suburb baseline fallback
+  if (!baseMedianPrice) {
+    for (const [subName, bedMap] of Object.entries(CAPE_TOWN_SUBURB_MEDIANS)) {
+      if (text.includes(subName)) {
+        baseMedianPrice = bedMap[beds] || bedMap[1] || 16500;
+        areaLabel = formatAreaTitle(subName);
+        break;
+      }
+    }
+  }
+
+  // 3. Dynamic same-suburb sample median from active feed when >= 3 peers exist
+  if (!baseMedianPrice && sampleContext && sampleContext.length >= 3) {
+    const peers = sampleContext
+      .filter((p) => {
+        if (!p.price || p.price <= 0 || Math.round(p.bedrooms ?? 1) !== beds) return false;
+        if (propSuburb && p.suburb) {
+          return p.suburb.toLowerCase().trim() === propSuburb;
+        }
+        return true;
+      })
+      .map((p) => p.price as number)
+      .sort((a, b) => a - b);
+    if (peers.length >= 3) {
+      const mid = Math.floor(peers.length / 2);
+      baseMedianPrice = peers.length % 2 !== 0 ? peers[mid] : Math.round((peers[mid - 1] + peers[mid]) / 2);
+      isEmpirical = true;
+    }
+  }
+
+  if (!baseMedianPrice) {
+    baseMedianPrice = 16500;
+  }
+
+  // Blend monthly rent median with area R/m² rate when sqm is known
+  if (medianSqmRate && prop.sqm && prop.sqm >= 15) {
+    const sqmExpected = Math.max(baseMedianPrice * 0.75, Math.min(baseMedianPrice * 1.35, medianSqmRate * prop.sqm));
+    baseMedianPrice = Math.round((baseMedianPrice * 0.65 + sqmExpected * 0.35) / 100) * 100;
+  }
+
+  // 4. Real-world risk & friction adjustments on the expected median
+  let multiplier = 1.0;
+  const adjustmentNotes: string[] = [];
+
+  if (riskContext?.isInsideCrimeCore) {
+    const discount = riskContext.hasEstateSecurity ? 0.08 : 0.18;
+    multiplier -= discount;
+    adjustmentNotes.push(`-${Math.round(discount * 100)}% high-risk core${riskContext.hasEstateSecurity ? ' (estate mitigated)' : ''}`);
+  } else if (riskContext?.isInCrimeBuffer) {
+    const discount = riskContext.hasEstateSecurity ? 0.04 : 0.10;
+    multiplier -= discount;
+    adjustmentNotes.push(`-${Math.round(discount * 100)}% crime/township perimeter${riskContext.hasEstateSecurity ? ' (estate mitigated)' : ''}`);
+  }
+
+  if (riskContext?.isMainRoad) {
+    multiplier -= 0.08;
+    adjustmentNotes.push('-8% main-road arterial noise');
+  }
+
+  if (riskContext?.isLandlordOnSite) {
+    multiplier -= 0.07;
+    adjustmentNotes.push('-7% shared grounds / landlord on-site');
+  }
+
+  if (riskContext?.hasParking === false) {
+    multiplier -= 0.05;
+    adjustmentNotes.push('-5% street-only parking');
+  }
+
+  if (prop.sqm && prop.sqm > 0 && ((beds <= 1 && prop.sqm < 38) || (beds === 2 && prop.sqm < 55))) {
+    multiplier -= 0.06;
+    adjustmentNotes.push(`-6% compact floor area (${prop.sqm}m²)`);
+  }
+
+  multiplier = Math.max(0.65, Math.min(1.15, multiplier));
+  const medianPrice = Math.round((baseMedianPrice * multiplier) / 100) * 100;
+  const isRiskAdjusted = adjustmentNotes.length > 0;
+
+  const rawDiff = ((price - medianPrice) / medianPrice) * 100;
+  const pctDiff = Math.round(rawDiff);
+
+  const isUnderpriced = pctDiff <= -3;
+  const isOverpriced = pctDiff >= 3;
+  const isFair = !isUnderpriced && !isOverpriced;
+
+  const absPct = Math.abs(pctDiff);
+  const badgeText = isUnderpriced
+    ? `▼ ${absPct}% Under Value`
+    : isOverpriced
+    ? `▲ ${absPct}% Above Value`
+    : `⚖️ Fair Market Value`;
+
+  const sourceTag = isEmpirical ? 'live-cache' : 'baseline';
+  const adjSummary = isRiskAdjusted ? `; risk-adjusted (${adjustmentNotes.join(', ')})` : '';
+  const badgeTooltip = isUnderpriced
+    ? `${absPct}% below ${areaLabel} ${isRiskAdjusted ? 'risk-adjusted ' : ''}median (${sourceTag}: R ${medianPrice.toLocaleString()}/mo for ${beds} Bed${adjSummary}).`
+    : isOverpriced
+    ? `${absPct}% above ${areaLabel} ${isRiskAdjusted ? 'risk-adjusted ' : ''}median (${sourceTag}: R ${medianPrice.toLocaleString()}/mo for ${beds} Bed${adjSummary}).`
+    : `Priced in line with ${areaLabel} ${isRiskAdjusted ? 'risk-adjusted ' : ''}median (${sourceTag}: R ${medianPrice.toLocaleString()}/mo for ${beds} Bed${adjSummary}).`;
+
+  return {
+    medianPrice,
+    baseMedianPrice,
+    areaLabel,
+    isEmpirical,
+    pctDiff,
+    isUnderpriced,
+    isOverpriced,
+    isFair,
+    isRiskAdjusted,
+    adjustmentNotes,
+    badgeText,
+    badgeTooltip,
+  };
+}
+
 
 

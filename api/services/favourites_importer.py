@@ -18,6 +18,7 @@ from services.address_normalizer import normalize_and_geocode
 def find_listing_in_local_cache(lid: str) -> Optional[Dict[str, Any]]:
     """Checks memory and disk live caches for previously parsed listing details."""
     clean_lid = str(lid).replace('p24-', '')
+    candidates = []
     try:
         from services.live_search import _MEMORY_CACHE, _load_disk_cache
         _load_disk_cache()
@@ -25,7 +26,7 @@ def find_listing_in_local_cache(lid: str) -> Optional[Dict[str, Any]]:
             for it in entry.get("items", []):
                 cached_id = str(it.get("p24_id") or it.get("id") or "").replace('p24-', '')
                 if cached_id == clean_lid:
-                    return dict(it)
+                    candidates.append(dict(it))
     except Exception:
         pass
 
@@ -38,10 +39,28 @@ def find_listing_in_local_cache(lid: str) -> Optional[Dict[str, Any]]:
                     for it in entry.get("items", []):
                         cached_id = str(it.get("p24_id") or it.get("id") or "").replace('p24-', '')
                         if cached_id == clean_lid:
-                            return dict(it)
+                            candidates.append(dict(it))
         except Exception:
             pass
-    return None
+
+    if not candidates:
+        return None
+
+    # Pick best candidate (prefer one with detailed street address over repetitive/fallback)
+    def _score(item):
+        addr = str(item.get("address", ""))
+        parts = [p.strip().lower() for p in addr.split(",") if p.strip()]
+        score = 0
+        if len(parts) >= 2 and parts[0] == parts[1]:
+            score -= 100
+        if any(w in addr.lower() for w in ["street", "st", "road", "rd", "avenue", "ave", "place", "way", "lane", "crescent"]):
+            score += 50
+        if item.get("images") and len(item.get("images")) > 1:
+            score += 10
+        return score
+
+    candidates.sort(key=_score, reverse=True)
+    return candidates[0]
 
 
 def extract_p24_urls_and_ids(raw_text: str) -> List[Dict[str, str]]:
@@ -195,13 +214,23 @@ def parse_p24_html_tiles(html: str) -> List[Dict[str, Any]]:
         )
         addr_str = addr_el.get_text(' ', strip=True).strip(' ,') if addr_el else ""
 
+        if addr_str:
+            if loc_str and loc_str.lower() not in addr_str.lower():
+                full_addr = f"{addr_str}, {loc_str}, Cape Town"
+            elif "cape town" not in addr_str.lower():
+                full_addr = f"{addr_str}, Cape Town"
+            else:
+                full_addr = addr_str
+        else:
+            full_addr = f"{loc_str}, Cape Town" if loc_str else "Cape Town"
+
         parsed_items.append({
             "p24_id": lid,
             "url": full_href,
             "title": title_str,
             "price": price_val,
             "suburb": loc_str,
-            "address": addr_str or f"{loc_str}, Cape Town",
+            "address": full_addr,
             "bedrooms": beds_cnt,
             "bathrooms": baths_cnt,
             "parking_spaces": pkg_cnt,
@@ -240,34 +269,7 @@ async def resolve_single_p24_listing(lid: str, url: str) -> Optional[Dict[str, A
     # 2. Try fetching detail page HTML via polite p24_client
     html = await p24_client.fetch_html(clean_url, cache_ttl_seconds=86400 * 14)
     if not html:
-        # If Property24 Cloudflare blocks detail page fetch, construct valid fallback from URL
-        base_lat, base_lng = SUBURB_COORDS.get(inferred_suburb.lower(), (-33.9249, 18.4241))
-        return {
-            "p24_id": lid,
-            "url": clean_url,
-            "title": f"Apartment in {inferred_suburb}",
-            "price": 15000,
-            "suburb": inferred_suburb,
-            "address": f"{inferred_suburb}, Cape Town",
-            "bedrooms": 1,
-            "bathrooms": 1,
-            "sqm": 50,
-            "image": f"https://images.prop24.com/default/Crop600x400",
-            "images": [],
-            "lat": base_lat + random.uniform(-0.002, 0.002),
-            "lng": base_lng + random.uniform(-0.002, 0.002),
-            "has_garage": False,
-            "has_secure_bay": True,
-            "parking_type": "secure_bay",
-            "stove_type": "electric",
-            "has_inverter": False,
-            "pet_friendly": None,
-            "fibre_ready": True,
-            "agency_name": None,
-            "agency_rating": None,
-            "agency_risk_level": "low",
-            "description": f"Saved Property24 favourite in {inferred_suburb}."
-        }
+        return None
 
     soup = BeautifulSoup(html, 'html.parser')
 
@@ -310,11 +312,22 @@ async def resolve_single_p24_listing(lid: str, url: str) -> Optional[Dict[str, A
                     suburb = sub_name.title()
                     break
 
-    # Street Address
-    addr_el = soup.find(class_=re.compile(r'p24_address|p24_streetAddress|p24_maptitle', re.I))
-    addr_str = addr_el.get_text(' ', strip=True).strip(' ,') if addr_el else ""
-    if not addr_str or "contact agent" in addr_str.lower() or "to rent in" in addr_str.lower():
+    # Street Address (iterate to skip heading/title tags that share p24_address class)
+    addr_str = ""
+    for candidate_el in soup.find_all(class_=re.compile(r'p24_streetAddress|p24_addressPropOverview|p24_address|p24_maptitle', re.I)):
+        cand_text = candidate_el.get_text(' ', strip=True).strip(' ,')
+        cand_low = cand_text.lower()
+        if cand_text and not any(bad in cand_low for bad in ["to rent in", "contact agent", "bedroom", "apartment to rent", "flat to rent", "house to rent"]):
+            addr_str = cand_text
+            break
+
+    if not addr_str:
         addr_str = f"{suburb}, Cape Town"
+    elif "cape town" not in addr_str.lower():
+        if suburb and suburb.lower() not in addr_str.lower():
+            addr_str = f"{addr_str}, {suburb}, Cape Town"
+        else:
+            addr_str = f"{addr_str}, Cape Town"
 
     # Photos
     lightbox_ids = re.findall(r'data-(?:lightbox-src|image-url)="https://images\.prop24\.com/(\d+)', html)

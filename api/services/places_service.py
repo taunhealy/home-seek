@@ -420,10 +420,15 @@ async def get_place_details(query: str, lat: Optional[float] = None, lng: Option
     # 1. Query SQLite Cache
     try:
         with get_db_connection() as conn:
+            def _within_expected_coords(row_dict: Dict[str, Any]) -> bool:
+                if lat is None or lng is None or row_dict.get("lat") is None or row_dict.get("lng") is None:
+                    return True
+                return _haversine_distance_m(lat, lng, row_dict["lat"], row_dict["lng"]) <= 2500
+
             # Try exact query_key
             if clean_q:
                 row = conn.execute("SELECT * FROM places_details WHERE query_key = ?", (clean_q,)).fetchone()
-                if row:
+                if row and _within_expected_coords(dict(row)):
                     return dict(row)
 
                 # Try substring match on name or query_key
@@ -431,7 +436,7 @@ async def get_place_details(query: str, lat: Optional[float] = None, lng: Option
                 if q_words:
                     pattern = "%" + "%".join(q_words[:3]) + "%"
                     row = conn.execute("SELECT * FROM places_details WHERE query_key LIKE ? OR name LIKE ?", (pattern, pattern)).fetchone()
-                    if row:
+                    if row and _within_expected_coords(dict(row)):
                         return dict(row)
 
             # Try lat/lng proximity match within 250 meters
@@ -462,83 +467,122 @@ async def get_place_details(query: str, lat: Optional[float] = None, lng: Option
                 search_params["locationbias"] = "circle:30000@-33.9249,18.4241"
 
             async with httpx.AsyncClient(timeout=4.0) as client:
+                c = None
                 res = await client.get(search_url, params=search_params)
                 if res.status_code == 200:
                     data = res.json()
                     candidates = data.get("candidates", [])
                     if candidates:
-                        c = candidates[0]
-                        place_id = c.get("place_id")
-                        geom = c.get("geometry", {}).get("location", {})
+                        first_c = candidates[0]
+                        geom = first_c.get("geometry", {}).get("location", {})
                         c_lat = geom.get("lat")
                         c_lng = geom.get("lng")
-                        name = c.get("name", query)
-                        addr = c.get("formatted_address", "")
-                        rating = c.get("rating", 4.5)
-                        ratings_total = c.get("user_ratings_total", 0)
+                        if lat is None or lng is None or (c_lat is not None and c_lng is not None and _haversine_distance_m(lat, lng, c_lat, c_lng) <= 2000):
+                            c = first_c
 
-                        # Photo URL resolution (capture all available Google Place photos)
-                        photos = c.get("photos", [])
-                        photo_url = None
-                        photo_urls_list = []
-                        for p in photos[:10]:
-                            ref = p.get("photo_reference")
-                            if ref:
-                                p_url = f"/api/places/photo?photo_reference={ref}&maxwidth=1000"
-                                photo_urls_list.append(p_url)
-                        if photo_urls_list:
-                            photo_url = photo_urls_list[0]
+                # If findplacefromtext returned nothing or a distant mismatch, use location-constrained textsearch
+                if c is None and lat is not None and lng is not None:
+                    ts_url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+                    ts_params = {
+                        "query": search_input,
+                        "location": f"{lat},{lng}",
+                        "radius": 1500,
+                        "key": api_key,
+                    }
+                    ts_res = await client.get(ts_url, params=ts_params)
+                    if ts_res.status_code == 200:
+                        ts_results = ts_res.json().get("results", [])
+                        close_results = [
+                            r for r in ts_results
+                            if r.get("geometry", {}).get("location", {}).get("lat") is not None
+                            and _haversine_distance_m(
+                                lat, lng,
+                                r["geometry"]["location"]["lat"],
+                                r["geometry"]["location"]["lng"]
+                            ) <= 2500
+                        ]
+                        if close_results:
+                            close_results.sort(
+                                key=lambda r: _haversine_distance_m(
+                                    lat, lng,
+                                    r["geometry"]["location"]["lat"],
+                                    r["geometry"]["location"]["lng"]
+                                )
+                            )
+                            c = close_results[0]
 
-                        # Opening hours
-                        open_hours_obj = c.get("opening_hours", {})
-                        open_now = 1 if open_hours_obj.get("open_now") else 0
-                        weekday_text = open_hours_obj.get("weekday_text", [])
-                        hours_summary = " · ".join(weekday_text[:2]) if weekday_text else ("Open now" if open_now else "")
+                if c:
+                    place_id = c.get("place_id")
+                    geom = c.get("geometry", {}).get("location", {})
+                    c_lat = geom.get("lat")
+                    c_lng = geom.get("lng")
+                    name = c.get("name", query)
+                    addr = c.get("formatted_address", "")
+                    rating = c.get("rating", 4.5)
+                    ratings_total = c.get("user_ratings_total", 0)
 
-                        is_gym = any(w in clean_q for w in ["gym", "virgin", "fitness", "zone", "roark", "crossfit", "buc"])
-                        is_bar = any(w in clean_q for w in ["bar", "pub", "brew", "wine", "cocktail", "market", "cafe", "bistro", "lounge", "club", "tap", "beer", "nightlife", "nines", "blondie", "mojo", "caprice", "rockpool", "hugo"])
-                        category = "gym" if is_gym else ("bar_restaurant" if is_bar else "location")
+                    # Photo URL resolution (capture all available Google Place photos)
+                    photos = c.get("photos", [])
+                    photo_url = None
+                    photo_urls_list = []
+                    for p in photos[:10]:
+                        ref = p.get("photo_reference")
+                        if ref:
+                            p_url = f"/api/places/photo?photo_reference={ref}&maxwidth=1000"
+                            photo_urls_list.append(p_url)
+                    if photo_urls_list:
+                        photo_url = photo_urls_list[0]
 
-                        record = {
-                            "place_id": place_id or f"google_{int(time.time())}",
-                            "query_key": clean_q,
-                            "name": name,
-                            "formatted_address": addr,
-                            "lat": c_lat,
-                            "lng": c_lng,
-                            "rating": rating,
-                            "user_ratings_total": ratings_total,
-                            "photo_url": photo_url,
-                            "photo_urls": json.dumps(photo_urls_list),
-                            "open_now": open_now,
-                            "opening_hours": hours_summary,
-                            "website": f"https://www.google.com/maps/place/?q=place_id:{place_id}" if place_id else "",
-                            "phone": "",
-                            "google_maps_url": f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(name)}&query_place_id={place_id}",
-                            "category": category,
-                            "updated_at": time.time()
-                        }
+                    # Opening hours
+                    open_hours_obj = c.get("opening_hours", {})
+                    open_now = 1 if open_hours_obj.get("open_now") else 0
+                    weekday_text = open_hours_obj.get("weekday_text", [])
+                    hours_summary = " · ".join(weekday_text[:2]) if weekday_text else ("Open now" if open_now else "")
 
-                        # Save to SQLite
-                        with get_db_connection() as conn:
-                            conn.execute("""
-                                INSERT OR REPLACE INTO places_details (
-                                    place_id, query_key, name, formatted_address, lat, lng,
-                                    rating, user_ratings_total, photo_url, photo_urls,
-                                    open_now, opening_hours, website, phone, google_maps_url,
-                                    category, updated_at
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (
-                                record["place_id"], record["query_key"], record["name"],
-                                record["formatted_address"], record["lat"], record["lng"],
-                                record["rating"], record["user_ratings_total"], record["photo_url"],
-                                record["photo_urls"], record["open_now"], record["opening_hours"],
-                                record["website"], record["phone"], record["google_maps_url"],
-                                record["category"], record["updated_at"]
-                            ))
-                            conn.commit()
+                    is_gym = any(w in clean_q for w in ["gym", "virgin", "fitness", "zone", "roark", "crossfit", "buc"])
+                    is_bar = any(w in clean_q for w in ["bar", "pub", "brew", "wine", "cocktail", "market", "cafe", "bistro", "lounge", "club", "tap", "beer", "nightlife", "nines", "blondie", "mojo", "caprice", "rockpool", "hugo"])
+                    category = "gym" if is_gym else ("bar_restaurant" if is_bar else "location")
 
-                        return record
+                    record = {
+                        "place_id": place_id or f"google_{int(time.time())}",
+                        "query_key": clean_q,
+                        "name": name,
+                        "formatted_address": addr,
+                        "lat": c_lat,
+                        "lng": c_lng,
+                        "rating": rating,
+                        "user_ratings_total": ratings_total,
+                        "photo_url": photo_url,
+                        "photo_urls": json.dumps(photo_urls_list),
+                        "open_now": open_now,
+                        "opening_hours": hours_summary,
+                        "website": f"https://www.google.com/maps/place/?q=place_id:{place_id}" if place_id else "",
+                        "phone": "",
+                        "google_maps_url": f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(name)}&query_place_id={place_id}",
+                        "category": category,
+                        "updated_at": time.time()
+                    }
+
+                    # Save to SQLite
+                    with get_db_connection() as conn:
+                        conn.execute("""
+                            INSERT OR REPLACE INTO places_details (
+                                place_id, query_key, name, formatted_address, lat, lng,
+                                rating, user_ratings_total, photo_url, photo_urls,
+                                open_now, opening_hours, website, phone, google_maps_url,
+                                category, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            record["place_id"], record["query_key"], record["name"],
+                            record["formatted_address"], record["lat"], record["lng"],
+                            record["rating"], record["user_ratings_total"], record["photo_url"],
+                            record["photo_urls"], record["open_now"], record["opening_hours"],
+                            record["website"], record["phone"], record["google_maps_url"],
+                            record["category"], record["updated_at"]
+                        ))
+                        conn.commit()
+
+                    return record
         except Exception as e:
             print(f"[GOOGLE_PLACES ERROR] {e}")
 

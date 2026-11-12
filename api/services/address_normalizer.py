@@ -7,12 +7,22 @@ and persistently caches coordinates in SQLite.
 
 import os
 import re
+import math
 import time
 import sqlite3
 import urllib.request
 import urllib.parse
 import json
 from typing import Dict, Any, List, Optional
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    r = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 _DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "address_cache.db")
 
@@ -58,7 +68,27 @@ KNOWN_PRECISION_POINTS: Dict[str, tuple] = {
     "marais rd": (-33.9130563, 18.389973),
     "marais road": (-33.9130563, 18.389973),
     "marais road sea point": (-33.9130563, 18.389973),
+    "8 camberleigh place": (-33.909615, 18.411107),
+    "camberleigh place": (-33.909615, 18.411107),
+    "4 glenside road": (-33.909615, 18.411107),
+    "glenside road": (-33.909615, 18.411107),
+    "glenside rd": (-33.909615, 18.411107),
     "parioli court": (-33.932649, 18.407325),
+    "erf1423 warren st": (-33.9304, 18.4065),
+    "warren st": (-33.9304, 18.4065),
+    "warren street": (-33.9304, 18.4065),
+    "4 brighton street": (-34.0419121, 18.3514045),
+    "brighton street hout bay": (-34.0419121, 18.3514045),
+    "15 cecil street": (-34.0374611, 18.3505042),
+    "16 cecil street": (-34.0371347, 18.3498844),
+    "cecil street hout bay": (-34.0372979, 18.3501943),
+    "35 princess st": (-34.0408432, 18.3574846),
+    "35 princess street": (-34.0408432, 18.3574846),
+    "princess st hout bay": (-34.0408432, 18.3574846),
+    "2 liverpool street": (-34.0375603, 18.3519009),
+    "liverpool street hout bay": (-34.0375603, 18.3519009),
+    "1 jad way": (-34.0211877, 18.3531866),
+    "16 wood road": (-34.038576, 18.36035),
     "brabazon court": (-33.940925, 18.422082),
     "dunkley square": (-33.930419, 18.416805),
     "roeland square": (-33.931215, 18.421689),
@@ -187,10 +217,54 @@ CAPE_TOWN_SUBURBS: Dict[str, tuple] = {
     "bantry bay": (-33.9290, 18.3800),
     "camps bay": (-33.9510, 18.3780),
     "bakoven": (-33.9590, 18.3740),
-    "hout bay": (-34.0440, 18.3580),
+    "hout bay": (-34.0422, 18.3578),
+    "hout bay central": (-34.0418, 18.3578),
+    "hout bay harbour": (-34.055091, 18.3438309),
+    "northshore": (-34.0466597, 18.3485029),
+    "scott estate": (-34.0417377, 18.363814),
+    "penzance estate": (-34.0335651, 18.3601056),
+    "beach estate": (-34.0445, 18.3578),
+    "helgarda estate": (-34.0275473, 18.3467557),
+    "kronenzicht": (-34.0296282, 18.34416),
+    "bokkemanskloof": (-34.0188797, 18.3828762),
+    "longkloof": (-34.0110992, 18.3871665),
+    "berg en dal": (-34.0362555, 18.3601056),
+    "ruyteplaats": (-34.0122671, 18.3586222),
+    "tierboskloof": (-34.023137, 18.369663),
+    "victorskloof": (-34.0169114, 18.3578527),
+    "oakhurst": (-34.0201759, 18.3747927),
+    "llandudno": (-34.0090, 18.3420),
     "woodstock": (-33.9310, 18.4480),
     "salt river": (-33.9300, 18.4620),
     "pinelands": (-33.9330, 18.5080),
+    # George & Garden Route areas
+    "george": (-33.9630, 22.4617),
+    "george central": (-33.9632, 22.4597),
+    "bodorp": (-33.9560, 22.4570),
+    "bergsig": (-33.9520, 22.4680),
+    "heather park": (-33.9540, 22.4350),
+    "heatherlands": (-33.9490, 22.4440),
+    "fernridge": (-33.9440, 22.4600),
+    "camphersdrift": (-33.9555, 22.4510),
+    "denneoord": (-33.9505, 22.4780),
+    "dormehls drift": (-33.9660, 22.4680),
+    "loerie park": (-33.9720, 22.4820),
+    "george east": (-33.9650, 22.4780),
+    "george south": (-33.9740, 22.4580),
+    "blanco": (-33.9560, 22.4160),
+    "denver park": (-33.9710, 22.4720),
+    "george industrial": (-33.9860, 22.4780),
+    "pacaltsdorp": (-34.0120, 22.4620),
+    "kraaibosch": (-33.9820, 22.5250),
+    "blue mountain village": (-33.9790, 22.5110),
+    "le grand estate": (-34.0320, 22.4950),
+    "kingswood golf estate": (-33.9736, 22.4321),
+    "king george park": (-33.9610, 22.4430),
+    "bos en dal": (-33.9490, 22.4520),
+    "glenwood": (-33.9780, 22.5020),
+    "eden": (-33.9760, 22.4950),
+    "wilderness": (-33.9922, 22.5804),
+    "knysna": (-34.0363, 23.0471),
 }
 
 def normalize_address(raw_address: str, default_suburb: str = "") -> Dict[str, Any]:
@@ -207,8 +281,11 @@ def normalize_address(raw_address: str, default_suburb: str = "") -> Dict[str, A
         }
 
     raw = raw_address.strip()
-    # Normalize periods separating address parts (e.g. "Higgovale. Tamboerskloof" -> "Higgovale, Tamboerskloof")
+    # Normalize periods separating address parts & common P24 street suffix typos
     raw = re.sub(r'\.\s+', ', ', raw)
+    raw = re.sub(r'\bwoodroad\b', 'Wood Road', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'\bwy\b', 'Way', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'\bhoutbaai\b', 'Hout Bay', raw, flags=re.IGNORECASE)
     lower = raw.lower()
 
     # 1. Detect withheld or missing street addresses
@@ -450,17 +527,30 @@ def _geocode_with_google_places(building_or_query: str, default_suburb: str = ""
     return None
 
 BUILDING_PATTERNS = [
-    re.compile(r'\b(?:in|at|into)\s+(?:the\s+)?(?:sought-after\s+|prestigious\s+|popular\s+|secure\s+|exclusive\s+|stunning\s+|modern\s+|luxury\s+)?([A-Z][a-zA-Z0-9\s\'-]{2,30}?(?:Mansions|Court|Heights|Towers|Mews|Place|Manor|Apartments|Flats|Lofts|View|Sands|Ridge|Close|Gate|Estate|Square|Villas|Pavilion|Residences|Studios|Park|Quay|Lodge|Terrace|House))\b', re.I),
-    re.compile(r'\b([A-Z][a-zA-Z0-9\s\'-]{2,25}?(?:Mansions|Court|Heights|Towers|Mews|Manor|Lofts|Sands|Ridge|Square|Villas|Pavilion|Residences|Quay|Terrace))\b'),
-    re.compile(r'(?:to rent in|apartment in)\s+([A-Z][a-zA-Z0-9\s\'-]{2,30}?),\s*(?:[A-Z][a-z]+)', re.I),
-    re.compile(r'\b(\d{1,4}[a-zA-Z]?\s+[A-Z][a-zA-Z\s\'-]{2,25}?\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Way|Crescent|Cres|Boulevard|Blvd|Close|Cl))\b')
+    # 1. Exact numbered street address (e.g., "18 Sunset Avenue", "8 Peterhof Road")
+    re.compile(r'\b(\d{1,4}[a-zA-Z]?\s+[A-Z][a-zA-Z\s\'\u2019-]{2,25}?\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Way|Crescent|Cres|Boulevard|Blvd|Close|Cl))\b'),
+    # 2. Street corner / intersection (e.g., "corner of Beach Road and Milner Avenue")
+    re.compile(r'\b(?:corner|cnr)\s+of\s+([A-Z][a-zA-Z\'\u2019-]+(?:\s+[A-Z][a-zA-Z\'\u2019-]+){0,2}\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Way|Crescent|Cres|Boulevard|Blvd))(?:\s+(?:and|&)\s+[A-Z][a-zA-Z\'\u2019-]+(?:\s+[A-Z][a-zA-Z\'\u2019-]+){0,2}\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Way|Crescent|Cres|Boulevard|Blvd))?\b', re.I),
+    # 3. Prefix-named complexes (e.g., "Villa d'Algarve", "Casa Blanca", "Chateau...", "Monte...")
+    re.compile(r'\b((?:Villa|Casa|Chateau|Monte)\s+(?:d[\'\u2019]|de\s+|la\s+|del\s+)?[A-Z][a-zA-Z\'\u2019-]{2,24}(?:\s+[A-Z][a-zA-Z\'\u2019-]{2,20})?)', re.I),
+    # 4. Preposition + complex/building/estate name with suffix
+    re.compile(r'\b(?:in|at|into|to)\s+(?:the\s+)?(?:sought-after\s+|prestigious\s+|popular\s+|secure\s+|exclusive\s+|stunning\s+|modern\s+|luxury\s+)?([A-Z][a-zA-Z0-9\s\'\u2019-]{2,30}?(?:Mansions|Court|Heights|Towers|Mews|Place|Manor|Apartments|Flats|Lofts|View|Sands|Ridge|Close|Gate|Estate|Square|Villas|Pavilion|Residences|Studios|Park|Quay|Lodge|Terrace|House|Village|Palms|Cove|Gardens|Grove|Oaks))\b', re.I),
+    # 5. Standalone capitalized complex name with suffix
+    re.compile(r'\b([A-Z][a-zA-Z0-9\s\'\u2019-]{2,25}?(?:Mansions|Court|Heights|Towers|Mews|Manor|Lofts|Sands|Ridge|Square|Villas|Pavilion|Residences|Quay|Terrace|Estate|Palms|Village))\b'),
+    # 6. Preposition + street name without number (e.g., "just off Kloof Nek Road", "in Victoria Avenue")
+    re.compile(r'\b(?:in|on|along|just\s+off|off)\s+([A-Z][a-zA-Z\'\u2019-]+(?:\s+[A-Z][a-zA-Z\'\u2019-]+){0,2}\s+(?:Street|Road|Avenue|Drive|Lane|Way|Crescent|Boulevard|Close))\b'),
+    # 7. Unit-prefixed complex header (e.g., "142 Villa d'Algarve", "Unit 4 Ocean View") — strictly skips "2 Bed..."
+    re.compile(r'(?:^|\n|\bUnit\s+)\s*\d{1,4}[A-Za-z]?\s+(?!Bed(?:room)?\b|Bath(?:room)?\b|Month\b|Week\b|Day\b|Year\b|Min\b|Hour\b|Km\b|Sqm\b|Car\b|Garage\b|Parking\b|Person\b|People\b|Guest\b)([A-Z][a-zA-Z0-9\'\u2019-]+(?:\s+(?:d[\'\u2019])?[A-Z][a-zA-Z0-9\'\u2019-]+){1,3})\b'),
+    # 8. "to rent in <Complex>, <Suburb>" or "in <Complex>, <Suburb>"
+    re.compile(r'(?:to rent in|apartment in|unit in|situated in|located in|welcome to)\s+(?:the\s+)?(?:sought-after\s+)?([A-Z][a-zA-Z0-9\s\'\u2019-]{2,30}?)(?:,|\s+complex\b|\s+near\b)', re.I),
 ]
 
 EXCLUDED_BUILDINGS = {
     'bedroom house', 'bedroom apartment', 'bedroom flat', 'bed house',
-    'bed apartment', 'guest house', 'main house', 'town house',
-    'beach house', 'garden flat', 'family home', 'open plan',
-    'ground floor', 'first floor', 'second floor', 'top floor'
+    'bed apartment', 'bed flat', 'bed cottage', 'bed townhouse', 'bed studio',
+    'guest house', 'main house', 'town house', 'beach house', 'garden flat',
+    'family home', 'open plan', 'ground floor', 'first floor', 'second floor', 'top floor',
+    'main road'
 }
 
 def extract_building_or_street_from_text(text: str, default_suburb: str = "") -> Optional[str]:
@@ -471,8 +561,13 @@ def extract_building_or_street_from_text(text: str, default_suburb: str = "") ->
         m = pat.search(text)
         if m:
             cand = m.group(1).strip()
-            cand_clean = re.sub(r'^(?:a|an|the|this|that|in|at)\s+', '', cand, flags=re.I).strip()
-            if cand_clean.lower() not in EXCLUDED_BUILDINGS and len(cand_clean) > 3 and not cand_clean.lower().startswith('bedroom') and not cand_clean.lower().startswith('ground'):
+            cand_clean = re.sub(r'^(?:a|an|the|this|that|in|at|sought-after)\s+', '', cand, flags=re.I).strip()
+            low = cand_clean.lower()
+            if (
+                low not in EXCLUDED_BUILDINGS
+                and len(cand_clean) > 3
+                and not re.match(r'^(?:bed(?:room)?|bath(?:room)?|ground|first|second|top|month|year|south african)\b', low)
+            ):
                 return cand_clean
     return None
 
@@ -486,14 +581,14 @@ def resolve_property_precision(
     Precision resolver that turns generic 'Sea Point, Sea Point' or withheld addresses into
     exact verified building and street coordinates using Google Places & Mapbox.
     """
-    has_street = bool(re.search(r'\b(?:street|st|road|rd|avenue|ave|drive|dr|circle|cir|lane|ln|close|cl|crescent|cres|way|walk|terrace|boulevard|blvd)\b', raw_address, re.I))
+    has_street = bool(re.search(r'\b(?:street|st|road|rd|woodroad|avenue|ave|drive|dr|circle|cir|lane|ln|close|cl|crescent|cres|way|wy|walk|terrace|boulevard|blvd)\b', raw_address, re.I))
 
     if not has_street:
         combined_text = f"{title} {description}"
         detected = extract_building_or_street_from_text(combined_text, suburb)
         if detected:
             cache_key = f"{detected}, {suburb}" if suburb else detected
-            det_low = detected.lower()
+            det_low = detected.lower().strip()
 
             # 1. Check local precision points
             if det_low in KNOWN_PRECISION_POINTS:
@@ -509,28 +604,32 @@ def resolve_property_precision(
                     "confidence": "precision_anchor"
                 }
 
-            # 2. Check local SQLite cache
-            cached = get_cached_coordinates(cache_key)
-            if cached and not cached.get("is_withheld") and cached.get("confidence") != "none":
-                return cached
+            # Skip Google Places POI search if extracted text is just a bare residential pocket/suburb name
+            is_generic_pocket = any(det_low == s or det_low.endswith(s) for s in CAPE_TOWN_SUBURBS.keys())
+            sub_anchor = CAPE_TOWN_SUBURBS.get((suburb or "").lower().strip())
+            if not is_generic_pocket:
+                # 2. Check local SQLite cache
+                cached = get_cached_coordinates(cache_key)
+                if cached and not cached.get("is_withheld") and cached.get("confidence") != "none":
+                    return cached
 
-            # 3. Google Places API lookup
-            gp_res = _geocode_with_google_places(detected, default_suburb=suburb)
-            if gp_res:
-                save_cached_coordinates(cache_key, gp_res["clean_query"], suburb, False, gp_res["lat"], gp_res["lng"], "google_places_building")
-                return gp_res
+                # 3. Google Places API lookup (bounded to suburb center when known)
+                gp_res = _geocode_with_google_places(detected, default_suburb=suburb)
+                if gp_res and (not sub_anchor or _haversine_km(gp_res["lat"], gp_res["lng"], sub_anchor[0], sub_anchor[1]) <= 6.0):
+                    save_cached_coordinates(cache_key, gp_res["clean_query"], suburb, False, gp_res["lat"], gp_res["lng"], "google_places_building")
+                    return gp_res
 
-            # 4. Mapbox geocoding lookup
-            mb_res = _geocode_with_mapbox(f"{detected}, {suburb}")
-            if mb_res:
-                save_cached_coordinates(cache_key, mb_res["clean_query"], suburb, False, mb_res["lat"], mb_res["lng"], "mapbox_building")
-                return mb_res
+                # 4. Mapbox geocoding lookup
+                mb_res = _geocode_with_mapbox(f"{detected}, {suburb}")
+                if mb_res and (not sub_anchor or _haversine_km(mb_res["lat"], mb_res["lng"], sub_anchor[0], sub_anchor[1]) <= 6.0):
+                    save_cached_coordinates(cache_key, mb_res["clean_query"], suburb, False, mb_res["lat"], mb_res["lng"], "mapbox_building")
+                    return mb_res
 
-            # 5. Gemini AI Building Resolution
-            ai_res = _ai_resolve_address(f"{detected}, {suburb}", default_suburb=suburb)
-            if ai_res and not ai_res.get("is_withheld"):
-                save_cached_coordinates(cache_key, ai_res["clean_query"], suburb, False, ai_res["lat"], ai_res["lng"], "ai_building_resolved")
-                return ai_res
+                # 5. Gemini AI Building Resolution
+                ai_res = _ai_resolve_address(f"{detected}, {suburb}", default_suburb=suburb)
+                if ai_res and not ai_res.get("is_withheld") and (not sub_anchor or _haversine_km(ai_res["lat"], ai_res["lng"], sub_anchor[0], sub_anchor[1]) <= 6.0):
+                    save_cached_coordinates(cache_key, ai_res["clean_query"], suburb, False, ai_res["lat"], ai_res["lng"], "ai_building_resolved")
+                    return ai_res
 
     return geocode_address_precision(raw_address, default_suburb=suburb)
 
@@ -604,7 +703,20 @@ def geocode_address_precision(raw_address: str, default_suburb: str = "") -> Dic
     norm = normalize_address(raw_address, default_suburb)
     if norm["is_withheld"]:
         sub_key = norm["suburb"].lower().strip()
-        wlat, wlng = CAPE_TOWN_SUBURBS.get(sub_key, (-34.1070, 18.4710))
+        def_key = (default_suburb or "").lower().strip()
+        known_coords = CAPE_TOWN_SUBURBS.get(sub_key)
+        if not known_coords and sub_key and sub_key != def_key:
+            area_query = raw_address.strip() or (f"{norm['suburb']}, {default_suburb}" if default_suburb else norm["suburb"])
+            def_anchor = CAPE_TOWN_SUBURBS.get(def_key)
+            geo_area = _geocode_with_mapbox(area_query, default_suburb=default_suburb) or _geocode_with_google(area_query, default_suburb=default_suburb)
+            if geo_area and (not def_anchor or _haversine_km(geo_area["lat"], geo_area["lng"], def_anchor[0], def_anchor[1]) <= 15.0):
+                known_coords = (geo_area["lat"], geo_area["lng"])
+
+        wlat, wlng = (
+            known_coords
+            or CAPE_TOWN_SUBURBS.get(def_key)
+            or (-34.1070, 18.4710)
+        )
         save_cached_coordinates(raw_address, norm["clean_query"], norm["suburb"], True, wlat, wlng, "withheld")
         return {**norm, "lat": wlat, "lng": wlng}
 
@@ -613,19 +725,13 @@ def geocode_address_precision(raw_address: str, default_suburb: str = "") -> Dic
     if clean_cached:
         return clean_cached
 
-    # Tier 2: Mapbox Geocoding API (Primary nationwide provider - 100,000 free reqs/mo)
-    mapbox_res = _geocode_with_mapbox(norm["clean_query"], default_suburb=norm["suburb"])
-    if mapbox_res:
-        save_cached_coordinates(raw_address, mapbox_res["clean_query"], mapbox_res["suburb"], False, mapbox_res["lat"], mapbox_res["lng"], "mapbox")
-        return mapbox_res
+    # Known suburb anchor for sanity-checking Mapbox / Google / Nominatim hits
+    sub_anchor = (
+        CAPE_TOWN_SUBURBS.get((norm.get("suburb") or "").lower().strip())
+        or CAPE_TOWN_SUBURBS.get((default_suburb or "").lower().strip())
+    )
 
-    # Tier 3: Google Maps Geocoding API (Backup for tricky complexes/estates)
-    google_res = _geocode_with_google(norm["clean_query"], default_suburb=norm["suburb"])
-    if google_res:
-        save_cached_coordinates(raw_address, google_res["clean_query"], google_res["suburb"], False, google_res["lat"], google_res["lng"], "google_maps")
-        return google_res
-
-    # Tier 4: Offline Known Precision Points (Fallback when offline or external APIs unavailable)
+    # Tier 2: Offline Known Precision Points (Fast exact match for verified street/complex anchors)
     lower_raw = raw_address.lower()
     for point_key, (plat, plng) in sorted(KNOWN_PRECISION_POINTS.items(), key=lambda x: len(x[0]), reverse=True):
         if point_key in lower_raw or point_key in norm["clean_query"].lower():
@@ -638,6 +744,21 @@ def geocode_address_precision(raw_address: str, default_suburb: str = "") -> Dic
                 "lng": plng,
                 "confidence": "precision_anchor"
             }
+
+    # Tier 3: Mapbox Geocoding API (Primary nationwide provider - reject cross-suburb false hits)
+    mapbox_res = _geocode_with_mapbox(norm["clean_query"], default_suburb=norm["suburb"])
+    if mapbox_res and (not sub_anchor or _haversine_km(mapbox_res["lat"], mapbox_res["lng"], sub_anchor[0], sub_anchor[1]) <= 6.0):
+        save_cached_coordinates(raw_address, mapbox_res["clean_query"], mapbox_res["suburb"], False, mapbox_res["lat"], mapbox_res["lng"], "mapbox")
+        return mapbox_res
+
+    # Tier 4: Google Maps Geocoding API (High-accuracy ROOFTOP fallback for tricky streets/estates)
+    google_query = norm["clean_query"]
+    if default_suburb and default_suburb.lower() not in google_query.lower():
+        google_query = f"{google_query}, {default_suburb}"
+    google_res = _geocode_with_google(google_query, default_suburb=norm["suburb"])
+    if google_res and (not sub_anchor or _haversine_km(google_res["lat"], google_res["lng"], sub_anchor[0], sub_anchor[1]) <= 6.0):
+        save_cached_coordinates(raw_address, google_res["clean_query"], google_res["suburb"], False, google_res["lat"], google_res["lng"], "google_maps")
+        return google_res
 
     # Tier 5: Nominatim OSM Geocoding
     try:

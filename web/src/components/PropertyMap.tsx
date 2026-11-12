@@ -29,10 +29,12 @@ import {
   X,
   Camera,
   CaretLeft,
-  CaretRight
+  CaretRight,
+  Tree,
+  Waves
 } from '@phosphor-icons/react';
-import { Wine, Dumbbell } from 'lucide-react';
-import { resolveLocationCoords } from '@/lib/geo';
+import { Wine, Dumbbell, ShoppingBag, Coffee as CoffeeLucide } from 'lucide-react';
+import { resolveLocationCoords, getPropertyMarketValuation } from '@/lib/geo';
 
 export interface AcousticAudit {
   estimated_db: number;
@@ -92,7 +94,28 @@ export interface PropertyMapItem {
   has_garage?: boolean;
   has_secure_bay?: boolean;
   deep_ai_audit?: any;
+  is_address_withheld?: boolean;
+  price_value_pct?: number | null;
   [key: string]: any;
+}
+
+/**
+ * Returns true when a listing lacks a verified street/building address
+ * (e.g., Property24 withheld the street address and only provided a suburb/pocket name).
+ */
+export function isMissingAddressListing(prop?: PropertyMapItem | null): boolean {
+  if (!prop) return false;
+  if (!prop.lat || !prop.lng || !Number.isFinite(prop.lat) || !Number.isFinite(prop.lng)) return true;
+  if (prop.is_address_withheld) return true;
+
+  const addr = (prop.address || '').trim().toLowerCase();
+  if (!addr) return true;
+  if (/\b(withheld|unavailable|not provided|upon request|contact agent|unknown address)\b/i.test(addr)) return true;
+
+  const hasStreetNumber = /^\s*\d{1,5}[a-z]?\s+/i.test(addr) || /,\s*\d{1,5}[a-z]?\s+/i.test(addr);
+  const hasStreetSuffix = /\b(?:street|st|road|rd|avenue|ave|drive|dr|way|wy|lane|ln|close|cl|crescent|cres|circle|cir|boulevard|blvd|terrace|terraces|walk|row|place|pl)\b/i.test(addr);
+  const hasNamedComplex = /\b(?:mews|court|mansions|heights|towers|manor|villas|lofts|residences|pavilion|square|quay|lodge|apartments|flats)\b/i.test(addr);
+  return !(hasStreetNumber || hasStreetSuffix || hasNamedComplex);
 }
 
 export interface ProximityAnchor {
@@ -104,6 +127,8 @@ export interface ProximityAnchor {
   max_commute_mins?: number;
   max_distance_km?: number;
   commute_mode?: 'driving' | 'transit' | 'walking' | 'bicycling' | string;
+  iconType?: 'trail' | 'surf' | 'beach' | 'attraction' | 'cafe' | 'gym' | 'shop' | 'work' | 'general' | 'hub';
+  category?: 'attraction' | 'gym' | 'hub' | 'trail' | 'cafe' | 'shop';
 }
 
 export interface ProximityFilterConfig {
@@ -338,6 +363,117 @@ export const CAPE_TOWN_HOTSPOTS = [
     type: 'nightlife',
     desc: 'Sunset beachfront cocktail lounge, weekend DJ sessions & bustling sidewalk tables.'
   },
+  // Hout Bay Bars & Nightlife Hotspots (Verified via Google Maps Places API)
+  {
+    id: 'hb_dunes_beach_bar',
+    name: 'Dunes Beach Restaurant & Bar (1 Beach Cres, Scott Estate, Hout Bay)',
+    shortName: 'Dunes Beach Bar',
+    lat: -34.045568,
+    lng: 18.358365,
+    base_db: 83,
+    radius_m: 170,
+    type: 'nightlife',
+    desc: 'Busy beachfront restaurant & sundowner bar overlooking Hout Bay Beach at 1 Beach Cres.'
+  },
+  {
+    id: 'hb_beach_bar_scott',
+    name: 'Beach Bar Hout Bay (Chapmans Peak Dr, Scott Estate, Hout Bay)',
+    shortName: 'Beach Bar Hout Bay',
+    lat: -34.0467565,
+    lng: 18.3609681,
+    base_db: 82,
+    radius_m: 150,
+    type: 'nightlife',
+    desc: 'Coastal cocktail & burger bar terrace at Scott Estate near Chapman\'s Peak Drive.'
+  },
+  {
+    id: 'hb_mexicola_locale',
+    name: 'Mexicola Locale (The Promenade, Melkhout Cres, Scott Estate, Hout Bay)',
+    shortName: 'Mexicola Locale',
+    lat: -34.0454378,
+    lng: 18.3593109,
+    base_db: 81,
+    radius_m: 140,
+    type: 'nightlife',
+    desc: 'Lively tequila bar & taco cantina along The Promenade in Scott Estate.'
+  },
+  {
+    id: 'hb_pakalolo_main',
+    name: 'Pakalolo Hout Bay (10 Main Rd, Hout Bay)',
+    shortName: 'Pakalolo Hout Bay',
+    lat: -34.0463979,
+    lng: 18.3621000,
+    base_db: 84,
+    radius_m: 160,
+    type: 'nightlife',
+    desc: 'Late-night sports & cocktail pub near the Beach Crescent / Main Rd circle.'
+  },
+  {
+    id: 'hb_woodcutters_arms',
+    name: 'Woodcutters Arms (37 Main Rd, Hout Bay)',
+    shortName: 'Woodcutters Arms',
+    lat: -34.0432265,
+    lng: 18.3591025,
+    base_db: 83,
+    radius_m: 150,
+    type: 'nightlife',
+    desc: 'Traditional village tavern, live sport screens & evening beer garden at 37 Main Rd.'
+  },
+  {
+    id: 'hb_the_vic_bar',
+    name: 'The Vic Restaurant and Bar (6 Victoria Ave, Hout Bay)',
+    shortName: 'The Vic Bar',
+    lat: -34.0434289,
+    lng: 18.3507791,
+    base_db: 82,
+    radius_m: 145,
+    type: 'nightlife',
+    desc: 'Neighbourhood pub, live music nights & evening dining at 6 Victoria Ave.'
+  },
+  {
+    id: 'hb_shirleys_bar',
+    name: "Shirley's (36 Victoria Rd, Hout Bay)",
+    shortName: "Shirley's Bar",
+    lat: -34.0411857,
+    lng: 18.3505785,
+    base_db: 82,
+    radius_m: 140,
+    type: 'nightlife',
+    desc: 'Classic late-night local pub along Victoria Road.'
+  },
+  {
+    id: 'hb_the_lookout_harbour',
+    name: 'The Lookout Hout Bay (65 Harbour Rd, Hout Bay Harbour)',
+    shortName: 'The Lookout Deck',
+    lat: -34.0501104,
+    lng: 18.3459515,
+    base_db: 83,
+    radius_m: 170,
+    type: 'nightlife',
+    desc: 'High-volume harbour deck bar & seafood hotspot with weekend DJ sets and live music.'
+  },
+  {
+    id: 'hb_urban_brewing',
+    name: 'Urban Brewing Company (31 Harbour Rd, Hout Bay Harbour)',
+    shortName: 'Urban Brewing Co.',
+    lat: -34.0550000,
+    lng: 18.3472222,
+    base_db: 83,
+    radius_m: 175,
+    type: 'nightlife',
+    desc: 'Craft brewery, taproom & live-band hotspot adjacent to Bay Harbour Market.'
+  },
+  {
+    id: 'hb_kronendal_1713',
+    name: 'Kronendal 1713 (140 Hout Bay Main Rd, Hout Bay)',
+    shortName: 'Kronendal 1713',
+    lat: -34.0325876,
+    lng: 18.3565152,
+    base_db: 79,
+    radius_m: 130,
+    type: 'nightlife',
+    desc: 'Historic courtyard restaurant & evening cocktail bar at 140 Hout Bay Main Rd.'
+  },
   {
     id: 'main_road_seapoint',
     name: 'Main Road Commercial Arterial (Sea Point)',
@@ -384,6 +520,7 @@ export interface CrimeHotspot {
 }
 
 export const CAPE_TOWN_CRIME_HOTSPOTS: CrimeHotspot[] = [
+  // --- City Bowl & CBD ---
   {
     id: 'crime_long_street_nightlife',
     name: 'Long & Loop Street Nightlife Corridor',
@@ -405,12 +542,88 @@ export const CAPE_TOWN_CRIME_HOTSPOTS: CrimeHotspot[] = [
   {
     id: 'crime_cape_town_station',
     name: 'Cape Town Station & Grand Parade Taxi Rank',
-    lat: -33.9240,
-    lng: 18.4280,
-    radius_m: 280,
+    lat: -33.92364,
+    lng: 18.42719,
+    radius_m: 300,
     risk_level: 'High Risk',
     incident_type: 'Aggressive street muggings, commuter theft & pickpocketing'
   },
+  {
+    id: 'crime_kloof_street_late_corridor',
+    name: 'Kloof St / Breda St Fringe (Late-Night)',
+    lat: -33.9310,
+    lng: 18.4120,
+    radius_m: 180,
+    risk_level: 'Moderate Risk',
+    incident_type: 'Ride-share distraction muggings & pavement phone-snatching'
+  },
+  {
+    id: 'crime_gardens_de_waal_park_perimeter',
+    name: 'De Waal Park & Molteno Reservoir Outer Edge (Late-Night)',
+    lat: -33.9385,
+    lng: 18.4105,
+    radius_m: 170,
+    risk_level: 'Moderate Risk',
+    incident_type: 'Dusk opportunistic muggings & car break-ins on unlit perimeters'
+  },
+  {
+    id: 'crime_vredehoek_quarry_edge',
+    name: 'Vredehoek Quarry / Mountain Footpath Trailhead',
+    lat: -33.9392,
+    lng: 18.4285,
+    radius_m: 210,
+    risk_level: 'Caution',
+    incident_type: 'Isolated hiker/runner muggings on remote boundary paths'
+  },
+  {
+    id: 'crime_tamboerskloof_military_road_trail',
+    name: 'Lion\'s Head Military Rd & Signal Hill Parking',
+    lat: -33.9315,
+    lng: 18.4010,
+    radius_m: 220,
+    risk_level: 'Moderate Risk',
+    incident_type: 'Sunset trail muggings & vehicle window-smashing at lookout parking'
+  },
+
+  // --- Atlantic Seaboard ---
+  {
+    id: 'crime_sea_point_promenade_late',
+    name: 'Sea Point Pavilion & Beach Rd (Late Night)',
+    lat: -33.9210,
+    lng: 18.3810,
+    radius_m: 200,
+    risk_level: 'Caution',
+    incident_type: 'Late-night phone snatching from parked cars & pavement revellers'
+  },
+  {
+    id: 'crime_sea_point_main_rd_fringe',
+    name: 'Sea Point Main Rd / Hall St Commercial Fringe',
+    lat: -33.9165,
+    lng: 18.3895,
+    radius_m: 170,
+    risk_level: 'Moderate Risk',
+    incident_type: 'Opportunistic pickpocketing & outdoor dining bag snatching'
+  },
+  {
+    id: 'crime_green_point_somerset_late',
+    name: 'Green Point Somerset Rd & Stadium Subway Edge',
+    lat: -33.9085,
+    lng: 18.4115,
+    radius_m: 190,
+    risk_level: 'Moderate Risk',
+    incident_type: 'Bar-closing altercation corridor & ride-share opportunistic theft'
+  },
+  {
+    id: 'crime_camps_bay_strip_late',
+    name: 'Camps Bay Victoria Rd Sunset Strip (Late Night)',
+    lat: -33.9515,
+    lng: 18.3775,
+    radius_m: 220,
+    risk_level: 'Caution',
+    incident_type: 'Late-night beach car break-ins & distracted tourist phone snatching'
+  },
+
+  // --- Southern Suburbs & Urban Fringe ---
   {
     id: 'crime_woodstock_lower_main',
     name: 'Woodstock Lower Main Rd / Albert Rd Strip',
@@ -421,13 +634,141 @@ export const CAPE_TOWN_CRIME_HOTSPOTS: CrimeHotspot[] = [
     incident_type: 'After-hours street robberies & vehicle window smashing'
   },
   {
-    id: 'crime_sea_point_promenade_late',
-    name: 'Sea Point Pavilion & Beach Rd (Late Night)',
-    lat: -33.9210,
-    lng: 18.3810,
+    id: 'crime_salt_river_station',
+    name: 'Salt River Station & Voortrekker Rd Corridor',
+    lat: -33.92755,
+    lng: 18.46469,
+    radius_m: 320,
+    risk_level: 'High Risk',
+    incident_type: 'Transit interchange robberies, phone snatching & after-hours industrial fringe risk'
+  },
+  {
+    id: 'crime_observatory_lower_main',
+    name: 'Observatory Lower Main & Station Subway',
+    lat: -33.93838,
+    lng: 18.47151,
+    radius_m: 240,
+    risk_level: 'High Risk',
+    incident_type: 'Nighttime student muggings, phone snatching & car prowling'
+  },
+  {
+    id: 'crime_mowbray_interchange',
+    name: 'Mowbray Taxi Rank & Main Rd Interchange',
+    lat: -33.94801,
+    lng: 18.47698,
+    radius_m: 280,
+    risk_level: 'High Risk',
+    incident_type: 'Dense commuter transit hub — pickpocketing, bag snatching & evening muggings'
+  },
+  {
+    id: 'crime_claremont_stadium_on_main',
+    name: 'Claremont Main Rd & Station Taxi Terminus',
+    lat: -33.98169,
+    lng: 18.46703,
+    radius_m: 260,
+    risk_level: 'High Risk',
+    incident_type: 'Aggressive street muggings, commuter theft & pickpocketing'
+  },
+  {
+    id: 'crime_wynberg_station_terminus',
+    name: 'Wynberg Station & Main Rd Taxi Terminus',
+    lat: -34.00491,
+    lng: 18.47118,
+    radius_m: 320,
+    risk_level: 'High Risk',
+    incident_type: 'Major transit interchange — elevated street robbery, phone snatching & evening foot-traffic risk'
+  },
+  {
+    id: 'crime_rondebosch_station_subway',
+    name: 'Rondebosch Main Rd & Station Underpass',
+    lat: -33.9635,
+    lng: 18.4760,
     radius_m: 200,
+    risk_level: 'Moderate Risk',
+    incident_type: 'Evening student muggings & transit foot-traffic snatching'
+  },
+
+  // --- South Peninsula & Deep South ---
+  {
+    id: 'crime_hout_bay_hangberg',
+    name: 'Hangberg Township & Mountain Slope (Adjacent to Northshore)',
+    lat: -34.05252,
+    lng: 18.34028,
+    radius_m: 1050,
+    risk_level: 'High Risk',
+    incident_type: 'High-risk township fringe adjacent to Northshore & Harbour — elevated break-in, opportunistic mugging & perimeter risk outside secure estates'
+  },
+  {
+    id: 'crime_hout_bay_imizamo_yethu',
+    name: 'Imizamo Yethu Township & Mountain Slope (Hout Bay)',
+    lat: -34.02874,
+    lng: 18.36085,
+    radius_m: 950,
+    risk_level: 'High Risk',
+    incident_type: 'High-density mountain-slope township — elevated burglary, trespass & evening foot-traffic mugging risk on unfenced neighbouring streets'
+  },
+  {
+    id: 'crime_hout_bay_harbour_industrial',
+    name: 'Hout Bay Harbour & Industrial Access Zone',
+    lat: -34.05509,
+    lng: 18.34383,
+    radius_m: 450,
     risk_level: 'Caution',
-    incident_type: 'Late-night phone snatching from parked cars & pavement revellers'
+    incident_type: 'Nighttime opportunist theft, vehicle break-ins & industrial fringe access'
+  },
+  {
+    id: 'crime_vrygrond_capricorn',
+    name: 'Vrygrond / Overcome Heights Township (Adjacent to Capricorn & Muizenberg)',
+    lat: -34.08209,
+    lng: 18.48547,
+    radius_m: 1100,
+    risk_level: 'High Risk',
+    incident_type: 'High-density township bordering Capricorn & Marina da Gama — elevated burglary, opportunistic robbery & M5/Prince George Dr corridor risk'
+  },
+  {
+    id: 'crime_muizenberg_station_subway',
+    name: 'Muizenberg Station Subway & Atlantic Rd Strip',
+    lat: -34.10963,
+    lng: 18.46796,
+    radius_m: 240,
+    risk_level: 'Moderate Risk',
+    incident_type: 'Subway commuter muggings, pickpocketing & parking lot theft'
+  },
+  {
+    id: 'crime_kalk_bay_harbour_strip',
+    name: 'Kalk Bay Main Rd & Railway Subway',
+    lat: -34.1285,
+    lng: 18.4485,
+    radius_m: 160,
+    risk_level: 'Caution',
+    incident_type: 'Weekend tourist vehicle break-ins & fishing pier opportunism'
+  },
+  {
+    id: 'crime_fish_hoek_station_dune',
+    name: 'Fish Hoek Station & Coastal Dune Catwalk Edge',
+    lat: -34.13717,
+    lng: 18.43254,
+    radius_m: 220,
+    risk_level: 'Moderate Risk',
+    incident_type: 'Commuter platform muggings & dune pathway robberies'
+  },
+  {
+    id: 'crime_masiphumelele_township',
+    name: 'Masiphumelele Township (Noordhoek / Kommetjie Corridor)',
+    lat: -34.12920,
+    lng: 18.37642,
+    radius_m: 1100,
+    risk_level: 'High Risk',
+    incident_type: 'High-density township between Noordhoek, Sun Valley & Kommetjie — elevated perimeter burglary & Kommetjie Rd corridor risk'
+  },
+  {
+    id: 'crime_ocean_view_township',
+    name: 'Ocean View Township (Kommetjie / Red Hill Corridor)',
+    lat: -34.14954,
+    lng: 18.35343,
+    radius_m: 950,
+    risk_level: 'High Risk',
+    incident_type: 'High-density township & mountain-pass fringe — elevated opportunistic robbery & perimeter risk outside gated complexes'
   }
 ];
 
@@ -678,7 +1019,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   className = '',
   mode = 'default',
   selectedSuburbs = [],
-  searchSummary
+  searchSummary,
+  focusTarget
 }) => {
   const isSearchMode = mode === 'search';
   const containerRef = useRef<HTMLDivElement>(null);
@@ -725,18 +1067,118 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   const dragStartRef = useRef({ x: 0, y: 0 });
 
   const [hoveredProperty, setHoveredProperty] = useState<PropertyMapItem | null>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePropertyMouseEnter = useCallback((prop: PropertyMapItem) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setHoveredProperty(prop);
+  }, []);
+
+  const handlePropertyMouseLeave = useCallback(() => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredProperty(null);
+    }, 160);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    };
+  }, []);
   const [showAnchors, setShowAnchors] = useState(true);
   const [showRadius, setShowRadius] = useState(true);
   const [showNoiseRadar, setShowNoiseRadar] = useState(mode !== 'search');
+  const [showCrimeRadar, setShowCrimeRadar] = useState(true);
   const [isHudCollapsed, setIsHudCollapsed] = useState(false);
   const [isSearchRadarCollapsed, setIsSearchRadarCollapsed] = useState(false);
   const [isRadiusCollapsed, setIsRadiusCollapsed] = useState(false);
+  const [isMissingAddressCollapsed, setIsMissingAddressCollapsed] = useState(false);
 
-  // Bar / Nightlife Place Details & Photos Popover State (Google Places API)
-  const [inspectedBar, setInspectedBar] = useState<any | null>(null);
-  const [barDetailsCache, setBarDetailsCache] = useState<Record<string, any>>({});
-  const [isLoadingBarDetails, setIsLoadingBarDetails] = useState(false);
-  const [barActivePhotoIdx, setBarActivePhotoIdx] = useState<number>(0);
+  // Resolve effective coordinates for all properties, placing missing-address listings
+  // at the center of their known general area (with a tiny radial spread if multiple share the same area center)
+  const resolvedPropertyCoords = React.useMemo(() => {
+    const map = new Map<string, { lat: number; lng: number; isApproximateArea: boolean }>();
+    const approxBuckets = new Map<string, PropertyMapItem[]>();
+
+    for (const p of properties) {
+      const approx = isMissingAddressListing(p);
+      if (!approx) {
+        if (Number.isFinite(p.lat) && Number.isFinite(p.lng) && (p.lat !== 0 || p.lng !== 0)) {
+          map.set(p.id, { lat: p.lat, lng: p.lng, isApproximateArea: false });
+        }
+        continue;
+      }
+
+      const areaQuery = (p.address || p.suburb || '').trim();
+      const resolved = areaQuery ? resolveLocationCoords(areaQuery) : null;
+      const hasValidBackendCoords =
+        Number.isFinite(p.lat) && Number.isFinite(p.lng) && (p.lat !== 0 || p.lng !== 0);
+      const isOnlyGenericParentMatch =
+        resolved &&
+        p.suburb &&
+        resolved.label.toLowerCase() === p.suburb.toLowerCase() &&
+        areaQuery.toLowerCase() !== p.suburb.toLowerCase();
+      const hasSpecificResolvedArea =
+        resolved &&
+        (resolved.label.toLowerCase() !== 'cape town' || areaQuery.toLowerCase().includes('cape town')) &&
+        !(hasValidBackendCoords && isOnlyGenericParentMatch);
+
+      let baseLat = p.lat;
+      let baseLng = p.lng;
+      if (hasSpecificResolvedArea && resolved) {
+        baseLat = resolved.lat;
+        baseLng = resolved.lng;
+      }
+
+      if (Number.isFinite(baseLat) && Number.isFinite(baseLng) && (baseLat !== 0 || baseLng !== 0)) {
+        const bucketKey = `${baseLat.toFixed(4)},${baseLng.toFixed(4)}`;
+        const list = approxBuckets.get(bucketKey) || [];
+        list.push(p);
+        approxBuckets.set(bucketKey, list);
+        map.set(p.id, { lat: baseLat, lng: baseLng, isApproximateArea: true });
+      }
+    }
+
+    // Apply a subtle deterministic ring offset (~45m) when multiple approximate-area listings
+    // share the exact same suburb center so their markers remain individually clickable
+    for (const list of approxBuckets.values()) {
+      if (list.length <= 1) continue;
+      const radiusDeg = 0.00045;
+      list.forEach((p, idx) => {
+        const entry = map.get(p.id);
+        if (!entry) return;
+        const angle = (2 * Math.PI * idx) / list.length - Math.PI / 2;
+        map.set(p.id, {
+          lat: entry.lat + Math.sin(angle) * radiusDeg,
+          lng: entry.lng + Math.cos(angle) * radiusDeg,
+          isApproximateArea: true,
+        });
+      });
+    }
+
+    return map;
+  }, [properties]);
+
+  const mappableProperties = React.useMemo(
+    () => properties.filter((p) => resolvedPropertyCoords.has(p.id)),
+    [properties, resolvedPropertyCoords]
+  );
+  const missingAddressProperties = React.useMemo(
+    () => properties.filter((p) => isMissingAddressListing(p)),
+    [properties]
+  );
+
+  // Venue / Place Details & Photos Popover State (Google Places API for Bars, Cafes, Gyms, Shops)
+  const [inspectedPlace, setInspectedPlace] = useState<any | null>(null);
+  const [placeDetailsCache, setPlaceDetailsCache] = useState<Record<string, any>>({});
+  const [isLoadingPlaceDetails, setIsLoadingPlaceDetails] = useState(false);
+  const [placeActivePhotoIdx, setPlaceActivePhotoIdx] = useState<number>(0);
 
   const resolvePlacePhotoUrl = useCallback((url?: string) => {
     if (!url) return '';
@@ -747,26 +1189,29 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     return url;
   }, []);
 
-  const fetchBarDetails = useCallback(async (bar: any) => {
-    if (barDetailsCache[bar.id]) return;
-    setIsLoadingBarDetails(true);
-    setBarActivePhotoIdx(0);
+  const fetchPlaceDetails = useCallback(async (place: any) => {
+    if (!place) return;
+    const placeKey = place.id || place.label || place.name;
+    if (placeDetailsCache[placeKey]) return;
+    setIsLoadingPlaceDetails(true);
+    setPlaceActivePhotoIdx(0);
     try {
       const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-      const cleanQuery = bar.shortName || bar.name.split('(')[0].trim();
-      const res = await fetch(`${backendBase}/api/places/details?query=${encodeURIComponent(cleanQuery)}&lat=${bar.lat}&lng=${bar.lng}`);
+      const rawName = place.label || place.shortName || place.name || place.target_place || '';
+      const cleanQuery = rawName.split('(')[0].replace(/·.*$/, '').trim();
+      const res = await fetch(`${backendBase}/api/places/details?query=${encodeURIComponent(cleanQuery)}&lat=${place.lat}&lng=${place.lng}`);
       if (res.ok) {
         const data = await res.json();
         if (data.status === 'success' && data.place) {
-          setBarDetailsCache((prev) => ({ ...prev, [bar.id]: data.place }));
+          setPlaceDetailsCache((prev) => ({ ...prev, [placeKey]: data.place }));
         }
       }
     } catch (err) {
-      console.warn('[Places] Failed to fetch bar details:', err);
+      console.warn('[Places] Failed to fetch place details:', err);
     } finally {
-      setIsLoadingBarDetails(false);
+      setIsLoadingPlaceDetails(false);
     }
-  }, [barDetailsCache]);
+  }, [placeDetailsCache]);
 
   // Click-to-activate map focus (prevents page scroll hijacking)
   const [isMapActive, setIsMapActive] = useState(false);
@@ -807,9 +1252,10 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
 
   // Center map & calculate smart initial zoom on load
   useEffect(() => {
-    if (!isSearchMode && properties.length > 0) {
-      const lats = properties.map(p => p.lat);
-      const lngs = properties.map(p => p.lng);
+    const focusPool = mappableProperties.length > 0 ? mappableProperties : properties;
+    if (!isSearchMode && focusPool.length > 0) {
+      const lats = focusPool.map(p => p.lat);
+      const lngs = focusPool.map(p => p.lng);
       const minLat = Math.min(...lats);
       const maxLat = Math.max(...lats);
       const minLng = Math.min(...lngs);
@@ -822,7 +1268,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       setZoom(targetZ);
       targetZoomRef.current = targetZ;
     }
-  }, [properties, isSearchMode]);
+  }, [mappableProperties, properties, isSearchMode]);
 
   // Auto-center & frame in Search Mode when criteria change
   useEffect(() => {
@@ -862,15 +1308,34 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     }
   }, [isSearchMode, proximityFilter?.lat, proximityFilter?.lng, selectedSuburbs, anchors]);
 
-  // Center map when a property is selected (only if not currently dragging)
+  // Center map when a property with coordinates (verified or approximate area) is selected
   useEffect(() => {
     if (selectedPropertyId && !isDraggingRef.current) {
-      const p = properties.find((item) => item.id === selectedPropertyId);
-      if (p) {
-        setCenter({ lat: p.lat, lng: p.lng });
+      const coords = resolvedPropertyCoords.get(selectedPropertyId);
+      if (coords) {
+        setCenter({ lat: coords.lat, lng: coords.lng });
+        if (targetZoomRef.current < 15.0) {
+          targetZoomRef.current = 15.2;
+          setZoom(15.2);
+        }
       }
     }
-  }, [selectedPropertyId, properties]);
+  }, [selectedPropertyId, resolvedPropertyCoords]);
+
+  // Navigate map when focusTarget is explicitly triggered (e.g., clicking a listing card or anchor)
+  useEffect(() => {
+    if (!focusTarget || isDraggingRef.current) return;
+    const selectedCoords = selectedPropertyId ? resolvedPropertyCoords.get(selectedPropertyId) : null;
+    const targetLat = selectedCoords ? selectedCoords.lat : focusTarget.lat;
+    const targetLng = selectedCoords ? selectedCoords.lng : focusTarget.lng;
+    if (Number.isFinite(targetLat) && Number.isFinite(targetLng)) {
+      setCenter({ lat: targetLat, lng: targetLng });
+      if (typeof focusTarget.zoom === 'number' && Number.isFinite(focusTarget.zoom)) {
+        targetZoomRef.current = focusTarget.zoom;
+        setZoom(focusTarget.zoom);
+      }
+    }
+  }, [focusTarget]);
 
   // Unified Drag Handlers attached to window (zero drift, zero coordinate lag, rAF throttled)
   const startDrag = (clientX: number, clientY: number) => {
@@ -942,6 +1407,10 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         setIsDragging(false);
+        // Clear drag flag right after the current click event cycle so overlay panels never get stuck
+        setTimeout(() => {
+          hasDraggedRef.current = false;
+        }, 0);
       }
     };
 
@@ -1106,7 +1575,9 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   }
 
   // Selected property & active proximity anchor
-  const selectedProp = isSearchMode ? null : (properties.find((p) => p.id === selectedPropertyId) || properties[0] || null);
+  const selectedProp = isSearchMode
+    ? null
+    : (properties.find((p) => p.id === selectedPropertyId) || mappableProperties[0] || properties[0] || null);
   const activeAnchor =
     anchors.find((a) => a.id === selectedAnchorId) || anchors[0] || null;
 
@@ -1114,8 +1585,11 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     || activeAnchor?.label
     || (anchors.length > 0 ? anchors[0].label : 'Location Radius');
 
-  // Selected prop position
-  const propPos = selectedProp ? getScreenPos(selectedProp.lat, selectedProp.lng) : null;
+  // Selected prop map position (verified street address or approximate area center)
+  const selectedPropCoords = selectedProp ? resolvedPropertyCoords.get(selectedProp.id) : null;
+  const propPos = selectedPropCoords
+    ? getScreenPos(selectedPropCoords.lat, selectedPropCoords.lng)
+    : null;
 
   const lastRenderedPositionsRef = useRef<Record<string, { isCompact: boolean }>>({});
 
@@ -1137,7 +1611,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     }
 
     // Sort: selected property first, then hovered, then rank #1, then rest
-    const sorted = [...properties].sort((a, b) => {
+    const sorted = [...mappableProperties].sort((a, b) => {
       if (a.id === selectedPropertyId) return -1;
       if (b.id === selectedPropertyId) return 1;
       if (a.id === hoveredProperty?.id) return -1;
@@ -1146,7 +1620,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     });
 
     for (const prop of sorted) {
-      const pos = getScreenPos(prop.lat, prop.lng);
+      const coords = resolvedPropertyCoords.get(prop.id);
+      const pos = getScreenPos(coords ? coords.lat : prop.lat, coords ? coords.lng : prop.lng);
       const isSelected = prop.id === selectedPropertyId;
       const isHovered = prop.id === hoveredProperty?.id;
 
@@ -1194,14 +1669,17 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
 
     lastRenderedPositionsRef.current = result;
     return result;
-  }, [properties, selectedPropertyId, hoveredProperty, center, zoom, dimensions, activeAnchor]);
+  }, [mappableProperties, properties, selectedPropertyId, hoveredProperty, center, zoom, dimensions, activeAnchor]);
 
 
   // Nearest Noise Hotspot and Sound Shadow calculations for Selected Property
+  // Cap waveguide ray distance to 600m so noise vectors only connect to genuinely local sources
+  // and never span kilometres across Cape Town (e.g. Hout Bay to Camps Bay/CBD).
   const nearestHotspot = React.useMemo(() => {
     if (!selectedProp) return null;
-    let closest = CAPE_TOWN_HOTSPOTS[0];
-    let minDist = 999999;
+    const MAX_ACOUSTIC_RAY_M = 600;
+    let closest: (typeof CAPE_TOWN_HOTSPOTS)[number] | null = null;
+    let minDist = Infinity;
     for (const h of CAPE_TOWN_HOTSPOTS) {
       const d = calculateDistanceKm(selectedProp.lat, selectedProp.lng, h.lat, h.lng) * 1000;
       if (d < minDist) {
@@ -1209,18 +1687,28 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         closest = h;
       }
     }
+    if (!closest || minDist > MAX_ACOUSTIC_RAY_M) return null;
     return { ...closest, distanceM: Math.round(minDist) };
   }, [selectedProp]);
 
   const isPropShielded = React.useMemo(() => {
-    if (!selectedProp) return false;
-    if (selectedProp.acoustic_audit) {
-      return selectedProp.acoustic_audit.is_shielded;
+    if (!selectedProp) return true;
+    const audit = selectedProp.acoustic_audit;
+    if (audit && typeof audit.is_shielded === 'boolean') {
+      return audit.is_shielded;
     }
     const text = `${selectedProp.title} ${selectedProp.address}`.toLowerCase();
     if (text.includes('4 derwent') || text.includes('roberta')) return false; // direct Aruba waveguide
     if (text.includes('derwent')) return true; // around corner into sound shadow
-    return (nearestHotspot?.distanceM || 0) > 180;
+    if (audit && typeof audit.estimated_db === 'number') {
+      if (audit.estimated_db >= 60) return false;
+      if (audit.estimated_db <= 52) return true;
+    }
+    if (selectedProp.noise_risk === 'high' || selectedProp.noise_risk === 'moderate') {
+      return false;
+    }
+    if (!nearestHotspot) return true;
+    return nearestHotspot.distanceM > Math.max(nearestHotspot.radius_m || 180, 180);
   }, [selectedProp, nearestHotspot]);
 
 
@@ -1289,9 +1777,10 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   }, [selectedProp?.lat, selectedProp?.lng, activeAnchor?.lat, activeAnchor?.lng, activeAnchor?.id]);
 
   const resetView = () => {
-    if (properties.length > 0) {
-      const lats = properties.map(p => p.lat);
-      const lngs = properties.map(p => p.lng);
+    const focusPool = mappableProperties.length > 0 ? mappableProperties : properties;
+    if (focusPool.length > 0) {
+      const lats = focusPool.map(p => p.lat);
+      const lngs = focusPool.map(p => p.lng);
       const minLat = Math.min(...lats);
       const maxLat = Math.max(...lats);
       const minLng = Math.min(...lngs);
@@ -1312,6 +1801,95 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     // Rental ZAR
     if (price >= 1000) return `R ${(price / 1000).toFixed(price % 1000 === 0 ? 0 : 1)}k`;
     return `R ${price}`;
+  };
+
+  const renderHoverMiniCard = (property: PropertyMapItem) => {
+    const photoContent = (
+      <>
+        <img
+          src={property.image}
+          alt={property.title}
+          className="w-full h-full object-cover transition-transform duration-300 group-hover/photo:scale-105"
+        />
+        <div className="absolute top-2 left-2 flex items-center gap-1">
+          {property.rank && (
+            <span className="bg-zinc-950/90 text-white text-[10px] font-black px-2 py-0.5 rounded-full backdrop-blur-xs">
+              #{property.rank}
+            </span>
+          )}
+          {property.fit_score && (
+            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full backdrop-blur-xs ${property.fit_score >= 75 ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'
+              }`}>
+              {property.fit_score}% Fit
+            </span>
+          )}
+        </div>
+        {property.url && (
+          <div className="absolute top-2 right-2 bg-zinc-950/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-xs opacity-0 group-hover/photo:opacity-100 transition-opacity flex items-center gap-1">
+            <span>P24</span>
+            <ArrowSquareOut size={11} weight="bold" />
+          </div>
+        )}
+        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-1.5 pointer-events-none">
+          {(() => {
+            const mVal = getPropertyMarketValuation(property);
+            if (!mVal) return <span />;
+            return (
+              <span
+                className={`text-[9.5px] font-black px-2 py-0.5 rounded-md backdrop-blur-md shadow-xs flex items-center gap-0.5 whitespace-nowrap ${
+                  mVal.isUnderpriced
+                    ? 'bg-emerald-950/90 text-emerald-400 border border-emerald-500/50'
+                    : mVal.isOverpriced
+                    ? 'bg-rose-950/90 text-rose-400 border border-rose-500/50'
+                    : 'bg-zinc-900/90 text-zinc-300 border border-zinc-700/50'
+                }`}
+                title={mVal.badgeTooltip}
+              >
+                <span>{mVal.badgeText}</span>
+              </span>
+            );
+          })()}
+          <div className="bg-zinc-950/80 backdrop-blur-md text-white font-extrabold text-xs px-2.5 py-0.5 rounded-lg shadow-sm whitespace-nowrap ml-auto">
+            {formatPricePill(property.price, property.currency)}
+          </div>
+        </div>
+      </>
+    );
+
+    return (
+      <div className="w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-zinc-200 p-2.5 animate-in fade-in zoom-in-95 duration-150">
+        {property.url ? (
+          <a
+            href={property.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            title="Open Property24 listing in new tab"
+            className="group/photo relative block w-full h-28 rounded-xl overflow-hidden mb-2 bg-zinc-100 cursor-pointer"
+          >
+            {photoContent}
+          </a>
+        ) : (
+          <div className="group/photo relative w-full h-28 rounded-xl overflow-hidden mb-2 bg-zinc-100">
+            {photoContent}
+          </div>
+        )}
+
+        <p className="text-xs font-bold text-zinc-950 truncate">{property.title}</p>
+        <p className="text-[11px] text-zinc-500 truncate mt-0.5">{property.address}</p>
+        {isMissingAddressListing(property) && (
+          <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 border border-dashed border-amber-300 text-[10px] font-bold text-amber-800">
+            <span>~</span>
+            <span>Approximate area center · Address unknown</span>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-100 text-[11px] font-semibold text-zinc-700">
+          <span>{property.bedrooms} bed • {property.bathrooms} bath</span>
+          {property.sqm ? <span>{property.sqm} m²</span> : <span>Verified Unit</span>}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -1401,6 +1979,11 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
             <stop offset="0%" stopColor="#10b981" stopOpacity="0.32" />
             <stop offset="55%" stopColor="#059669" stopOpacity="0.14" />
             <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="crime-radial" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#09090b" stopOpacity="0.28" />
+            <stop offset="60%" stopColor="#09090b" stopOpacity="0.10" />
+            <stop offset="100%" stopColor="#09090b" stopOpacity="0" />
           </radialGradient>
         </defs>
 
@@ -1546,6 +2129,58 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
           </g>
         )}
 
+        {/* Crime Hotspots Layer: Depth Layers of Low (Light Gray), Medium (Medium Gray/Black), High (Black) */}
+        {showCrimeRadar && (
+          <g id="crime-hotspots-svg-layer">
+            {CAPE_TOWN_CRIME_HOTSPOTS.map((c) => {
+              const cPos = getScreenPos(c.lat, c.lng);
+              const metersPerPixel = (156543.03392 * Math.cos((c.lat * Math.PI) / 180)) / Math.pow(2, zoom);
+              const radiusPx = Math.min(280, Math.max(16, c.radius_m / metersPerPixel));
+              const depthTier = getCrimeDepthTier(c);
+
+              return (
+                <g key={`crime-circle-${c.id}`}>
+                  {/* Layer 1 (Low Depth - Outer Light Gray Buffer) */}
+                  <circle
+                    cx={cPos.x}
+                    cy={cPos.y}
+                    r={radiusPx}
+                    fill="rgba(9, 9, 11, 0.09)"
+                    stroke={depthTier === 'low' ? 'rgba(9, 9, 11, 0.25)' : 'rgba(9, 9, 11, 0.16)'}
+                    strokeWidth="0.8"
+                    strokeDasharray="3 3"
+                  />
+
+                  {/* Layer 2 (Medium Depth - Middle Charcoal Layer for Medium & High hotspots) */}
+                  {(depthTier === 'moderate' || depthTier === 'high') && (
+                    <circle
+                      cx={cPos.x}
+                      cy={cPos.y}
+                      r={radiusPx * 0.66}
+                      fill="rgba(9, 9, 11, 0.22)"
+                      stroke="rgba(9, 9, 11, 0.38)"
+                      strokeWidth="0.9"
+                      strokeDasharray={depthTier === 'moderate' ? '3 2' : undefined}
+                    />
+                  )}
+
+                  {/* Layer 3 (High Depth - Deep Black Core for High hotspots) */}
+                  {depthTier === 'high' && (
+                    <circle
+                      cx={cPos.x}
+                      cy={cPos.y}
+                      r={radiusPx * 0.36}
+                      fill="rgba(9, 9, 11, 0.46)"
+                      stroke="rgba(9, 9, 11, 0.72)"
+                      strokeWidth="1.1"
+                    />
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         {/* Proximity Anchor Radius Rings & Dynamic Distance Filter Zone */}
         {showRadius && (
           <g id="proximity-radius-rings">
@@ -1585,10 +2220,13 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
             {/* 2. Anchor Radius Rings */}
             {showAnchors &&
               anchors.map((anchor) => {
+                const isTarget = activeAnchor?.id === anchor.id;
+                // Only render radius ring for the actively selected target anchor to keep map clean
+                if (!isTarget) return null;
+
                 const pos = getScreenPos(anchor.lat, anchor.lng);
                 const metersPerPixel = (156543.03392 * Math.cos((anchor.lat * Math.PI) / 180)) / Math.pow(2, zoom);
-                const isTarget = activeAnchor?.id === anchor.id;
-                const radiusMeters = (isTarget && !proximityFilter)
+                const radiusMeters = !proximityFilter
                   ? (effectiveRadiusKm * 1000)
                   : (anchor.max_distance_km ? anchor.max_distance_km * 1000 : 5000);
                 const radiusPixels = radiusMeters / metersPerPixel;
@@ -1599,10 +2237,10 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                       cx={pos.x}
                       cy={pos.y}
                       r={Math.max(15, radiusPixels)}
-                      fill={isTarget ? 'rgba(79, 70, 229, 0.04)' : 'rgba(0, 0, 0, 0.01)'}
-                      stroke={isTarget ? '#4f46e5' : '#a1a1aa'}
-                      strokeWidth={isTarget ? '1.8' : '1'}
-                      strokeDasharray={isTarget ? '4 3' : '3 3'}
+                      fill="rgba(79, 70, 229, 0.04)"
+                      stroke="#4f46e5"
+                      strokeWidth="1.8"
+                      strokeDasharray="4 3"
                     />
                   </g>
                 );
@@ -1617,8 +2255,11 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               const aPos = getScreenPos(anchor.lat, anchor.lng);
               const isTarget = activeAnchor?.id === anchor.id;
 
+              // Only connect route line to the active target anchor!
+              if (!isTarget) return null;
+
               // If this is the active target anchor and we have multi-point road geometry, render actual road path
-              if (isTarget && activeDrivingRoute && activeDrivingRoute.points.length > 2) {
+              if (activeDrivingRoute && activeDrivingRoute.points.length > 2) {
                 const polylinePoints = activeDrivingRoute.points
                   .map(p => {
                     const sp = getScreenPos(p[0], p[1]);
@@ -1661,7 +2302,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                 );
               }
 
-              // Fallback / secondary connection line
+              // Fallback connection line to target anchor while road network resolves
               return (
                 <g key={`line-${anchor.id}`}>
                   <line
@@ -1670,7 +2311,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                     x2={aPos.x}
                     y2={aPos.y}
                     stroke="#ffffff"
-                    strokeWidth={isTarget ? "4" : "2"}
+                    strokeWidth="4"
                     strokeLinecap="round"
                   />
                   <line
@@ -1678,9 +2319,9 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                     y1={propPos.y}
                     x2={aPos.x}
                     y2={aPos.y}
-                    stroke={isTarget ? "#4f46e5" : "#a1a1aa"}
-                    strokeWidth={isTarget ? "2" : "1"}
-                    strokeDasharray={isTarget ? "6 4" : "4 4"}
+                    stroke="#4f46e5"
+                    strokeWidth="2"
+                    strokeDasharray="6 4"
                     strokeLinecap="round"
                   />
                 </g>
@@ -1693,32 +2334,29 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       {/* Floating Noise Hotspot & Sanctuary Labels on Map (Level of Detail LOD) */}
       {showNoiseRadar && (
         <div id="noise-radar-html-labels">
-          {/* Sanctuary Labels */}
+          {/* Sanctuary Labels - Icon Only, Hover reveals Title */}
           {CAPE_TOWN_SANCTUARIES.map((s) => {
             const pos = getScreenPos(s.lat, s.lng);
             if (pos.x < -100 || pos.x > dimensions.width + 100 || pos.y < -100 || pos.y > dimensions.height + 100) return null;
             return (
               <div
                 key={`label-sanctuary-${s.id}`}
-                className="absolute z-15 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-                style={{ left: `${pos.x}px`, top: `${pos.y - 12}px` }}
+                className="absolute z-15 transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto group/sanctuary cursor-pointer"
+                style={{ left: `${pos.x}px`, top: `${pos.y - 6}px` }}
               >
-                {zoom >= 14 ? (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-600/95 text-white font-black text-[10px] shadow-lg border border-emerald-300/60 backdrop-blur-md">
-                    <ShieldCheck size={12} weight="bold" className="text-emerald-100 shrink-0" />
-                    <span className="truncate max-w-[140px]">{s.name}</span>
-                    <span className="bg-emerald-800/80 px-1.5 py-0.2 rounded text-[9px] text-emerald-200 font-extrabold">{s.ambient_db} dB</span>
+                <div className="relative">
+                  <div className="w-6 h-6 rounded-full bg-emerald-600/90 text-white shadow-md border-2 border-white flex items-center justify-center hover:scale-120 transition-transform">
+                    <ShieldCheck size={12} weight="bold" />
                   </div>
-                ) : (
-                  <div className="w-5 h-5 rounded-full bg-emerald-600/90 text-white shadow-md border border-white flex items-center justify-center">
-                    <ShieldCheck size={11} weight="bold" />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1 rounded-xl bg-zinc-950 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/sanctuary:opacity-100 pointer-events-none shadow-xl transition-opacity z-50 border border-emerald-400/30">
+                    {s.name} ({s.ambient_db} dB)
                   </div>
-                )}
+                </div>
               </div>
             );
           })}
 
-          {/* Hotspot Labels & Clickable Bars */}
+          {/* Hotspot Labels & Clickable Bars - Icon Only, Hover reveals Title */}
           {CAPE_TOWN_HOTSPOTS.map((h) => {
             const pos = getScreenPos(h.lat, h.lng);
             if (pos.x < -100 || pos.x > dimensions.width + 100 || pos.y < -100 || pos.y > dimensions.height + 100) return null;
@@ -1730,27 +2368,21 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                 onClick={(e) => {
                   e.stopPropagation();
                   setCenter({ lat: h.lat, lng: h.lng });
-                  setInspectedBar(h);
-                  fetchBarDetails(h);
+                  setInspectedPlace({ ...h, isBar: true });
+                  fetchPlaceDetails(h);
                 }}
               >
-                {zoom >= 13.8 ? (
+                <div className="relative">
                   <div
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-600/95 hover:bg-rose-700 text-white font-black text-[10px] shadow-lg border border-white/70 backdrop-blur-md transition-all duration-150 hover:scale-105 active:scale-95"
-                    title={`${h.name} (${h.base_db} dB) — Click to view Google Place photos`}
+                    className="w-6 h-6 rounded-full bg-rose-600/95 hover:bg-rose-700 text-white shadow-md border-2 border-white flex items-center justify-center transition-all hover:scale-125"
+                    title={`${h.name} (${h.base_db} dB)`}
                   >
-                    <Wine size={12} className="text-amber-200 shrink-0" />
-                    <span className="truncate max-w-[130px]">{h.shortName || h.name}</span>
-                    <span className="bg-rose-900/90 px-1.5 py-0.2 rounded text-[9px] text-amber-200 font-extrabold">{h.base_db} dB</span>
+                    <Wine size={12} className="text-white" />
                   </div>
-                ) : (
-                  <div
-                    className="w-5 h-5 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white shadow-md border border-white flex items-center justify-center transition-all hover:scale-125"
-                    title={`${h.name} (${h.base_db} dB) — Click to view Google Place photos`}
-                  >
-                    <Wine size={11} className="text-white" />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1 rounded-xl bg-zinc-950 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/bar:opacity-100 pointer-events-none shadow-xl transition-opacity z-50 border border-rose-500/30">
+                    {h.shortName || h.name} · {h.base_db} dB
                   </div>
-                )}
+                </div>
               </div>
             );
           })}
@@ -1770,26 +2402,89 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                 key="mid-ray-acoustic-badge"
                 className="absolute z-35 pointer-events-none transform -translate-x-1/2 -translate-y-1/2"
                 style={{ left: `${midX}px`, top: `${midY}px` }}
+                title={isPropShielded ? 'Acoustic Shadow: -14 dB Shielded' : `Direct Waveguide: ~${selectedProp?.acoustic_audit?.estimated_db || 73} dB`}
               >
-                <div className={`px-2.5 py-1 rounded-full text-[10px] font-black shadow-lg border flex items-center gap-1.5 backdrop-blur-md ${isPropShielded
+                <div className={`px-2 py-0.5 rounded-full text-[10px] font-black shadow-lg border flex items-center gap-1 backdrop-blur-md ${isPropShielded
                   ? 'bg-emerald-950/90 text-emerald-100 border-emerald-400/60 shadow-emerald-950/20'
                   : 'bg-rose-950/90 text-rose-100 border-rose-500/70 shadow-rose-950/20'
                   }`}>
                   {isPropShielded ? (
                     <>
-                      <ShieldCheck size={13} weight="bold" className="text-emerald-400 shrink-0" />
-                      <span>Acoustic Shadow: -14 dB Shielded</span>
+                      <ShieldCheck size={12} weight="bold" className="text-emerald-400 shrink-0" />
+                      <span>{zoom >= 15.2 ? 'Acoustic Shadow: -14 dB Shielded' : '-14 dB'}</span>
                     </>
                   ) : (
                     <>
-                      <SpeakerHigh size={13} weight="bold" className="text-rose-400 shrink-0" />
-                      <span>Direct Waveguide: ~{selectedProp?.acoustic_audit?.estimated_db || 73} dB</span>
+                      <SpeakerHigh size={12} weight="bold" className="text-rose-400 shrink-0" />
+                      <span>{zoom >= 15.2 ? `Direct Waveguide: ~${selectedProp?.acoustic_audit?.estimated_db || 73} dB` : `~${selectedProp?.acoustic_audit?.estimated_db || 73} dB`}</span>
                     </>
                   )}
                 </div>
               </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* Minimal Low-Hierarchy Crime Hotspot Pins with Skeleton Emoji 💀 (Blackness Opacity = Low / Medium / High Depth) */}
+      {showCrimeRadar && (
+        <div id="crime-hotspots-html-labels">
+          {CAPE_TOWN_CRIME_HOTSPOTS.map((c) => {
+            const pos = getScreenPos(c.lat, c.lng);
+            if (pos.x < -60 || pos.x > dimensions.width + 60 || pos.y < -60 || pos.y > dimensions.height + 60) return null;
+            const depthTier = getCrimeDepthTier(c);
+
+            // Blackness opacity determines depth: Black = High, Medium Gray = Medium, Light Gray = Low
+            const pinDepthClass =
+              depthTier === 'high'
+                ? 'bg-black/95 group-hover/crime:bg-black border-zinc-700 shadow-sm'
+                : depthTier === 'moderate'
+                ? 'bg-black/58 group-hover/crime:bg-black/85 border-white/80 shadow-xs'
+                : 'bg-black/28 group-hover/crime:bg-black/65 border-white/90 shadow-2xs';
+
+            const badgeDepthClass =
+              depthTier === 'high'
+                ? 'bg-black text-white border-zinc-600'
+                : depthTier === 'moderate'
+                ? 'bg-zinc-700 text-zinc-100 border-zinc-500'
+                : 'bg-zinc-300 text-zinc-900 border-zinc-400';
+
+            const depthLabel =
+              depthTier === 'high'
+                ? 'HIGH RISK'
+                : depthTier === 'moderate'
+                ? 'MEDIUM RISK'
+                : 'LOW RISK';
+
+            return (
+              <div
+                key={`label-crime-${c.id}`}
+                className="absolute z-15 hover:z-[55] transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto group/crime"
+                style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCenter({ lat: c.lat, lng: c.lng });
+                }}
+              >
+                {/* Minimal low-hierarchy skeleton pin shaded by blackness depth */}
+                <div className={`w-5 h-5 rounded-full text-white border flex items-center justify-center cursor-pointer transition-all duration-150 group-hover/crime:scale-125 text-[11px] leading-none select-none ${pinDepthClass}`}>
+                  <span role="img" aria-label="Crime Hotspot">💀</span>
+                </div>
+
+                {/* Hover Tooltip: Crime Hotspot Name + Depth Tier + Incident Type */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/crime:opacity-100 pointer-events-none shadow-xl transition-opacity duration-150 z-50 border border-zinc-700 flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs leading-none">💀</span>
+                    <span>{c.name}</span>
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-black border ${badgeDepthClass}`}>
+                      {depthLabel}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-medium text-zinc-400">{c.incident_type}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1801,37 +2496,40 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         const distKm = driveData
           ? driveData.distanceKm
           : calculateDrivingDistanceKm(selectedProp.lat, selectedProp.lng, activeAnchor.lat, activeAnchor.lng);
-        const durMins = driveData
+
+        const isWalking = activeAnchor.commute_mode === 'walking' || (activeAnchor.commute_mode !== 'driving' && distKm <= 1.2);
+        const isBiking = activeAnchor.commute_mode === 'bicycling';
+        const modeText = isWalking ? 'walk' : isBiking ? 'cycle' : 'drive';
+
+        const durMins = (driveData && !isWalking && !isBiking)
           ? driveData.durationMins
-          : calculateDrivingDurationMins(distKm);
+          : isWalking
+            ? Math.max(1, Math.round((distKm / 4.8) * 60))
+            : isBiking
+              ? Math.max(1, Math.round((distKm / 15.0) * 60))
+              : calculateDrivingDurationMins(distKm);
 
         const distText = `${distKm} km`;
-        const durText = `~${durMins} mins`;
+        const durText = `~${durMins} min${durMins === 1 ? '' : 's'}`;
 
         const dx = aPos.x - propPos.x;
         const dy = aPos.y - propPos.y;
         const totalPixels = Math.hypot(dx, dy);
 
         // Only render if anchor and property have sufficient breathing room AND zoom is sufficient
-        if (zoom < 13.2 || totalPixels < 110) return null;
+        if (zoom < 13.2 || totalPixels < 90) return null;
 
-        let t = 0.24;
-        const minRatio = Math.min(0.5, 48 / totalPixels);
-        t = Math.max(minRatio, Math.min(0.32, 64 / totalPixels));
-
-        let badgeX = propPos.x + dx * t;
-        let badgeY = propPos.y + dy * t;
+        // Position badge along route midpoint (t = 0.5) to avoid overlapping the property pin or anchor
+        let badgeX = propPos.x + dx * 0.5;
+        let badgeY = propPos.y + dy * 0.5;
 
         if (activeDrivingRoute && activeDrivingRoute.points.length > 5) {
-          const targetIndex = Math.min(activeDrivingRoute.points.length - 1, Math.max(1, Math.floor(activeDrivingRoute.points.length * 0.2)));
+          const targetIndex = Math.min(activeDrivingRoute.points.length - 1, Math.max(1, Math.floor(activeDrivingRoute.points.length * 0.5)));
           const roadPoint = activeDrivingRoute.points[targetIndex];
           const roadScreen = getScreenPos(roadPoint[0], roadPoint[1]);
           badgeX = roadScreen.x;
           badgeY = roadScreen.y;
         }
-
-        const isWalking = distKm <= 1.2 || activeAnchor.commute_mode === 'walking';
-        const isBiking = activeAnchor.commute_mode === 'bicycling';
 
         return (
           <div
@@ -1849,7 +2547,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               )}
               <span className="font-extrabold">{durText}</span>
               <span className="text-indigo-200 font-bold">·</span>
-              <span className="text-indigo-100 font-semibold">{distText} drive</span>
+              <span className="text-indigo-100 font-semibold">{distText} {modeText}</span>
             </div>
           </div>
         );
@@ -1875,37 +2573,68 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                 e.stopPropagation();
                 if (hasDraggedRef.current) return;
                 if (onSelectAnchor) onSelectAnchor(anchor);
+                setCenter({ lat: anchor.lat, lng: anchor.lng });
+                setInspectedPlace({ ...anchor, isAnchor: true });
+                fetchPlaceDetails(anchor);
               }}
               title={anchor.label}
             >
               <div className="relative group flex flex-col items-center">
                 {isSelected ? (
-                  zoom >= 13.8 ? (
-                    <>
-                      <span className="absolute -inset-2 rounded-full bg-emerald-400/30 animate-ping pointer-events-none" />
-                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold shadow-lg bg-zinc-950 text-white ring-2 ring-emerald-400 ring-offset-2 ring-offset-white shadow-emerald-950/20 whitespace-nowrap">
-                        <Target size={14} weight="bold" className="text-emerald-400 animate-pulse" />
-                        <span className="truncate max-w-[140px] tracking-tight">{anchor.label}</span>
-                      </div>
-                      <div className="w-2 h-2 rotate-45 -mt-1 shadow-2xs bg-zinc-950" />
-                    </>
-                  ) : (
-                    <div className="relative group/anchor">
-                      <span className="absolute -inset-1.5 rounded-full bg-emerald-400/40 animate-ping pointer-events-none" />
-                      <div className="w-8 h-8 rounded-full bg-zinc-950 text-white ring-2 ring-emerald-400 shadow-xl flex items-center justify-center hover:scale-110 transition-transform">
-                        <Target size={16} weight="bold" className="text-emerald-400" />
-                      </div>
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/anchor:opacity-100 pointer-events-none shadow-xl transition-opacity z-50 border border-emerald-400/30">
-                        {anchor.label}
-                      </div>
+                  <div className="relative group/anchor">
+                    <div className="w-8 h-8 rounded-full bg-zinc-950 text-white ring-2 ring-indigo-400 shadow-xl flex items-center justify-center hover:scale-110 transition-transform">
+                      {anchor.iconType === 'gym' ? (
+                        <Dumbbell size={15} className="text-amber-400" />
+                      ) : anchor.iconType === 'cafe' ? (
+                        <CoffeeLucide size={15} className="text-orange-400" />
+                      ) : anchor.iconType === 'shop' ? (
+                        <ShoppingBag size={15} className="text-emerald-400" />
+                      ) : anchor.iconType === 'beach' || anchor.iconType === 'surf' ? (
+                        <Waves size={15} weight="fill" className="text-cyan-400" />
+                      ) : anchor.iconType === 'trail' ? (
+                        <Tree size={15} weight="fill" className="text-emerald-400" />
+                      ) : (
+                        <Target size={15} weight="bold" className="text-indigo-400" />
+                      )}
                     </div>
-                  )
+                    {/* Tooltip on hover */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1 rounded-xl bg-zinc-950 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/anchor:opacity-100 pointer-events-none shadow-xl transition-opacity z-50 border border-indigo-400/40">
+                      {anchor.label}
+                    </div>
+                  </div>
                 ) : (
                   <div className="relative group/anchor">
-                    <div className="w-7 h-7 rounded-full bg-white hover:bg-zinc-100 text-zinc-900 border border-zinc-300 hover:border-zinc-900 shadow-md flex items-center justify-center hover:scale-110 transition-all">
-                      <Target size={14} weight="bold" className="text-zinc-700" />
+                    <div
+                      className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center hover:scale-115 transition-all border-2 ${
+                        anchor.iconType === 'gym'
+                          ? 'bg-amber-50 text-amber-800 border-amber-300 hover:border-amber-500'
+                          : anchor.iconType === 'cafe'
+                          ? 'bg-orange-50 text-orange-800 border-orange-300 hover:border-orange-500'
+                          : anchor.iconType === 'shop'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:border-emerald-500'
+                          : anchor.iconType === 'beach' || anchor.iconType === 'surf'
+                          ? 'bg-cyan-50 text-cyan-800 border-cyan-300 hover:border-cyan-500'
+                          : anchor.iconType === 'trail'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:border-emerald-500'
+                          : 'bg-white text-zinc-800 border-zinc-300 hover:border-zinc-800'
+                      }`}
+                    >
+                      {anchor.iconType === 'gym' ? (
+                        <Dumbbell size={13} className="text-amber-700" />
+                      ) : anchor.iconType === 'cafe' ? (
+                        <CoffeeLucide size={13} className="text-orange-700" />
+                      ) : anchor.iconType === 'shop' ? (
+                        <ShoppingBag size={13} className="text-emerald-700" />
+                      ) : anchor.iconType === 'beach' || anchor.iconType === 'surf' ? (
+                        <Waves size={13} weight="fill" className="text-cyan-700" />
+                      ) : anchor.iconType === 'trail' ? (
+                        <Tree size={13} weight="fill" className="text-emerald-700" />
+                      ) : (
+                        <Target size={13} weight="bold" className="text-zinc-700" />
+                      )}
                     </div>
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1 rounded-xl bg-zinc-900 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/anchor:opacity-100 pointer-events-none shadow-lg transition-opacity z-50">
+                    {/* Tooltip on hover */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1 rounded-xl bg-zinc-900 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/anchor:opacity-100 pointer-events-none shadow-lg transition-opacity z-50 border border-white/10">
                       {anchor.label}
                     </div>
                   </div>
@@ -1932,9 +2661,6 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                 {zoom < 13.8 ? (
                   /* Compact Target Icon for Zoomed-Out View */
                   <>
-                    {!isDragging && (
-                      <span className="absolute -inset-1.5 rounded-full bg-indigo-500/40 animate-ping pointer-events-none" />
-                    )}
                     <div className="w-7 h-7 rounded-full bg-indigo-600 text-white ring-2 ring-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform cursor-pointer">
                       <Target size={15} weight="bold" />
                     </div>
@@ -1946,11 +2672,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                 ) : (
                   /* Expanded Luxury Pill for Zoomed-In View */
                   <>
-                    {!isDragging && (
-                      <span className="absolute -inset-2.5 rounded-full bg-indigo-500/40 animate-ping pointer-events-none" />
-                    )}
                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-950 text-white font-extrabold text-xs shadow-2xl ring-2 ring-indigo-400 ring-offset-2 ring-offset-white whitespace-nowrap">
-                      <Target size={14} weight="bold" className={`text-indigo-400 ${isDragging ? '' : 'animate-pulse'}`} />
+                      <Target size={14} weight="bold" className="text-indigo-400" />
                       <span>{proximityFilter.label}</span>
                     </div>
                     <div className="w-2 h-2 rotate-45 -mt-1 shadow-2xs bg-zinc-950" />
@@ -2075,8 +2798,10 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       })()}
 
       {/* 5B. Property Markers Layer (Results / Default Mode) */}
-      {!isSearchMode && properties.map((property) => {
-        const pos = getScreenPos(property.lat, property.lng);
+      {!isSearchMode && mappableProperties.map((property) => {
+        const coords = resolvedPropertyCoords.get(property.id);
+        const pos = getScreenPos(coords ? coords.lat : property.lat, coords ? coords.lng : property.lng);
+        const isApproxArea = Boolean(coords?.isApproximateArea);
         const isSelected = (selectedPropertyId ? selectedPropertyId === property.id : selectedProp?.id === property.id);
         const isHovered = hoveredProperty?.id === property.id;
         const isTopMatch = property.rank === 1;
@@ -2090,7 +2815,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         return (
           <div
             key={property.id}
-            className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-none ${isSelected ? 'z-45' : isHovered ? 'z-40' : isCompact ? 'z-20' : 'z-25'
+            className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-none ${isHovered ? 'z-[60]' : isSelected ? 'z-[45]' : isCompact ? 'z-20' : 'z-30'
               }`}
             style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
             onClick={(e) => {
@@ -2098,43 +2823,79 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               if (hasDraggedRef.current) return;
               if (onSelectProperty) onSelectProperty(property);
             }}
-            onMouseEnter={() => setHoveredProperty(property)}
-            onMouseLeave={() => setHoveredProperty(null)}
+            onMouseEnter={() => handlePropertyMouseEnter(property)}
+            onMouseLeave={handlePropertyMouseLeave}
           >
             <div className="relative group">
-              {/* Selected radar glow */}
-              {isSelected && (
-                <span className="absolute -inset-1.5 rounded-full bg-emerald-400/30 animate-ping pointer-events-none" />
+              {/* Approximate-area dashed zone halo */}
+              {isApproxArea && (
+                <span
+                  className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed pointer-events-none ${
+                    isSelected
+                      ? 'w-16 h-16 border-amber-400 bg-amber-400/15'
+                      : 'w-12 h-12 border-amber-500/60 bg-amber-400/10'
+                  }`}
+                />
               )}
 
               {/* Compact Round Pin vs Full Luxury Price Badge */}
               {isCompact ? (
                 <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-md border-2 transition-transform group-hover:scale-125 ${isTopMatch
-                    ? 'bg-amber-400 text-zinc-950 border-white ring-1 ring-amber-400/50'
-                    : 'bg-zinc-900 text-white border-white hover:bg-zinc-800'
-                    }`}
-                  title={`#${property.rank} - ${formatPricePill(property.price, property.currency)}`}
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-md transition-transform group-hover:scale-125 ${
+                    isApproxArea
+                      ? 'border-2 border-dashed border-amber-400 bg-amber-950/90 text-amber-200 ring-1 ring-amber-400/40'
+                      : isTopMatch
+                      ? 'bg-amber-400 text-zinc-950 border-2 border-white ring-1 ring-amber-400/50'
+                      : 'bg-zinc-900 text-white border-2 border-white hover:bg-zinc-800'
+                  }`}
+                  title={
+                    isApproxArea
+                      ? `~Approx. Area (${property.address}) · #${property.rank} - ${formatPricePill(property.price, property.currency)}`
+                      : `#${property.rank} - ${formatPricePill(property.price, property.currency)}`
+                  }
                 >
-                  {property.rank || ''}
+                  {isApproxArea ? `~${property.rank || ''}` : property.rank || ''}
                 </div>
               ) : (
                 <div>
                   <div
-                    className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-md whitespace-nowrap ${isSelected
-                      ? 'bg-zinc-950 text-white ring-2 ring-emerald-400 ring-offset-2 ring-offset-white shadow-xl'
-                      : 'bg-white text-zinc-900 border border-zinc-200/90 hover:border-zinc-950 hover:bg-zinc-50 hover:shadow-lg'
-                      }`}
+                    className={`${zoom < 14.5 && !isSelected && !isHovered ? 'px-2 py-0.5 text-[11px] gap-1' : 'px-2.5 py-1 text-xs gap-1.5'} rounded-full font-bold transition-all flex items-center shadow-md whitespace-nowrap ${
+                      isApproxArea
+                        ? isSelected
+                          ? 'bg-zinc-900/95 text-amber-100 border-2 border-dashed border-amber-400 ring-2 ring-amber-400/40 ring-offset-2 ring-offset-white shadow-xl'
+                          : 'bg-amber-50/95 text-zinc-900 border-2 border-dashed border-amber-500/80 hover:border-amber-600 hover:bg-amber-100/95 hover:shadow-lg'
+                        : isSelected
+                        ? 'bg-zinc-950 text-white ring-2 ring-emerald-400 ring-offset-2 ring-offset-white shadow-xl'
+                        : 'bg-white text-zinc-900 border border-zinc-200/90 hover:border-zinc-950 hover:bg-zinc-50 hover:shadow-lg'
+                    }`}
+                    title={isApproxArea ? `Approximate area center (${property.address}) — exact street address unknown` : undefined}
                   >
                     {property.rank && (
-                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-0.5 ${isSelected
-                        ? 'bg-emerald-400 text-zinc-950'
-                        : isTopMatch
+                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-0.5 ${
+                        isApproxArea
+                          ? isSelected
+                            ? 'bg-amber-400 text-zinc-950'
+                            : 'bg-amber-200/90 text-amber-950'
+                          : isSelected
+                          ? 'bg-emerald-400 text-zinc-950'
+                          : isTopMatch
                           ? 'bg-amber-400 text-zinc-950'
                           : 'bg-zinc-100 text-zinc-800'
-                        }`}>
+                      }`}>
                         {isTopMatch && <Sparkle size={9} weight="fill" />}
                         #{property.rank}
+                      </span>
+                    )}
+
+                    {isApproxArea && (zoom >= 15.2 || isSelected || isHovered) && (
+                      <span
+                        className={`text-[9px] font-black uppercase tracking-wider px-1 py-0.5 rounded ${
+                          isSelected
+                            ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                            : 'bg-amber-200/70 text-amber-900'
+                        }`}
+                      >
+                        ~Area
                       </span>
                     )}
 
@@ -2143,59 +2904,162 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                     )}
 
                     <span className={isSelected ? 'font-black' : 'font-extrabold'}>
-                      {formatPricePill(property.price, property.currency)}
+                      {isApproxArea ? `~${formatPricePill(property.price, property.currency)}` : formatPricePill(property.price, property.currency)}
                     </span>
                   </div>
 
                   <div
-                    className={`w-2 h-2 rotate-45 -mt-1 mx-auto shadow-2xs transition-colors ${isSelected
-                      ? 'bg-zinc-950 ring-1 ring-emerald-400/50'
-                      : 'bg-white border-r border-b border-zinc-300 group-hover:bg-zinc-50'
-                      }`}
+                    className={`w-2 h-2 rotate-45 -mt-1 mx-auto shadow-2xs transition-colors ${
+                      isApproxArea
+                        ? isSelected
+                          ? 'bg-zinc-900 border-r border-b border-dashed border-amber-400'
+                          : 'bg-amber-50 border-r border-b border-dashed border-amber-500/80'
+                        : isSelected
+                        ? 'bg-zinc-950 ring-1 ring-emerald-400/50'
+                        : 'bg-white border-r border-b border-zinc-300 group-hover:bg-zinc-50'
+                    }`}
                   />
                 </div>
               )}
 
-              {/* Hover Mini-Card Tooltip (Floating Micro-Dossier) */}
+              {/* Hover Mini-Card Tooltip (Floating Micro-Dossier with invisible hover bridge) */}
               {isHovered && !isSelected && (
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-zinc-200 p-2.5 z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-150">
-                  <div className="relative w-full h-28 rounded-xl overflow-hidden mb-2 bg-zinc-100">
-                    <img
-                      src={property.image}
-                      alt={property.title}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute top-2 left-2 flex items-center gap-1">
-                      {property.rank && (
-                        <span className="bg-zinc-950/90 text-white text-[10px] font-black px-2 py-0.5 rounded-full backdrop-blur-xs">
-                          #{property.rank}
-                        </span>
-                      )}
-                      {property.fit_score && (
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full backdrop-blur-xs ${property.fit_score >= 75 ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'
-                          }`}>
-                          {property.fit_score}% Fit
-                        </span>
-                      )}
-                    </div>
-                    <div className="absolute bottom-2 right-2 bg-zinc-950/80 backdrop-blur-md text-white font-extrabold text-xs px-2.5 py-0.5 rounded-lg shadow-sm">
-                      {formatPricePill(property.price, property.currency)}
-                    </div>
-                  </div>
-
-                  <p className="text-xs font-bold text-zinc-950 truncate">{property.title}</p>
-                  <p className="text-[11px] text-zinc-500 truncate mt-0.5">{property.address}</p>
-
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-100 text-[11px] font-semibold text-zinc-700">
-                    <span>{property.bedrooms} bed • {property.bathrooms} bath</span>
-                    {property.sqm ? <span>{property.sqm} m²</span> : <span>Verified Unit</span>}
-                  </div>
+                <div
+                  className="absolute bottom-full left-1/2 transform -translate-x-1/2 pb-2 z-50 pointer-events-auto"
+                  onMouseEnter={() => handlePropertyMouseEnter(property)}
+                  onMouseLeave={handlePropertyMouseLeave}
+                >
+                  {renderHoverMiniCard(property)}
                 </div>
               )}
             </div>
           </div>
         );
       })}
+
+      {/* 5C. Missing Address Listings Container (Top Right) */}
+      {!isSearchMode && missingAddressProperties.length > 0 && (
+        <div
+          className="absolute top-4 right-4 z-40 pointer-events-auto flex flex-col items-end"
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+        >
+          <div className="relative">
+            {hoveredProperty && isMissingAddressListing(hoveredProperty) && !resolvedPropertyCoords.has(hoveredProperty.id) && (
+              <div
+                className="absolute top-0 right-full pr-2.5 z-50 pointer-events-auto"
+                onMouseEnter={() => handlePropertyMouseEnter(hoveredProperty)}
+                onMouseLeave={handlePropertyMouseLeave}
+              >
+                {renderHoverMiniCard(hoveredProperty)}
+              </div>
+            )}
+
+            <div className="w-52 sm:w-56 bg-white/95 backdrop-blur-md border border-zinc-200/90 rounded-2xl shadow-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMissingAddressCollapsed((prev) => !prev);
+                }}
+                className="w-full px-3 py-2 flex items-center justify-between gap-2 bg-zinc-50/80 hover:bg-zinc-100/80 border-b border-zinc-200/70 transition-colors cursor-pointer"
+                title="Listings without an exact street address on Property24"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <MapPin size={13} weight="fill" className="text-amber-500 shrink-0" />
+                  <span className="text-[11px] font-bold text-zinc-800 truncate">
+                    No Street Address
+                  </span>
+                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 shrink-0">
+                    {missingAddressProperties.length}
+                  </span>
+                </div>
+                {isMissingAddressCollapsed ? (
+                  <CaretDown size={13} weight="bold" className="text-zinc-500 shrink-0" />
+                ) : (
+                  <CaretUp size={13} weight="bold" className="text-zinc-500 shrink-0" />
+                )}
+              </button>
+
+              {!isMissingAddressCollapsed && (
+                <div className="max-h-[340px] overflow-y-auto p-1.5 flex flex-col gap-1.5">
+                  {missingAddressProperties.map((property) => {
+                    const isSelected = selectedPropertyId
+                      ? selectedPropertyId === property.id
+                      : selectedProp?.id === property.id;
+                    const isTopMatch = property.rank === 1;
+                    const isNoiseWarning =
+                      property.noise_risk === 'high' || (property.fit_score && property.fit_score < 50);
+                    const shortLocation = (property.address || property.title || 'Address withheld')
+                      .replace(/\s*\(Street Address Withheld\)/i, '')
+                      .split(',')[0]
+                      .trim();
+
+                    return (
+                      <button
+                        key={`missing-addr-${property.id}`}
+                        type="button"
+                        onMouseEnter={() => handlePropertyMouseEnter(property)}
+                        onMouseLeave={handlePropertyMouseLeave}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          hasDraggedRef.current = false;
+                          const coords = resolvedPropertyCoords.get(property.id);
+                          if (coords) {
+                            setCenter({ lat: coords.lat, lng: coords.lng });
+                            const nextZoom = Math.max(targetZoomRef.current, 15.5);
+                            targetZoomRef.current = nextZoom;
+                            setZoom(nextZoom);
+                          }
+                          if (!isSelected) {
+                            onSelectProperty?.(property);
+                          }
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl border text-left transition-all cursor-pointer ${isSelected
+                          ? 'bg-zinc-950 text-white border-zinc-950 shadow-sm ring-1 ring-emerald-400/50'
+                          : 'bg-white hover:bg-zinc-50 text-zinc-900 border-zinc-200 hover:border-zinc-300 shadow-2xs'
+                          }`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {property.rank && (
+                            <span
+                              className={`text-[9px] font-black px-1.5 py-0.5 rounded-full shrink-0 flex items-center gap-0.5 ${isTopMatch
+                                ? 'bg-amber-400 text-zinc-950'
+                                : isSelected
+                                  ? 'bg-emerald-500 text-white'
+                                  : 'bg-zinc-100 text-zinc-800'
+                                }`}
+                            >
+                              {isTopMatch && <Sparkle size={8} weight="fill" />}
+                              #{property.rank}
+                            </span>
+                          )}
+                          {isNoiseWarning && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"
+                              title="Acoustic Noise Risk Flagged"
+                            />
+                          )}
+                          <span
+                            className={`text-[10px] font-medium truncate ${isSelected ? 'text-zinc-300' : 'text-zinc-500'
+                              }`}
+                          >
+                            {shortLocation}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-extrabold shrink-0">
+                          {formatPricePill(property.price, property.currency)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
 
       {/* 6. Active Property & Proximity HUD Header (Top Left) */}
@@ -2399,16 +3263,28 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                       const distKm = driveData
                         ? driveData.distanceKm
                         : calculateDrivingDistanceKm(selectedProp.lat, selectedProp.lng, a.lat, a.lng);
-                      const durMins = driveData
+                      const isWalking = a.commute_mode === 'walking' || (a.commute_mode !== 'driving' && distKm <= 1.2);
+                      const isBiking = a.commute_mode === 'bicycling';
+                      const durMins = (driveData && !isWalking && !isBiking)
                         ? driveData.durationMins
-                        : calculateDrivingDurationMins(distKm);
+                        : isWalking
+                          ? Math.max(1, Math.round((distKm / 4.8) * 60))
+                          : isBiking
+                            ? Math.max(1, Math.round((distKm / 15.0) * 60))
+                            : calculateDrivingDurationMins(distKm);
+                      const modeLabel = isWalking ? 'walk' : isBiking ? 'bike' : 'drive';
                       const dist = `${distKm} km`;
-                      const dur = `~${durMins} mins`;
+                      const dur = `~${durMins} min${durMins === 1 ? '' : 's'}`;
 
                       return (
                         <div
                           key={a.id}
-                          onClick={() => onSelectAnchor && onSelectAnchor(a)}
+                          onClick={() => {
+                            if (onSelectAnchor) onSelectAnchor(a);
+                            setCenter({ lat: a.lat, lng: a.lng });
+                            setInspectedPlace({ ...a, isAnchor: true });
+                            fetchPlaceDetails(a);
+                          }}
                           className={`flex items-center justify-between text-[11px] font-medium px-2.5 py-1.5 rounded-xl cursor-pointer transition-all ${isSelectedAnchor
                             ? 'bg-zinc-950 text-white shadow-sm'
                             : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-800 border border-zinc-200/60'
@@ -2419,7 +3295,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                             {a.label}
                           </span>
                           <span className={`font-black shrink-0 ${isSelectedAnchor ? 'text-emerald-400' : 'text-indigo-600'}`}>
-                            {dur} • {dist}
+                            {dur} ({modeLabel}) • {dist}
                           </span>
                         </div>
                       );
@@ -2612,7 +3488,24 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
             </div>
           </div>
 
-          {/* 3. Proximity Anchors Toggle */}
+          {/* 3. Crime Hotspots Layer Toggle */}
+          <div className="relative group/layer-btn">
+            <button
+              onClick={() => setShowCrimeRadar(!showCrimeRadar)}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showCrimeRadar
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/25 ring-2 ring-rose-400/30'
+                : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                }`}
+              aria-label="Toggle Crime Hotspots Layer"
+            >
+              <ShieldWarning size={16} weight={showCrimeRadar ? 'fill' : 'bold'} />
+            </button>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+              Crime Hotspots: {showCrimeRadar ? 'Visible' : 'Hidden'}
+            </div>
+          </div>
+
+          {/* 4. Proximity Anchors Toggle */}
           <div className="relative group/layer-btn">
             <button
               onClick={() => setShowAnchors(!showAnchors)}
@@ -2650,50 +3543,100 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         </div>
       </div>
 
-      {/* Inspected Bar Rich Place Card with Google API Images Gallery */}
-      {inspectedBar && (() => {
-        const bPos = getScreenPos(inspectedBar.lat, inspectedBar.lng);
-        const cardX = Math.max(180, Math.min(dimensions.width - 180, bPos.x));
-        const isNearTop = bPos.y < 360;
+      {/* Inspected Venue / Place Rich Card with Google API Images Gallery */}
+      {inspectedPlace && (() => {
+        const pPos = getScreenPos(inspectedPlace.lat, inspectedPlace.lng);
+        const cardX = Math.max(180, Math.min(dimensions.width - 180, pPos.x));
+        const isNearTop = pPos.y < 360;
         const isNearLeft = cardX < 210;
         const isNearRight = cardX > dimensions.width - 210;
 
         const verticalClass = isNearTop ? 'top-6' : 'bottom-6';
         const horizontalClass = isNearLeft ? 'left-6' : isNearRight ? 'right-6' : 'left-1/2 -translate-x-1/2';
 
-        const details = barDetailsCache[inspectedBar.id] || null;
+        const placeKey = inspectedPlace.id || inspectedPlace.label || inspectedPlace.name;
+        const details = placeDetailsCache[placeKey] || null;
         const rawPhotos: string[] = Array.isArray(details?.photo_urls)
           ? details.photo_urls
           : (details?.photo_url ? [details.photo_url] : []);
         const photos = rawPhotos.map(resolvePlacePhotoUrl);
-        const currentPhoto = photos[barActivePhotoIdx] || (photos.length > 0 ? photos[0] : null);
+        const currentPhoto = photos[placeActivePhotoIdx] || (photos.length > 0 ? photos[0] : null);
+
+        const isBar = inspectedPlace.isBar || inspectedPlace.base_db !== undefined;
+        const iconType = inspectedPlace.iconType || (isBar ? 'bar' : (inspectedPlace.category || 'general'));
+        const isCafe = iconType === 'cafe';
+        const isGym = iconType === 'gym';
+        const isShop = iconType === 'shop';
+        const isBeach = iconType === 'beach' || iconType === 'surf';
+        const isTrail = iconType === 'trail';
+
+        const categoryTitle = isBar
+          ? 'Bar & Dining Hotspot'
+          : isCafe
+          ? 'Cafe & Bakery'
+          : isGym
+          ? 'Fitness & Gym'
+          : isShop
+          ? 'Shopping & Retail'
+          : isBeach
+          ? 'Beach & Coastal Spot'
+          : isTrail
+          ? 'Trailhead & Scenic Walk'
+          : 'Location Amenity';
+
+        const placeThemeBorder = isBar
+          ? 'border-rose-500/35'
+          : isCafe
+          ? 'border-orange-500/35'
+          : isGym
+          ? 'border-amber-500/35'
+          : isShop
+          ? 'border-emerald-500/35'
+          : isBeach
+          ? 'border-cyan-500/35'
+          : 'border-indigo-500/35';
+
+        const placeBadgeClass = isBar
+          ? 'border-rose-500/40 text-rose-300'
+          : isCafe
+          ? 'border-orange-500/40 text-orange-300'
+          : isGym
+          ? 'border-amber-500/40 text-amber-300'
+          : isShop
+          ? 'border-emerald-500/40 text-emerald-300'
+          : isBeach
+          ? 'border-cyan-500/40 text-cyan-300'
+          : 'border-indigo-500/40 text-indigo-300';
+
+        const placeName = details?.name || inspectedPlace.label || inspectedPlace.shortName || inspectedPlace.name;
+        const placeAddress = details?.formatted_address || inspectedPlace.target_place || inspectedPlace.label || inspectedPlace.name;
 
         return (
           <div
-            key={`bar-preview-${inspectedBar.id}`}
-            className={`absolute z-[95] ${verticalClass} ${horizontalClass} w-84 sm:w-96 rounded-2xl bg-zinc-950/95 backdrop-blur-xl text-white border border-rose-500/35 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 select-none`}
+            key={`place-preview-${placeKey}`}
+            className={`absolute z-[95] ${verticalClass} ${horizontalClass} w-84 sm:w-96 rounded-2xl bg-zinc-950/95 backdrop-blur-xl text-white border ${placeThemeBorder} shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 select-none`}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
             {/* Header / Hero Photo Carousel */}
             <div className="relative h-48 w-full bg-zinc-900 overflow-hidden group/gallery">
-              {isLoadingBarDetails && !currentPhoto ? (
+              {isLoadingPlaceDetails && !currentPhoto ? (
                 <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-zinc-400 gap-2">
-                  <div className="w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
+                  <div className={`w-6 h-6 border-2 ${isBar ? 'border-rose-500' : isCafe ? 'border-orange-500' : isGym ? 'border-amber-500' : 'border-indigo-500'} border-t-transparent rounded-full animate-spin`} />
                   <span className="text-[11px] font-semibold text-zinc-400">Loading Google Place Photos...</span>
                 </div>
               ) : currentPhoto ? (
                 <>
                   <img
                     src={currentPhoto}
-                    alt={details?.name || inspectedBar.name}
+                    alt={placeName}
                     className="w-full h-full object-cover transition-all duration-300 group-hover/gallery:scale-105"
                   />
                   {/* Photo Counter Pill */}
                   {photos.length > 1 && (
                     <div className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-black/75 backdrop-blur-md border border-white/20 text-white flex items-center gap-1.5 z-10 shadow-md">
-                      <Camera size={12} className="text-rose-400" />
-                      <span>{barActivePhotoIdx + 1} / {photos.length} Google Photos</span>
+                      <Camera size={12} className={isBar ? 'text-rose-400' : isCafe ? 'text-orange-400' : isGym ? 'text-amber-400' : 'text-indigo-400'} />
+                      <span>{placeActivePhotoIdx + 1} / {photos.length} Google Photos</span>
                     </div>
                   )}
 
@@ -2704,7 +3647,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setBarActivePhotoIdx((prev) => (prev > 0 ? prev - 1 : photos.length - 1));
+                          setPlaceActivePhotoIdx((prev) => (prev > 0 ? prev - 1 : photos.length - 1));
                         }}
                         className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-lg hover:scale-110 opacity-80 hover:opacity-100 z-10"
                         title="Previous photo"
@@ -2715,7 +3658,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setBarActivePhotoIdx((prev) => (prev < photos.length - 1 ? prev + 1 : 0));
+                          setPlaceActivePhotoIdx((prev) => (prev < photos.length - 1 ? prev + 1 : 0));
                         }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-lg hover:scale-110 opacity-80 hover:opacity-100 z-10"
                         title="Next photo"
@@ -2726,9 +3669,23 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                   )}
                 </>
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-tr from-zinc-900 via-rose-950/20 to-zinc-900 text-zinc-400">
-                  <Wine size={38} className="text-rose-400/70 mb-1" />
-                  <span className="text-xs font-semibold">{inspectedBar.shortName || inspectedBar.name}</span>
+                <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-tr from-zinc-900 via-zinc-900 to-zinc-950 text-zinc-400">
+                  {isBar ? (
+                    <Wine size={38} className="text-rose-400/70 mb-1" />
+                  ) : isCafe ? (
+                    <CoffeeLucide size={38} className="text-orange-400/70 mb-1" />
+                  ) : isGym ? (
+                    <Dumbbell size={38} className="text-amber-400/70 mb-1" />
+                  ) : isShop ? (
+                    <ShoppingBag size={38} className="text-emerald-400/70 mb-1" />
+                  ) : isBeach ? (
+                    <Waves size={38} weight="fill" className="text-cyan-400/70 mb-1" />
+                  ) : isTrail ? (
+                    <Tree size={38} weight="fill" className="text-emerald-400/70 mb-1" />
+                  ) : (
+                    <Target size={38} weight="bold" className="text-indigo-400/70 mb-1" />
+                  )}
+                  <span className="text-xs font-semibold">{placeName}</span>
                 </div>
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/30 to-transparent pointer-events-none" />
@@ -2736,17 +3693,31 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               {/* Close Button */}
               <button
                 type="button"
-                onClick={() => setInspectedBar(null)}
+                onClick={() => setInspectedPlace(null)}
                 className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-black/70 hover:bg-black text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-lg hover:scale-110 z-10"
-                title="Close venue card"
+                title="Close place card"
               >
                 <X size={14} weight="bold" />
               </button>
 
-              {/* Verified Google Places Badge */}
-              <div className="absolute bottom-2.5 left-3 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-black/80 backdrop-blur-md border border-rose-500/40 text-rose-300 z-10">
-                <Wine size={11} className="text-rose-400" />
-                <span>Bar & Dining Hotspot</span>
+              {/* Category Badge */}
+              <div className={`absolute bottom-2.5 left-3 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-black/80 backdrop-blur-md border ${placeBadgeClass} z-10`}>
+                {isBar ? (
+                  <Wine size={11} className="text-rose-400" />
+                ) : isCafe ? (
+                  <CoffeeLucide size={11} className="text-orange-400" />
+                ) : isGym ? (
+                  <Dumbbell size={11} className="text-amber-400" />
+                ) : isShop ? (
+                  <ShoppingBag size={11} className="text-emerald-400" />
+                ) : isBeach ? (
+                  <Waves size={11} weight="fill" className="text-cyan-400" />
+                ) : isTrail ? (
+                  <Tree size={11} weight="fill" className="text-emerald-400" />
+                ) : (
+                  <Target size={11} weight="bold" className="text-indigo-400" />
+                )}
+                <span>{categoryTitle}</span>
               </div>
 
               {/* Star Rating Badge */}
@@ -2766,10 +3737,10 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 overflow-x-auto scrollbar-none bg-zinc-950/60 border-b border-white/5">
                 {photos.slice(0, 8).map((p, idx) => (
                   <button
-                    key={`bar-thumb-${idx}`}
+                    key={`place-thumb-${idx}`}
                     type="button"
-                    onClick={() => setBarActivePhotoIdx(idx)}
-                    className={`relative w-12 h-9 rounded-lg overflow-hidden shrink-0 border transition-all cursor-pointer ${idx === barActivePhotoIdx ? 'border-rose-400 ring-2 ring-rose-500/50 scale-105' : 'border-white/10 opacity-60 hover:opacity-100'}`}
+                    onClick={() => setPlaceActivePhotoIdx(idx)}
+                    className={`relative w-12 h-9 rounded-lg overflow-hidden shrink-0 border transition-all cursor-pointer ${idx === placeActivePhotoIdx ? `${isBar ? 'border-rose-400 ring-rose-500/50' : isCafe ? 'border-orange-400 ring-orange-500/50' : 'border-indigo-400 ring-indigo-500/50'} ring-2 scale-105` : 'border-white/10 opacity-60 hover:opacity-100'}`}
                   >
                     <img src={p} alt="" className="w-full h-full object-cover" />
                   </button>
@@ -2781,23 +3752,44 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
             <div className="p-3.5 space-y-2.5">
               <div>
                 <h4 className="text-base font-extrabold text-white leading-snug tracking-tight">
-                  {details?.name || inspectedBar.shortName || inspectedBar.name}
+                  {placeName}
                 </h4>
                 <p className="text-[12px] text-zinc-300 line-clamp-2 mt-0.5 leading-relaxed flex items-start gap-1">
-                  <MapPin size={13} className="text-rose-400 shrink-0 mt-0.5" />
-                  <span>{details?.formatted_address || inspectedBar.name}</span>
+                  <MapPin size={13} className={isBar ? 'text-rose-400' : isCafe ? 'text-orange-400' : isGym ? 'text-amber-400' : 'text-indigo-400'} />
+                  <span>{placeAddress}</span>
                 </p>
               </div>
 
-              {/* Acoustic & Noise Context */}
-              <div className="flex items-center gap-2 p-2 rounded-xl bg-rose-950/40 border border-rose-500/30 text-[11px]">
-                <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white font-black text-[10px] shrink-0">
-                  {inspectedBar.base_db} dB
-                </span>
-                <span className="text-zinc-300 text-[11px] leading-snug">
-                  {inspectedBar.desc || `${inspectedBar.radius_m}m acoustic dispersion zone`}
-                </span>
-              </div>
+              {/* Acoustic & Noise Context OR Commute Proximity */}
+              {isBar && inspectedPlace.base_db !== undefined ? (
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-rose-950/40 border border-rose-500/30 text-[11px]">
+                  <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white font-black text-[10px] shrink-0">
+                    {inspectedPlace.base_db} dB
+                  </span>
+                  <span className="text-zinc-300 text-[11px] leading-snug">
+                    {inspectedPlace.desc || `${inspectedPlace.radius_m || 100}m acoustic dispersion zone`}
+                  </span>
+                </div>
+              ) : selectedProp ? (() => {
+                const distKm = calculateDrivingDistanceKm(selectedProp.lat, selectedProp.lng, inspectedPlace.lat, inspectedPlace.lng);
+                const isWalking = inspectedPlace.commute_mode === 'walking' || (inspectedPlace.commute_mode !== 'driving' && distKm <= 1.2);
+                const durMins = isWalking
+                  ? Math.max(1, Math.round((distKm / 4.8) * 60))
+                  : calculateDrivingDurationMins(distKm);
+                const modeLabel = isWalking ? 'walk' : 'drive';
+
+                return (
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-zinc-900 border border-white/10 text-[11px]">
+                    <span className="px-2 py-0.5 rounded-lg bg-indigo-600 text-white font-bold text-[10px] shrink-0 flex items-center gap-1">
+                      {isWalking ? <PersonSimpleWalk size={12} weight="bold" /> : <Car size={12} weight="fill" />}
+                      <span>~{durMins} mins {modeLabel}</span>
+                    </span>
+                    <span className="text-zinc-300 text-[11px] leading-snug truncate">
+                      {distKm} km from #{selectedProp.rank || ''} {selectedProp.title}
+                    </span>
+                  </div>
+                );
+              })() : null}
 
               {/* Opening Hours / Status */}
               {details?.opening_hours && (
@@ -2810,7 +3802,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               {/* Action Buttons */}
               <div className="pt-1.5 flex items-center gap-2 border-t border-white/10">
                 <a
-                  href={details?.google_maps_url || `https://maps.google.com/?q=${encodeURIComponent(`${details?.name || inspectedBar.name} Cape Town`)}`}
+                  href={details?.google_maps_url || `https://maps.google.com/?q=${encodeURIComponent(`${placeName} Cape Town`)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex-1 py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-white/10 hover:border-white/25 active:scale-95 shadow-sm"

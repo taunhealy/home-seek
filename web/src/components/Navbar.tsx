@@ -10,15 +10,16 @@ import {
   CaretDown, 
   House, 
   MagnifyingGlass, 
-  Buildings, 
   ChatCircleDots,
   List,
   X,
   Check,
   Bell,
   Sparkle,
-  FileText
+  Scales,
+  Crown
 } from '@phosphor-icons/react';
+import { getCompareList } from '@/lib/pro-plan';
 
 interface NavbarProps {
   user?: any;
@@ -32,10 +33,9 @@ interface NavbarProps {
 const NAV_ITEMS = [
   { label: 'Home', href: '/', icon: House },
   { label: 'AI Scout', href: '/discover', icon: Sparkle },
-  { label: 'Reports', href: '/reports', icon: FileText },
-  { label: 'Alerts', href: '/alerts', icon: Bell },
-  { label: 'Properties', href: '/properties', icon: Buildings },
   { label: 'Search', href: '/search', icon: MagnifyingGlass },
+  { label: 'Compare', href: '/compare', icon: Scales },
+  { label: 'Pro', href: '/pricing', icon: Crown },
   { label: 'Contact', href: '/contact', icon: ChatCircleDots },
 ];
 
@@ -51,7 +51,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [whatsappInput, setWhatsappInput] = useState('');
+  const [compareCount, setCompareCount] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setCompareCount(getCompareList().length);
+    const sync = () => setCompareCount(getCompareList().length);
+    window.addEventListener('homeseek-compare-updated', sync);
+    return () => window.removeEventListener('homeseek-compare-updated', sync);
+  }, []);
 
   useEffect(() => {
     if (profile?.whatsapp) setWhatsappInput(profile.whatsapp);
@@ -134,6 +142,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   <Icon size={14} weight={active ? "fill" : "regular"} className={active ? "text-zinc-950" : "text-zinc-700"} />
                   <span>{item.label}</span>
+                  {item.href === '/compare' && compareCount > 0 && (
+                    <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-purple-700 text-white text-[10px] font-black">
+                      {compareCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}

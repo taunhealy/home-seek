@@ -13,6 +13,7 @@ trigger: always_on
 
 2. **Aggressive Cache First**:
    - In development mode (`P24_DEV_MODE=True`), cache TTL is 7 days.
+   - Exception: an explicit user "Scrape P24" click (`force_fresh=True`) refreshes suburbs whose cache is older than 15 minutes.
    - Any query matching an existing cached suburb must be served from `api/services/.p24_live_cache.json` or `api/data/p24_cache.json`.
    - Never bypass cache during automated tests or frontend dev server reloads.
 

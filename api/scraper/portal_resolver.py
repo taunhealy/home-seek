@@ -70,6 +70,8 @@ CANONICAL_P24_URLS = {
     "gardens": "https://www.property24.com/to-rent/gardens/cape-town/western-cape/9145",
     "tamboerskloof": "https://www.property24.com/to-rent/tamboerskloof/cape-town/western-cape/9163",
     "oranjezicht": "https://www.property24.com/to-rent/oranjezicht/cape-town/western-cape/9155",
+    "higgovale": "https://www.property24.com/to-rent/higgovale/cape-town/western-cape/9149",
+    "vredehoek": "https://www.property24.com/to-rent/vredehoek/cape-town/western-cape/9166",
     
     # Northern Suburbs & Winelands
     "durbanville": "https://www.property24.com/to-rent/durbanville/western-cape/439",

@@ -7,7 +7,7 @@ export default function ExploreRedirect() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/properties');
+    router.replace('/search');
   }, [router]);
 
   return (

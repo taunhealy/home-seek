@@ -60,6 +60,8 @@ export const DEFAULT_CAPE_TOWN_SUBURBS = [
   { name: 'Lakeside', region: 'South Peninsula' },
   { name: 'Marina Da Gama', region: 'South Peninsula' },
   { name: 'Capri', region: 'South Peninsula' },
+  { name: 'Sunnydale', region: 'South Peninsula' },
+  { name: 'Sun Valley', region: 'South Peninsula' },
   { name: 'Clovelly', region: 'South Peninsula' },
 
   // West Coast

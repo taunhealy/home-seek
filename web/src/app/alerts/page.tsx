@@ -510,9 +510,9 @@ export default function AlertsPage() {
                     {/* Right Action Controls */}
                     <div className="flex items-center gap-2.5 shrink-0 pt-4 lg:pt-0 border-t lg:border-t-0 border-zinc-100">
                       
-                      {/* View Matches in Properties Feed */}
+                      {/* View Matches in Search */}
                       <Link
-                        href={`/properties?search=${encodeURIComponent(alert.target_area || '')}`}
+                        href="/search"
                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-zinc-800 hover:text-zinc-950 bg-zinc-100 hover:bg-zinc-200 transition-colors"
                       >
                         <Eye size={15} weight="bold" />
