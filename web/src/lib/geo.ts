@@ -1135,10 +1135,10 @@ export function getPropertyMarketValuation(
 
   const absPct = Math.abs(pctDiff);
   const badgeText = isUnderpriced
-    ? `▼ ${absPct}% Under Value`
+    ? `▼ ${absPct}%`
     : isOverpriced
-    ? `▲ ${absPct}% Above Value`
-    : `⚖️ Fair Market Value`;
+    ? `▲ ${absPct}%`
+    : `0%`;
 
   const sourceTag = isEmpirical ? 'live-cache' : 'baseline';
   const adjSummary = isRiskAdjusted ? `; risk-adjusted (${adjustmentNotes.join(', ')})` : '';

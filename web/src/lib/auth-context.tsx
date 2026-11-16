@@ -15,6 +15,8 @@ interface AuthContextType {
   loading: boolean;
   logout: () => Promise<void>;
   login: () => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  registerWithEmail: (email: string, password: string, displayName?: string) => Promise<{ ok: boolean; error?: string }>;
   refreshProfile: () => Promise<void>;
 }
 
@@ -24,6 +26,8 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   logout: async () => {},
   login: async () => {},
+  loginWithEmail: async () => ({ ok: false }),
+  registerWithEmail: async () => ({ ok: false }),
   refreshProfile: async () => {},
 });
 
@@ -125,6 +129,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithEmail = async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendBase}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, error: data?.detail || 'Invalid email or password.' };
+      }
+      const u = { ...data.user, photoURL: data.user.avatar_url || null } as any;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('homeseek_dev_user', JSON.stringify(u));
+      }
+      setUser(u);
+      await fetchProfile(u.uid);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Network error signing in.' };
+    }
+  };
+
+  const registerWithEmail = async (
+    email: string,
+    password: string,
+    displayName?: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendBase}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, display_name: displayName || '' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, error: data?.detail || 'Registration failed.' };
+      }
+      const u = { ...data.user, photoURL: data.user.avatar_url || null } as any;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('homeseek_dev_user', JSON.stringify(u));
+      }
+      setUser(u);
+      await fetchProfile(u.uid);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Network error creating account.' };
+    }
+  };
+
   const refreshProfile = async () => {
     if (user) {
       await fetchProfile(user.uid);
@@ -132,7 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, logout, login, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, logout, login, loginWithEmail, registerWithEmail, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

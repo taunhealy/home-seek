@@ -36,9 +36,16 @@ class Property24RateLimiter:
         self._circuit_open_until = 0.0
         self._consecutive_trips = 0
         self._last_trip_reason = ""
+        self._request_timestamps: List[float] = []
+        self._max_requests_15m = max(1, int(os.environ.get("P24_MAX_REQUESTS_PER_15M", "10")))
+        self._max_requests_1h = max(self._max_requests_15m, int(os.environ.get("P24_MAX_REQUESTS_PER_HOUR", "25")))
         self._memory_cache: Dict[str, Dict[str, Any]] = {}
         self._load_disk_cache()
         self._load_circuit_state()
+
+    def _prune_timestamps(self, now: Optional[float] = None) -> None:
+        cutoff = (now if now is not None else time.time()) - 3600.0
+        self._request_timestamps = [ts for ts in self._request_timestamps if ts >= cutoff]
 
     def _load_circuit_state(self):
         try:
@@ -50,11 +57,16 @@ class Property24RateLimiter:
                         self._consecutive_trips = int(st.get("consecutive_trips", 0))
                         self._last_trip_reason = str(st.get("last_trip_reason", ""))
                         self._last_request_time = max(self._last_request_time, float(st.get("last_request_time", 0.0)))
+                        raw_ts = st.get("request_timestamps", [])
+                        if isinstance(raw_ts, list):
+                            self._request_timestamps = [float(t) for t in raw_ts if isinstance(t, (int, float))]
+                            self._prune_timestamps()
         except Exception:
             pass
 
     def _save_circuit_state(self):
         try:
+            self._prune_timestamps()
             os.makedirs(CACHE_DIR, exist_ok=True)
             with open(CIRCUIT_FILE, "w", encoding="utf-8") as f:
                 json.dump({
@@ -62,6 +74,7 @@ class Property24RateLimiter:
                     "consecutive_trips": self._consecutive_trips,
                     "last_trip_reason": self._last_trip_reason,
                     "last_request_time": self._last_request_time,
+                    "request_timestamps": self._request_timestamps,
                 }, f)
         except Exception:
             pass
@@ -83,11 +96,30 @@ class Property24RateLimiter:
             print(f"[P24 RATE GUARD] Circuit breaker tripped ({reason}). Cooling down for {cooldown}s.")
             return cooldown
 
+    def has_request_budget(self) -> bool:
+        """Enforces rolling 15-minute and 1-hour outbound request caps to prevent IP blocks."""
+        with self._state_lock:
+            self._load_circuit_state()
+            now = time.time()
+            self._prune_timestamps(now)
+            used_15m = sum(1 for ts in self._request_timestamps if ts >= now - 900.0)
+            used_1h = len(self._request_timestamps)
+            if used_15m >= self._max_requests_15m or used_1h >= self._max_requests_1h:
+                print(
+                    f"[P24 BUDGET GUARD] Rolling budget exhausted "
+                    f"({used_15m}/{self._max_requests_15m} in 15m, {used_1h}/{self._max_requests_1h} in 1h). Using cache."
+                )
+                return False
+            return True
+
     def record_request_slot(self, min_gap_seconds: float = 3.5) -> float:
         """Persists and returns the enforced request timestamp across sync and async clients."""
         with self._state_lock:
             self._load_circuit_state()
-            self._last_request_time = time.time()
+            now = time.time()
+            self._last_request_time = now
+            self._prune_timestamps(now)
+            self._request_timestamps.append(now)
             self._save_circuit_state()
             return self._last_request_time
 
@@ -103,6 +135,9 @@ class Property24RateLimiter:
         with self._state_lock:
             self._load_circuit_state()
             now = time.time()
+            self._prune_timestamps(now)
+            used_15m = sum(1 for ts in self._request_timestamps if ts >= now - 900.0)
+            used_1h = len(self._request_timestamps)
             is_open = now < self._circuit_open_until
             remaining = max(0, int(self._circuit_open_until - now)) if is_open else 0
             return {
@@ -111,6 +146,11 @@ class Property24RateLimiter:
                 "consecutive_trips": self._consecutive_trips,
                 "reason": self._last_trip_reason if is_open else "",
                 "cached_queries": cached_queries if cached_queries is not None else len(self._memory_cache),
+                "budget_15m_used": used_15m,
+                "budget_15m_limit": self._max_requests_15m,
+                "budget_1h_used": used_1h,
+                "budget_1h_limit": self._max_requests_1h,
+                "budget_exhausted": used_15m >= self._max_requests_15m or used_1h >= self._max_requests_1h,
             }
 
     def _load_disk_cache(self):
@@ -170,20 +210,22 @@ class Property24RateLimiter:
             if cached:
                 return cached, 200, url
 
-        # 2. Check Shared Persistent Circuit Breaker
+        # 2. Check Shared Persistent Circuit Breaker & Rolling Budget
         if self.is_circuit_open():
             remaining = self.get_circuit_status().get("cooldown_remaining_seconds", 0)
             print(f"[P24 CLIENT] Circuit breaker active for {remaining}s. Skipping {url}")
             return None, 429, url
+        if not self.has_request_budget():
+            return None, 429, url
 
         # 3. Acquire concurrency lock (Strictly 1 request at a time)
         async with self._lock:
-            # Re-check cache & circuit in case previous task updated them
+            # Re-check cache, circuit & budget in case previous task updated them
             if cache_ttl_seconds > 0:
                 cached = self.get_cached(url, max_age_seconds=cache_ttl_seconds)
                 if cached:
                     return cached, 200, url
-            if self.is_circuit_open():
+            if self.is_circuit_open() or not self.has_request_budget():
                 return None, 429, url
 
             # Enforce polite spacing between requests (3.5s + 0.5-1.5s jitter)

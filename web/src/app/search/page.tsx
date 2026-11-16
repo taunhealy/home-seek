@@ -254,7 +254,7 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
     commute_mode: 'driving',
     iconType: 'surf',
     category: 'attraction',
-    templateId: 'preset-deepsouth-surf',
+    templateId: 'preset-falsebay-coast',
   },
   {
     id: 'attraction-seaforth-beach',
@@ -267,14 +267,14 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
     commute_mode: 'driving',
     iconType: 'beach',
     category: 'attraction',
-    templateId: 'preset-deepsouth-surf',
+    templateId: 'preset-falsebay-coast',
   },
   {
     id: 'gym-va-sun-valley',
     label: 'Virgin Active Sun Valley',
     target_place: 'Sun Valley Mall, Ou Kaapse Weg, Sun Valley',
-    lat: -34.1305,
-    lng: 18.3970,
+    lat: -34.1352,
+    lng: 18.3912,
     max_commute_mins: 15,
     max_distance_km: 10,
     commute_mode: 'driving',
@@ -285,15 +285,15 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
   {
     id: 'gym-zone-fish-hoek',
     label: 'Zone Fitness Fish Hoek',
-    target_place: 'Main Road, Fish Hoek, Cape Town',
-    lat: -34.1360,
-    lng: 18.4310,
+    target_place: 'Town Square, Main Rd, Fish Hoek, Cape Town',
+    lat: -34.138294,
+    lng: 18.431441,
     max_commute_mins: 15,
     max_distance_km: 10,
     commute_mode: 'driving',
     iconType: 'gym',
     category: 'gym',
-    templateId: 'preset-deepsouth-surf',
+    templateId: 'preset-falsebay-coast',
   },
   {
     id: 'gym-planet-fitness-longbeach',
@@ -381,9 +381,9 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
   {
     id: 'gym-va-constantia',
     label: 'Virgin Active Constantia',
-    target_place: 'Constantia Village, Spaanschemat River Rd',
-    lat: -34.0260,
-    lng: 18.4420,
+    target_place: 'Constantia Sports Complex, Main Rd, Constantia',
+    lat: -34.0205,
+    lng: 18.4412,
     max_commute_mins: 15,
     max_distance_km: 10,
     commute_mode: 'driving',
@@ -394,9 +394,9 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
   {
     id: 'gym-zone-rondebosch',
     label: 'Zone Fitness Rondebosch',
-    target_place: 'Riverside Mall, Main Rd, Rondebosch',
-    lat: -33.9620,
-    lng: 18.4720,
+    target_place: 'Rondebosch Main, Main Rd, Rondebosch',
+    lat: -33.960462,
+    lng: 18.470390,
     max_commute_mins: 15,
     max_distance_km: 8,
     commute_mode: 'driving',
@@ -413,9 +413,9 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
   {
     id: 'hub-kloof',
     label: 'Kloof Street Dining Hub',
-    target_place: 'Kloof Street, Gardens, Cape Town',
-    lat: -33.9315,
-    lng: 18.4110,
+    target_place: '145 Kloof St (Dark Horse), Gardens, Cape Town',
+    lat: -33.934368,
+    lng: 18.407377,
     max_commute_mins: 15,
     max_distance_km: 6,
     commute_mode: 'driving',
@@ -478,24 +478,11 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
     templateId: 'preset-citybowl-remote',
   },
   {
-    id: 'gym-va-kloof',
-    label: 'Virgin Active Kloof Street',
-    target_place: '50 Kloof Street, Gardens, Cape Town',
-    lat: -33.929839,
-    lng: 18.410876,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
     id: 'gym-roark-cbd',
     label: 'Roark Gyms Cape Town',
-    target_place: '130 Bree Street, Cape Town CBD',
-    lat: -33.924669,
-    lng: 18.414300,
+    target_place: '47 De Villiers St, District Six, Cape Town',
+    lat: -33.932222,
+    lng: 18.425763,
     max_commute_mins: 12,
     max_distance_km: 5,
     commute_mode: 'driving',
@@ -518,10 +505,10 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
   },
   {
     id: 'gym-sweat1000-kloof',
-    label: 'The Yard / SWEAT 1000 Kloof',
-    target_place: '70 Kloof St, Gardens, Cape Town',
-    lat: -33.9310,
-    lng: 18.4100,
+    label: 'The Yard Athletic (Gardens)',
+    target_place: '17 Jamieson St, Gardens, Cape Town',
+    lat: -33.927266,
+    lng: 18.412386,
     max_commute_mins: 10,
     max_distance_km: 4,
     commute_mode: 'driving',
@@ -641,8 +628,8 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
     id: 'shop-gardens-centre',
     label: 'Gardens Shopping Centre',
     target_place: 'Mill St & Buitenkant St, Gardens, Cape Town',
-    lat: -33.9328,
-    lng: 18.4178,
+    lat: -33.934893,
+    lng: 18.418143,
     max_commute_mins: 10,
     max_distance_km: 4,
     commute_mode: 'driving',
@@ -654,8 +641,8 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
     id: 'shop-lifestyle-on-kloof',
     label: 'Lifestyle on Kloof',
     target_place: '50 Kloof St, Gardens, Cape Town',
-    lat: -33.9298,
-    lng: 18.4108,
+    lat: -33.929323,
+    lng: 18.410750,
     max_commute_mins: 10,
     max_distance_km: 4,
     commute_mode: 'driving',
@@ -666,9 +653,9 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
   {
     id: 'shop-spar-derry-vredehoek',
     label: 'Spar Derry Street (Vredehoek)',
-    target_place: 'Derry St & Exner Ave, Vredehoek, Cape Town',
-    lat: -33.9392,
-    lng: 18.4290,
+    target_place: '37 Derry St, Vredehoek, Cape Town',
+    lat: -33.939201,
+    lng: 18.428006,
     max_commute_mins: 10,
     max_distance_km: 4,
     commute_mode: 'driving',
@@ -679,9 +666,9 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
   {
     id: 'shop-oranjezicht-market',
     label: 'Oranjezicht City Farm Market',
-    target_place: 'Haul Rd, Granger Bay Blvd, Victoria & Alfred Waterfront',
-    lat: -33.9015,
-    lng: 18.4185,
+    target_place: 'Parking Deck, Breakwater Blvd, V&A Waterfront, Cape Town',
+    lat: -33.903108,
+    lng: 18.417245,
     max_commute_mins: 15,
     max_distance_km: 6,
     commute_mode: 'driving',
@@ -1003,9 +990,9 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
   {
     id: 'shop-regent-rd-strip',
     label: 'Regent Road Retail Strip & SPAR',
-    target_place: 'Regent Rd & Kloof Rd, Sea Point, Cape Town',
-    lat: -33.9195,
-    lng: 18.3860,
+    target_place: '94 Regent Rd, Sea Point, Cape Town',
+    lat: -33.921945,
+    lng: 18.381409,
     max_commute_mins: 10,
     max_distance_km: 4,
     commute_mode: 'driving',
@@ -1017,8 +1004,8 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
     id: 'shop-piazza-da-luz',
     label: 'Piazza Da Luz & Woolworths',
     target_place: '94 Regent Rd, Sea Point, Cape Town',
-    lat: -33.9218,
-    lng: 18.3822,
+    lat: -33.921815,
+    lng: 18.381309,
     max_commute_mins: 10,
     max_distance_km: 4,
     commute_mode: 'driving',
@@ -1210,6 +1197,19 @@ const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
   },
 
   // Hout Bay Cafes & Hotspots
+  {
+    id: 'cafe-seattle-houtbay',
+    label: 'Seattle Coffee Company (Hout Bay)',
+    target_place: 'Main Rd, Hout Bay, Cape Town, 7806',
+    lat: -34.045755,
+    lng: 18.361913,
+    max_commute_mins: 8,
+    max_distance_km: 5,
+    commute_mode: 'walking',
+    iconType: 'cafe',
+    category: 'cafe',
+    templateId: 'preset-houtbay-coastal',
+  },
   {
     id: 'cafe-darios-houtbay',
     label: "Dario's Cafe",
@@ -1413,14 +1413,25 @@ const DEFAULT_SAVED_SEARCHES: SavedSearch[] = [
   },
   {
     id: 'preset-deepsouth-surf',
-    name: '🏄 Deep South & False Bay',
-    suburbs: ['Noordhoek', 'Sunnydale', 'Capri', 'Kommetjie', 'Muizenberg', 'Scarborough', 'Fish Hoek', "Simon's Town"],
+    name: '🏄 Deep South',
+    suburbs: ['Noordhoek', 'Sunnydale', 'Capri', 'Kommetjie', 'Scarborough'],
+    minPrice: '10000',
+    maxPrice: '16000',
+    bedrooms: '1+',
+    anchorId: 'attraction-noordhoek-village',
+    attractionIds: ['attraction-long-beach', 'attraction-noordhoek-village'],
+    gymIds: ['gym-va-sun-valley', 'gym-planet-fitness-longbeach'],
+  },
+  {
+    id: 'preset-falsebay-coast',
+    name: '🏖️ False Bay',
+    suburbs: ['Muizenberg', 'Kalk Bay', 'Fish Hoek', "Simon's Town"],
     minPrice: '10000',
     maxPrice: '16000',
     bedrooms: '1+',
     anchorId: 'surf-muizenberg',
-    attractionIds: ['attraction-long-beach', 'attraction-noordhoek-village', 'surf-muizenberg', 'attraction-seaforth-beach'],
-    gymIds: ['gym-va-sun-valley', 'gym-zone-fish-hoek', 'gym-planet-fitness-longbeach'],
+    attractionIds: ['surf-muizenberg', 'attraction-seaforth-beach'],
+    gymIds: ['gym-zone-fish-hoek', 'gym-va-sun-valley'],
   },
   {
     id: 'preset-atlantic-budget',
@@ -1445,7 +1456,7 @@ const DEFAULT_SAVED_SEARCHES: SavedSearch[] = [
     anchorId: 'attraction-houtbay-harbour',
     attractionIds: ['attraction-houtbay-harbour', 'attraction-houtbay-beach', 'attraction-chapmans-peak', 'attraction-llandudno-beach'],
     gymIds: ['gym-velocity-houtbay', 'gym-the-gym-houtbay', 'gym-crossfit-houtbay'],
-    cafeIds: ['cafe-darios-houtbay', 'cafe-collective-houtbay', 'cafe-houtbay-coffee', 'cafe-bootlegger-houtbay', 'cafe-mariners-wharf'],
+    cafeIds: ['cafe-seattle-houtbay', 'cafe-darios-houtbay', 'cafe-collective-houtbay', 'cafe-houtbay-coffee', 'cafe-bootlegger-houtbay', 'cafe-mariners-wharf'],
     shopIds: ['shop-mainstream-mall', 'shop-bay-harbour-market'],
   },
   {
@@ -1482,23 +1493,291 @@ export default function SearchMapPage() {
   const sizeMenuRef = useRef<HTMLDivElement>(null);
   const savedSearchMenuRef = useRef<HTMLDivElement>(null);
   const anchorMenuRef = useRef<HTMLDivElement>(null);
-  const [bedrooms, setBedrooms] = useState('1+');
+  const [bedrooms, setBedrooms] = useState('0.5+');
 
   // Clickable Feature Filters (Deterministic toggles for listings & map markers visibility)
   const [safeishFilter, setSafeishFilter] = useState<boolean>(true); // Safe-ish: ON by default (hides listings inside High-Risk crime radii)
   const [offMainRoadFilter, setOffMainRoadFilter] = useState<boolean>(true); // Off-Main Rd: ON by default (excludes noisy arterial road properties)
+  const [offBarsFilter, setOffBarsFilter] = useState<boolean>(false); // Off-Bars/Clubs: excludes properties within close bar/nightlife radius
   const [withinRadiusFilter, setWithinRadiusFilter] = useState<boolean>(false); // Within Radius: OFF by default (properties outside radius stay visible, ranked lower)
   const [locationRadiusKm, setLocationRadiusKm] = useState<number>(5.0); // Selected location buffer radius in km
   const [fibreFilter, setFibreFilter] = useState<boolean>(false);
-  const [northFacingFilter, setNorthFacingFilter] = useState<boolean>(false);
   const [parkingFilter, setParkingFilter] = useState<boolean>(false);
   const [petFriendlyFilter, setPetFriendlyFilter] = useState<boolean>(false);
-  const [gasHobFilter, setGasHobFilter] = useState<boolean>(false);
   const [privateOnlyFilter, setPrivateOnlyFilter] = useState<boolean>(false);
 
   // Hidden / Dismissed Listings State & Visibility Toggle
   const [hiddenPropertyIds, setHiddenPropertyIds] = useState<string[]>([]);
   const [showHidden, setShowHidden] = useState<boolean>(false);
+
+  // Manual Address Submission State (for listings with withheld/unknown addresses)
+  const [editingAddressPropId, setEditingAddressPropId] = useState<string | null>(null);
+  const [manualAddressInput, setManualAddressInput] = useState('');
+  const [isSubmittingAddress, setIsSubmittingAddress] = useState(false);
+  const [manualAddressError, setManualAddressError] = useState<string | null>(null);
+
+  const handleSubmitManualAddress = async (prop: PropertyMapItem) => {
+    const clean = manualAddressInput.trim();
+    if (clean.length < 4) {
+      setManualAddressError('Enter a street name/number (e.g. 14 Derwent Rd).');
+      return;
+    }
+    setIsSubmittingAddress(true);
+    setManualAddressError(null);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendBase}/api/listings/submit-address`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          listing_id: prop.id,
+          address: clean,
+          suburb: (prop as any).suburb || '',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setManualAddressError(data?.detail || 'Could not save address.');
+        return;
+      }
+      setProperties((prev) =>
+        prev.map((p) =>
+          p.id === prop.id
+            ? {
+                ...p,
+                address: data.address || clean,
+                is_address_withheld: false,
+                lat: typeof data.lat === 'number' ? data.lat : p.lat,
+                lng: typeof data.lng === 'number' ? data.lng : p.lng,
+                ...(data.noise_risk ? { noise_risk: data.noise_risk } : {}),
+                ...(typeof data.is_main_road === 'boolean' ? { is_main_road: data.is_main_road } : {}),
+                ...(data.acoustic_audit ? { acoustic_audit: data.acoustic_audit } : {}),
+              }
+            : p
+        )
+      );
+      setEditingAddressPropId(null);
+      setManualAddressInput('');
+      if (typeof data.lat === 'number' && typeof data.lng === 'number') {
+        setFocusTarget({ lat: data.lat, lng: data.lng, zoom: 16.8, timestamp: Date.now() });
+      }
+    } catch (err) {
+      setManualAddressError('Network error saving address.');
+    } finally {
+      setIsSubmittingAddress(false);
+    }
+  };
+
+  // Listing Comments & Reddit-Style Nickname State
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const [recentComments, setRecentComments] = useState<Record<string, Array<{
+    id: string;
+    nickname: string;
+    body: string;
+    created_at: number;
+  }>>>({});
+  const [commentModalProp, setCommentModalProp] = useState<PropertyMapItem | null>(null);
+  const [listingComments, setListingComments] = useState<Array<{
+    id: string;
+    listing_id: string;
+    user_id: string;
+    nickname: string;
+    body: string;
+    created_at: number;
+    updated_at: number;
+  }>>([]);
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
+  const [newCommentText, setNewCommentText] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [guestUid, setGuestUid] = useState<string>('');
+  const [guestNickname, setGuestNickname] = useState<string>('');
+
+  const activeCommentUid = user?.uid || guestUid;
+  const activeCommentNickname = profile?.nickname || guestNickname;
+
+  useEffect(() => {
+    let uid = '';
+    try {
+      uid = localStorage.getItem('homeseek_guest_uid') || '';
+      if (!uid) {
+        uid = `guest-${Math.random().toString(36).slice(2, 10)}`;
+        localStorage.setItem('homeseek_guest_uid', uid);
+      }
+    } catch {
+      uid = `guest-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    setGuestUid(uid);
+
+    const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+    fetch(`${backendBase}/api/listings/comments/counts`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.counts) setCommentCounts(d.counts);
+        if (d?.recent) {
+          setRecentComments(d.recent);
+        } else if (d?.latest) {
+          const mapped: Record<string, Array<{ id: string; nickname: string; body: string; created_at: number }>> = {};
+          for (const [k, v] of Object.entries(d.latest)) {
+            if (v) mapped[k] = [v as any];
+          }
+          setRecentComments(mapped);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!activeCommentUid || profile?.nickname) return;
+    const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+    fetch(`${backendBase}/api/listings/nickname/${encodeURIComponent(activeCommentUid)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.nickname) setGuestNickname(d.nickname);
+      })
+      .catch(() => {});
+  }, [activeCommentUid, profile?.nickname]);
+
+  const openCommentsModal = async (prop: PropertyMapItem) => {
+    setCommentModalProp(prop);
+    setCommentError(null);
+    setNewCommentText('');
+    setEditingCommentId(null);
+    setIsLoadingComments(true);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendBase}/api/listings/${encodeURIComponent(prop.id)}/comments`);
+      if (res.ok) {
+        const data = await res.json();
+        setListingComments(Array.isArray(data.comments) ? data.comments : []);
+      }
+    } catch {
+      setCommentError('Failed to load comments.');
+    } finally {
+      setIsLoadingComments(false);
+    }
+  };
+
+  const handleCreateComment = async () => {
+    if (!commentModalProp) return;
+    const clean = newCommentText.trim();
+    if (!clean) return;
+    setIsPostingComment(true);
+    setCommentError(null);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendBase}/api/listings/${encodeURIComponent(commentModalProp.id)}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: activeCommentUid || 'guest', body: clean }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCommentError(data?.detail || 'Failed to post comment.');
+        return;
+      }
+      if (data.comment) {
+        setListingComments((prev) => [data.comment, ...prev]);
+        setCommentCounts((prev) => ({
+          ...prev,
+          [commentModalProp.id]: (prev[commentModalProp.id] || 0) + 1,
+        }));
+        setRecentComments((prev) => {
+          const nextItem = {
+            id: data.comment.id,
+            nickname: data.comment.nickname,
+            body: data.comment.body,
+            created_at: data.comment.created_at,
+          };
+          const existing = prev[commentModalProp.id] || [];
+          return { ...prev, [commentModalProp.id]: [nextItem, ...existing].slice(0, 3) };
+        });
+        if (!activeCommentNickname && data.comment.nickname) {
+          setGuestNickname(data.comment.nickname);
+        }
+        setNewCommentText('');
+      }
+    } catch {
+      setCommentError('Network error posting comment.');
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
+
+  const handleUpdateComment = async (commentId: string) => {
+    const clean = editingCommentText.trim();
+    if (!clean) return;
+    setCommentError(null);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendBase}/api/listings/comments/${encodeURIComponent(commentId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: activeCommentUid, body: clean }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCommentError(data?.detail || 'Could not update comment.');
+        return;
+      }
+      if (data.comment) {
+        setListingComments((prev) => prev.map((c) => (c.id === commentId ? data.comment : c)));
+        if (commentModalProp) {
+          setRecentComments((prev) => ({
+            ...prev,
+            [commentModalProp.id]: (prev[commentModalProp.id] || []).map((c) =>
+              c.id === commentId ? { ...c, body: data.comment.body } : c
+            ),
+          }));
+        }
+        setEditingCommentId(null);
+        setEditingCommentText('');
+      }
+    } catch {
+      setCommentError('Network error updating comment.');
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!commentModalProp) return;
+    setCommentError(null);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(
+        `${backendBase}/api/listings/comments/${encodeURIComponent(commentId)}?user_id=${encodeURIComponent(activeCommentUid)}`,
+        { method: 'DELETE' }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCommentError(data?.detail || 'Could not delete comment.');
+        return;
+      }
+      const remaining = listingComments.filter((c) => c.id !== commentId);
+      setListingComments(remaining);
+      setCommentCounts((prev) => {
+        const next = Math.max(0, (prev[commentModalProp.id] || 1) - 1);
+        return { ...prev, [commentModalProp.id]: next };
+      });
+      setRecentComments((prev) => {
+        const next = { ...prev };
+        if (remaining.length > 0) {
+          next[commentModalProp.id] = remaining.slice(0, 3).map((c) => ({
+            id: c.id,
+            nickname: c.nickname,
+            body: c.body,
+            created_at: c.created_at,
+          }));
+        } else {
+          delete next[commentModalProp.id];
+        }
+        return next;
+      });
+    } catch {
+      setCommentError('Network error deleting comment.');
+    }
+  };
 
   const toggleHideProperty = (id: string, e?: React.MouseEvent) => {
     if (e) {
@@ -1539,7 +1818,24 @@ export default function SearchMapPage() {
 
   // Imported favourites live in session memory only. Full listing snapshots are never persisted,
   // so rented/expired listings can't be resurrected from localStorage — listings must come from a fresh scrape.
-  const [importedFavourites, setImportedFavourites] = useState<PropertyMapItem[]>([]);
+  const [importedFavourites, setImportedFavourites] = useState<PropertyMapItem[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem('homeseek_imported_favourites_v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('homeseek_imported_favourites_v1', JSON.stringify(importedFavourites));
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [importedFavourites]);
 
   useEffect(() => {
     try {
@@ -1711,6 +2007,91 @@ export default function SearchMapPage() {
     setUploadedViewingPhotos((prev) => [...prev, ...compressed].slice(0, 8));
   };
 
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isEmailPdfOpen, setIsEmailPdfOpen] = useState(false);
+  const [emailPdfTarget, setEmailPdfTarget] = useState('');
+  const [isSendingEmailPdf, setIsSendingEmailPdf] = useState(false);
+  const [emailPdfStatus, setEmailPdfStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const buildReportPdfPayload = (prop: PropertyMapItem) => {
+    const audit = (prop as any).deep_ai_audit || {};
+    return {
+      id: prop.id,
+      title: prop.title,
+      address: prop.address,
+      price: prop.price,
+      bedrooms: prop.bedrooms,
+      bathrooms: prop.bathrooms,
+      sqm: prop.sqm,
+      url: prop.url,
+      generated_at: audit.generatedAt || new Date().toLocaleString(),
+      verdict: audit.verdict || '',
+      photo_story: audit.photoStory || '',
+      pros: Array.isArray(audit.pros) ? audit.pros : [],
+      cons: Array.isArray(audit.cons) ? audit.cons : [],
+      architecture: {
+        wfhLayoutVerdict: audit.wfhLayoutVerdict || '',
+        windowLightAudit: audit.windowLightAudit || '',
+        wallAcousticAudit: audit.wallAcousticAudit || '',
+        ceilingVolumeAudit: audit.ceilingVolumeAudit || '',
+        lightingFixturesAudit: audit.lightingFixturesAudit || '',
+        exteriorBuildingAudit: audit.exteriorBuildingAudit || '',
+      },
+    };
+  };
+
+  const handleDownloadReportPdf = async (prop: PropertyMapItem) => {
+    setIsExportingPdf(true);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendBase}/api/reports/pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report: buildReportPdfPayload(prop) }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `homeseek-report-${prop.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  const handleEmailReportPdf = async (prop: PropertyMapItem) => {
+    const to = emailPdfTarget.trim();
+    if (!to) {
+      setEmailPdfStatus({ type: 'err', text: 'Enter an email address.' });
+      return;
+    }
+    setIsSendingEmailPdf(true);
+    setEmailPdfStatus(null);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendBase}/api/reports/email-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to_email: to, report: buildReportPdfPayload(prop) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setEmailPdfStatus({ type: 'err', text: data?.detail || 'Failed to send PDF.' });
+        return;
+      }
+      setEmailPdfStatus({ type: 'ok', text: `Sent PDF to ${to}` });
+    } catch {
+      setEmailPdfStatus({ type: 'err', text: 'Network error sending PDF.' });
+    } finally {
+      setIsSendingEmailPdf(false);
+    }
+  };
+
   const handleCopySnagReport = async (prop: PropertyMapItem) => {
     const audit = (prop as any).deep_ai_audit;
     if (!audit) return;
@@ -1748,7 +2129,7 @@ export default function SearchMapPage() {
       await navigator.clipboard.writeText(lines.join('\n'));
       setSnagCopied(true);
       setTimeout(() => setSnagCopied(false), 2500);
-    } catch {}
+    } catch { }
   };
 
   // Sync preference changes to localStorage and re-evaluate active property report in real-time
@@ -1846,10 +2227,8 @@ export default function SearchMapPage() {
         }
       }
 
-      // Photo / visual inspection
-      if (photoCount >= 6) {
-        pros.push(`Comprehensive ${photoCount}-photo gallery covering interior rooms & layout`);
-      } else if (photoCount <= 2) {
+      // Photo / visual inspection: only flag when coverage is suspiciously sparse (having photos is baseline)
+      if (photoCount > 0 && photoCount <= 2) {
         cons.push(`Limited photo coverage (${photoCount} ${photoCount === 1 ? 'image' : 'images'}) — key rooms or exterior may be unshown`);
       }
 
@@ -1892,12 +2271,32 @@ export default function SearchMapPage() {
       }
 
       if (wantsCafes) {
-        const cafeProximity = (prop.location_proximity || []).find((loc: any) =>
-          String(loc.name || loc.category || '').toLowerCase().includes('cafe') ||
-          String(loc.name || loc.category || '').toLowerCase().includes('coffee')
+        const cafeAnchors = DESIRABLE_LOCATIONS.filter(
+          (loc) => loc.iconType === 'cafe' || loc.category === 'cafe'
         );
-        if (cafeProximity) {
-          pros.push(`Cafe Work Hub: walkable to ${cafeProximity.name || 'local coffee spots'} (${cafeProximity.distance_km ? `${cafeProximity.distance_km} km` : 'close by'})`);
+        let nearestCafe: { name: string; distance_km: number } | null = null;
+        if (prop.lat && prop.lng) {
+          for (const c of cafeAnchors) {
+            const d = getDistanceKm(prop.lat, prop.lng, c.lat, c.lng);
+            if (!nearestCafe || d < nearestCafe.distance_km) {
+              nearestCafe = { name: c.label, distance_km: Number(d.toFixed(1)) };
+            }
+          }
+        }
+        if (!nearestCafe) {
+          const prox = (prop.location_proximity || []).find((loc: any) =>
+            String(loc.name || loc.category || '').toLowerCase().includes('cafe') ||
+            String(loc.name || loc.category || '').toLowerCase().includes('coffee')
+          );
+          if (prox) {
+            nearestCafe = { name: prox.name || 'local coffee spots', distance_km: Number(prox.distance_km || 1.0) };
+          }
+        }
+
+        if (nearestCafe && nearestCafe.distance_km <= 1.8) {
+          pros.push(`Cafe Work Hub: walkable to ${nearestCafe.name} (${nearestCafe.distance_km} km)`);
+        } else if (nearestCafe && nearestCafe.distance_km <= 3.5) {
+          pros.push(`Cafe Access: short trip to ${nearestCafe.name} (${nearestCafe.distance_km} km)`);
         } else {
           cons.push('Work from Cafes Note: limited walkable laptop-friendly coffee shops detected in immediate perimeter');
         }
@@ -2137,7 +2536,8 @@ export default function SearchMapPage() {
       const sqm = prop.sqm || 0;
       const hasOutdoor = /\b(balcony|patio|deck|terrace|sliding door)\b/i.test(rawText);
 
-      let wfhLayoutVerdict = 'Separate bedroom(s) allow an acoustic door between sleeping/kitchen zones and a dedicated workspace for uninterrupted calls.';
+      const hasStudy = /\b(study|office|workstation|desk|nook|2nd bed|second bed)\b/i.test(rawText);
+      let wfhLayoutVerdict = '1-bed layout (m² unconfirmed) — verify lounge or bedroom wall clearance for a proper desk and chair, as smaller 1-beds often force laptops onto kitchen counters.';
       if (isStudio) {
         const sizeNote = sqm ? `(${sqm} m²) ` : '';
         if (isWfhFull) {
@@ -2147,8 +2547,12 @@ export default function SearchMapPage() {
         } else {
           wfhLayoutVerdict = `Open-plan 0.5-bed / studio ${sizeNote}maximizes usable floor area without corridor waste; verify storage and dining/desk zoning.`;
         }
-      } else if (sqm && sqm < 52) {
-        wfhLayoutVerdict = `Compact ${sqm} m² floor plan: verify a clear ≥1.2 m desk zone away from kitchen appliances and bedroom traffic.`;
+      } else if (prop.bedrooms === 1 && sqm && sqm <= 42) {
+        wfhLayoutVerdict = `Tight ${sqm} m² 1-bed footprint — living/kitchen area likely lacks room for a full ergonomic desk; expect to place a compact desk in the bedroom or work from a dining counter.`;
+      } else if (prop.bedrooms === 1 && sqm && sqm <= 56) {
+        wfhLayoutVerdict = `Compact ${sqm} m² 1-bed layout — separate bedroom door helps for calls, though a dedicated desk in the lounge may compete with sofa/dining space; check plug points & chair clearance.`;
+      } else if (prop.bedrooms >= 2 || hasStudy || (sqm && sqm >= 65)) {
+        wfhLayoutVerdict = `Generous ${sqm ? `${sqm} m² ` : ''}layout with clear separation between sleeping and work zones — easy to fit a proper ergonomic desk setup away from kitchen noise.`;
       }
 
       let windowLightAudit = hasOutdoor
@@ -2282,6 +2686,24 @@ export default function SearchMapPage() {
         const visionData = await visionRes.json();
         const v = visionData?.vision;
         if (v) {
+          const resolvedStove = (v.stove_type && v.stove_type !== 'unknown') ? v.stove_type : updatedProp.stove_type;
+          updatedProp = { ...updatedProp, stove_type: resolvedStove };
+          setProperties((prev) =>
+            prev.map((p) =>
+              p.id === propToInspect.id
+                ? {
+                    ...p,
+                    stove_type: resolvedStove || p.stove_type,
+                    images: fullGallery.length > 0 ? fullGallery : p.images,
+                    has_garage: updatedProp.has_garage,
+                    has_secure_bay: updatedProp.has_secure_bay,
+                    parking_type: updatedProp.parking_type,
+                    has_inverter: updatedProp.has_inverter,
+                    pet_friendly: updatedProp.pet_friendly,
+                  }
+                : p
+            )
+          );
           const baseAudit = generatePropertyAiAudit(updatedProp, propToInspect.rank || 1, personalPreferences, fullGallery);
           const mergedPros = Array.from(new Set([...(Array.isArray(v.photo_pros) ? v.photo_pros : []), ...(baseAudit.pros || [])])).slice(0, 9);
           const mergedCons = Array.from(new Set([...(Array.isArray(v.photo_cons) ? v.photo_cons : []), ...(baseAudit.cons || [])])).slice(0, 9);
@@ -2328,15 +2750,15 @@ export default function SearchMapPage() {
     setViewingAiReportProp((prev) =>
       prev && prev.id === propToInspect.id
         ? {
-            ...prev,
-            deep_ai_audit: {
-              ...(prev as any).deep_ai_audit,
-              isVisionLoading: false,
-              hasAiRun: true,
-              generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-              appliedPreferences: personalPreferences.trim() || 'Standard optimal rental baseline',
-            },
-          }
+          ...prev,
+          deep_ai_audit: {
+            ...(prev as any).deep_ai_audit,
+            isVisionLoading: false,
+            hasAiRun: true,
+            generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            appliedPreferences: personalPreferences.trim() || 'Standard optimal rental baseline',
+          },
+        }
         : prev
     );
   };
@@ -2462,13 +2884,12 @@ export default function SearchMapPage() {
           if (typeof saved.activeAnchorId === 'string') setActiveAnchorId(saved.activeAnchorId);
           if (typeof saved.safeishFilter === 'boolean') setSafeishFilter(saved.safeishFilter);
           if (typeof saved.offMainRoadFilter === 'boolean') setOffMainRoadFilter(saved.offMainRoadFilter);
+          if (typeof saved.offBarsFilter === 'boolean') setOffBarsFilter(saved.offBarsFilter);
           if (typeof saved.withinRadiusFilter === 'boolean') setWithinRadiusFilter(saved.withinRadiusFilter);
           if (typeof saved.locationRadiusKm === 'number') setLocationRadiusKm(saved.locationRadiusKm);
           if (typeof saved.fibreFilter === 'boolean') setFibreFilter(saved.fibreFilter);
-          if (typeof saved.northFacingFilter === 'boolean') setNorthFacingFilter(saved.northFacingFilter);
           if (typeof saved.parkingFilter === 'boolean') setParkingFilter(saved.parkingFilter);
           if (typeof saved.petFriendlyFilter === 'boolean') setPetFriendlyFilter(saved.petFriendlyFilter);
-          if (typeof saved.gasHobFilter === 'boolean') setGasHobFilter(saved.gasHobFilter);
           if (typeof saved.privateOnlyFilter === 'boolean') setPrivateOnlyFilter(saved.privateOnlyFilter);
           if (typeof saved.sortBy === 'string') setSortBy(saved.sortBy);
           if (typeof saved.isListCollapsed === 'boolean') setIsListCollapsed(saved.isListCollapsed);
@@ -2539,6 +2960,8 @@ export default function SearchMapPage() {
     agency_complaint_sample: item.agency_complaint_sample,
     agency_hellopeter_rating: item.agency_hellopeter_rating,
     price_value_pct: typeof item.price_value_pct === 'number' ? item.price_value_pct : null,
+    first_seen_at: item.first_seen_at ?? null,
+    available_from: item.available_from ?? null,
     url: item.url,
     acoustic_audit: {
       estimated_db: item.noise_risk === 'sanctuary' ? 34 : item.is_main_road ? 68 : 42,
@@ -2702,7 +3125,7 @@ export default function SearchMapPage() {
           setEmpiricalMediansLoaded((n) => n + 1);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const resolveProperty24Url = (prop: { id?: string; url?: string; address?: string; title?: string }): string => {
@@ -2748,13 +3171,12 @@ export default function SearchMapPage() {
           activeAnchorId,
           safeishFilter,
           offMainRoadFilter,
+          offBarsFilter,
           withinRadiusFilter,
           locationRadiusKm,
           fibreFilter,
-          northFacingFilter,
           parkingFilter,
           petFriendlyFilter,
-          gasHobFilter,
           privateOnlyFilter,
           sortBy,
           isListCollapsed,
@@ -2772,13 +3194,12 @@ export default function SearchMapPage() {
     activeAnchorId,
     safeishFilter,
     offMainRoadFilter,
+    offBarsFilter,
     withinRadiusFilter,
     locationRadiusKm,
     fibreFilter,
-    northFacingFilter,
     parkingFilter,
     petFriendlyFilter,
-    gasHobFilter,
     privateOnlyFilter,
     sortBy,
     isListCollapsed,
@@ -3215,7 +3636,8 @@ export default function SearchMapPage() {
   }, [properties, importedFavourites]);
 
   // Strictly filter properties by selected suburbs, budget, and bedroom criteria
-  const sortedProperties = useMemo(() => {
+  const { sortedProperties, radiusExcludedCount } = useMemo(() => {
+    let excludedByRadius = 0;
     const suburbCoords = selectedSuburbs.map((s) => ({
       name: s.toLowerCase().trim(),
       ...resolveLocationCoords(s),
@@ -3223,20 +3645,34 @@ export default function SearchMapPage() {
 
     const minP = parseInt(minPrice) || 0;
     const maxP = parseInt(maxPrice) || 999999;
-    const minBeds = parseInt(bedrooms.replace(/\D/g, '')) || 0;
+    const minBeds = parseFloat(bedrooms.replace(/[^0-9.]/g, '')) || 0;
 
-    // 1. Strict Suburb Match: property address/title mentions one of the selected suburbs,
-    // or is within 1.8 km of that specific suburb's center (never bleed across neighborhoods)
-    const suburbMatched = allCandidateProperties.filter((prop) => {
-      if (suburbCoords.length === 0) return true;
-      const text = `${prop.title} ${prop.address} ${(prop as any).suburb || ''}`.toLowerCase();
-      const matchesName = suburbCoords.some((sc) => text.includes(sc.name));
-      if (matchesName) return true;
-      return suburbCoords.some((sc) => getDistanceKm(prop.lat, prop.lng, sc.lat, sc.lng) <= 1.8);
-    });
+    // 1. Strict Suburb Match (bypassed when viewing Favourites so all saved/imported favs appear)
+    const suburbMatched = showOnlyFavourites
+      ? allCandidateProperties.filter((prop) =>
+        Boolean(
+          favouritePropertyIds.includes(prop.id) ||
+          prop.is_favorite ||
+          importedFavourites.some((fav) => fav.id === prop.id || ((fav as any).p24_id && (fav as any).p24_id === (prop as any).p24_id))
+        )
+      )
+      : allCandidateProperties.filter((prop) => {
+        if (suburbCoords.length === 0) return true;
+        const propSub = String((prop as any).suburb || '').toLowerCase().trim();
+        if (propSub && suburbCoords.some((sc) => sc.name === propSub)) return true;
+        const addrLower = `${prop.address || ''}`.toLowerCase();
+        const matchesAddrSuburb = suburbCoords.some((sc) => {
+          if (sc.name === 'gardens' && addrLower.includes('dormax gardens') && !propSub.includes('gardens')) {
+            return false;
+          }
+          return addrLower.includes(`, ${sc.name}`) || addrLower.startsWith(`${sc.name},`) || propSub === sc.name;
+        });
+        if (matchesAddrSuburb) return true;
+        return suburbCoords.some((sc) => getDistanceKm(prop.lat, prop.lng, sc.lat, sc.lng) <= 1.8);
+      });
 
-    // 2. Apply budget, bedroom, minimum floor size (sqm) & structured feature filters
-    const criteriaMatched = suburbMatched.filter((prop) => {
+    // 2. Apply budget, bedroom, minimum floor size (sqm) & structured feature filters (bypassed in Favs mode)
+    const criteriaMatched = showOnlyFavourites ? suburbMatched : suburbMatched.filter((prop) => {
       if (minP > 0 && prop.price > 0 && prop.price < minP) return false;
       if (maxP > 0 && prop.price > maxP) return false;
       if (minBeds > 0 && prop.bedrooms < minBeds) return false;
@@ -3247,11 +3683,16 @@ export default function SearchMapPage() {
             const m = `${prop.title} ${prop.address}`.match(/(\d+)\s*(?:m²|sqm|m2)/i);
             return m ? parseInt(m[1], 10) : 0;
           })();
-        if (!propSqm || propSqm < minSqm) return false;
+        if (propSqm > 0 && propSqm < minSqm) return false;
       }
 
       // Safe-ish crime filter (ON by default): hides properties within radius of High Risk crime hotspot
       if (safeishFilter && isPropertyInHighRiskCrimeZone(prop.lat, prop.lng)) {
+        return false;
+      }
+
+      // Off-Bars & Clubs filter: hides properties within close nightlife/bar noise radius
+      if (offBarsFilter && getPropertyBarNoiseExposure(prop).isExposed) {
         return false;
       }
 
@@ -3260,14 +3701,6 @@ export default function SearchMapPage() {
         const text = `${prop.title} ${prop.address}`.toLowerCase();
         const hasFibre = Boolean(prop.fibre_ready) || text.includes('fibre') || text.includes('fiber') || text.includes('wifi');
         if (!hasFibre) return false;
-      }
-
-      // 2. North-facing filter
-      if (northFacingFilter) {
-        const facing = (prop.acoustic_audit?.facing_direction || '').toLowerCase();
-        const text = `${prop.title} ${prop.address}`.toLowerCase();
-        const isNorth = facing.includes('north') || text.includes('north-facing') || text.includes('north facing') || text.includes('north');
-        if (!isNorth) return false;
       }
 
       // 3. Off-street parking filter (excludes street parking)
@@ -3301,13 +3734,6 @@ export default function SearchMapPage() {
         if (!isPet) return false;
       }
 
-      // 5. Gas hob filter
-      if (gasHobFilter) {
-        const text = `${prop.title} ${prop.address}`.toLowerCase();
-        const isGas = prop.stove_type === 'gas' || text.includes('gas');
-        if (!isGas) return false;
-      }
-
       // 6. 100% Private Standalone filter (excludes cottages/flatlets on landlord property)
       if (privateOnlyFilter && isLandlordOnSiteProperty(prop)) {
         return false;
@@ -3324,6 +3750,7 @@ export default function SearchMapPage() {
       if (withinRadiusFilter && activeAnchor) {
         const distKm = getDistanceKm(prop.lat, prop.lng, activeAnchor.lat, activeAnchor.lng);
         if (distKm > locationRadiusKm) {
+          excludedByRadius += 1;
           return false;
         }
       }
@@ -3531,16 +3958,19 @@ export default function SearchMapPage() {
     });
 
     // 4. Generate Forensic AI Reports for every listing
-    return sorted.map((prop, idx) => {
-      const rank = idx + 1;
-      return {
-        ...prop,
-        rank,
-        is_hidden: hiddenPropertyIds.includes(prop.id),
-        deep_ai_audit: prop.deep_ai_audit || generatePropertyAiAudit(prop, rank, personalPreferences),
-      };
-    });
-  }, [allCandidateProperties, selectedSuburbs, minPrice, maxPrice, bedrooms, minSqm, safeishFilter, offMainRoadFilter, withinRadiusFilter, locationRadiusKm, fibreFilter, northFacingFilter, parkingFilter, petFriendlyFilter, gasHobFilter, privateOnlyFilter, personalPreferences, sortBy, activeAnchor, deepAiRunCount, hiddenPropertyIds, empiricalMediansLoaded]);
+    return {
+      sortedProperties: sorted.map((prop, idx) => {
+        const rank = idx + 1;
+        return {
+          ...prop,
+          rank,
+          is_hidden: hiddenPropertyIds.includes(prop.id),
+          deep_ai_audit: prop.deep_ai_audit || generatePropertyAiAudit(prop, rank, personalPreferences),
+        };
+      }),
+      radiusExcludedCount: excludedByRadius,
+    };
+  }, [allCandidateProperties, selectedSuburbs, minPrice, maxPrice, bedrooms, minSqm, safeishFilter, offMainRoadFilter, offBarsFilter, withinRadiusFilter, locationRadiusKm, fibreFilter, parkingFilter, petFriendlyFilter, privateOnlyFilter, personalPreferences, sortBy, activeAnchor, deepAiRunCount, hiddenPropertyIds, empiricalMediansLoaded, showOnlyFavourites, favouritePropertyIds, importedFavourites]);
 
   // Derived visible properties based on whether user toggled "Show Hidden" and "Show Favourites"
   const displayProperties = useMemo(() => {
@@ -4096,6 +4526,7 @@ export default function SearchMapPage() {
                 onChange={(e) => setBedrooms(e.target.value)}
                 className="font-bold text-zinc-800 bg-transparent focus:outline-none cursor-pointer leading-none"
               >
+                <option value="0.5+">0.5+ Bed</option>
                 <option value="1+">1+ Bed</option>
                 <option value="2+">2+ Beds</option>
                 <option value="3+">3+ Beds</option>
@@ -4269,16 +4700,25 @@ export default function SearchMapPage() {
                   setIsBudgetMenuOpen(false);
                   setIsSizeMenuOpen(false);
                 }}
+                title={
+                  activeAnchor
+                    ? withinRadiusFilter
+                      ? `Filtering properties within ${locationRadiusKm.toFixed(1)} km of ${activeAnchor.label}. Click to change location or mode.`
+                      : `Ranking properties near ${activeAnchor.label} (≤${locationRadiusKm.toFixed(1)} km boosted, all shown). Click to change location or mode.`
+                    : 'Select an attraction or amenity anchor'
+                }
                 className={`h-7 flex items-center gap-1.5 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer leading-none ${activeAnchor
-                  ? activeAnchor.iconType === 'gym'
-                    ? 'bg-amber-50 border-amber-300 text-amber-950 shadow-xs'
-                    : activeAnchor.iconType === 'cafe'
-                      ? 'bg-orange-50 border-orange-300 text-orange-950 shadow-xs'
-                      : activeAnchor.iconType === 'shop'
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-xs'
-                        : activeAnchor.iconType === 'surf' || activeAnchor.iconType === 'beach'
-                          ? 'bg-cyan-50 border-cyan-300 text-cyan-950 shadow-xs'
-                          : 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-xs'
+                  ? withinRadiusFilter
+                    ? 'bg-indigo-50 border-indigo-400 text-indigo-950 shadow-xs ring-1 ring-indigo-500/25'
+                    : activeAnchor.iconType === 'gym'
+                      ? 'bg-amber-50 border-amber-300 text-amber-950 shadow-xs'
+                      : activeAnchor.iconType === 'cafe'
+                        ? 'bg-orange-50 border-orange-300 text-orange-950 shadow-xs'
+                        : activeAnchor.iconType === 'shop'
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-xs'
+                          : activeAnchor.iconType === 'surf' || activeAnchor.iconType === 'beach'
+                            ? 'bg-cyan-50 border-cyan-300 text-cyan-950 shadow-xs'
+                            : 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-xs'
                   : 'bg-zinc-100 border-zinc-200 text-zinc-700'
                   }`}
               >
@@ -4296,9 +4736,38 @@ export default function SearchMapPage() {
                   <Target size={13} weight="bold" className="text-indigo-600 shrink-0" />
                 )}
                 <span className="truncate max-w-[125px]">{activeAnchor ? activeAnchor.label : 'Select Attraction'}</span>
-                <span className="px-1.5 py-0.5 bg-zinc-200/80 rounded-md text-[10px] font-extrabold text-zinc-800 leading-none">
-                  {templateAttractions.length + templateGyms.length + templateCafes.length + templateShops.length}
-                </span>
+                {activeAnchor ? (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setWithinRadiusFilter(!withinRadiusFilter);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setWithinRadiusFilter(!withinRadiusFilter);
+                      }
+                    }}
+                    title={
+                      withinRadiusFilter
+                        ? `Filter mode ON (hiding properties > ${locationRadiusKm.toFixed(1)} km). Click to switch to Rank only.`
+                        : `Rank mode ON (showing all properties, boosting ≤ ${locationRadiusKm.toFixed(1)} km). Click to switch to Filter.`
+                    }
+                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-extrabold leading-none tabular-nums transition-colors ${withinRadiusFilter
+                      ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      : 'bg-white/85 text-zinc-700 border border-zinc-200/80 hover:bg-zinc-100'
+                      }`}
+                  >
+                    ≤{locationRadiusKm.toFixed(1)} km · {withinRadiusFilter ? 'Filter' : 'Rank'}
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.5 bg-zinc-200/80 rounded-md text-[10px] font-extrabold text-zinc-800 leading-none">
+                    {templateAttractions.length + templateGyms.length + templateCafes.length + templateShops.length}
+                  </span>
+                )}
               </button>
 
               {/* Anchor Dropdown Popover */}
@@ -4313,6 +4782,41 @@ export default function SearchMapPage() {
                       <X size={14} />
                     </button>
                   </div>
+
+                  {activeAnchor && (
+                    <div className="py-2 border-b border-zinc-100 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">
+                          Radius Mode (≤{locationRadiusKm.toFixed(1)} km)
+                        </div>
+                        <div className="text-[10px] text-zinc-400 truncate">
+                          {withinRadiusFilter ? 'Hiding properties outside circle' : 'Showing all · boosting inside circle'}
+                        </div>
+                      </div>
+                      <div className="flex items-center p-0.5 rounded-lg bg-zinc-100 border border-zinc-200 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setWithinRadiusFilter(false)}
+                          className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${!withinRadiusFilter
+                            ? 'bg-white text-zinc-950 shadow-2xs'
+                            : 'text-zinc-500 hover:text-zinc-800'
+                            }`}
+                        >
+                          Rank
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWithinRadiusFilter(true)}
+                          className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${withinRadiusFilter
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-zinc-500 hover:text-zinc-800'
+                            }`}
+                        >
+                          Filter
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="max-h-80 overflow-y-auto space-y-3 py-2 pr-1">
                     {/* 1. Gyms Group */}
@@ -4616,6 +5120,27 @@ export default function SearchMapPage() {
                 </div>
               )}
             </div>
+
+            {/* Inline Proximity Radius Slider (next to location dropdown) */}
+            {activeAnchor && (
+              <div className="h-7 flex items-center gap-1.5 px-2.5 rounded-xl bg-zinc-50 border border-zinc-200/90 shrink-0">
+                <Target size={12} weight="bold" className="text-indigo-600 shrink-0" />
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  step={0.5}
+                  value={locationRadiusKm}
+                  onChange={(e) => setLocationRadiusKm(parseFloat(e.target.value))}
+                  className="w-20 sm:w-24 h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none"
+                  aria-label="Location Radius Ring Slider"
+                  title={`Adjust radius around ${activeAnchor.label}: ${locationRadiusKm.toFixed(1)} km`}
+                />
+                <span className="text-[11px] font-extrabold text-indigo-700 tabular-nums whitespace-nowrap">
+                  {locationRadiusKm.toFixed(1)} km
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Right Group: Primary Actions (Always Pinned & Fully Visible) */}
@@ -4789,19 +5314,6 @@ export default function SearchMapPage() {
               <span>Fibre ready</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setNorthFacingFilter(!northFacingFilter)}
-              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${northFacingFilter
-                ? 'bg-zinc-900 text-white border-zinc-900 shadow-2xs ring-1 ring-zinc-700'
-                : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
-                }`}
-              title="Filter listings: North-facing orientation for maximum natural sunlight"
-            >
-              <span className={northFacingFilter ? "text-amber-300" : "text-zinc-500"}>☀️</span>
-              <span>North-facing</span>
-            </button>
-
             {/* Safe-ish Crime Hotspot Filter Button (ON by default) */}
             <button
               type="button"
@@ -4841,6 +5353,27 @@ export default function SearchMapPage() {
               <span>Off-Main Rd</span>
               {offMainRoadFilter && (
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse ml-0.5" />
+              )}
+            </button>
+
+            {/* Off-Bars & Clubs Filter Button */}
+            <button
+              type="button"
+              onClick={() => setOffBarsFilter(!offBarsFilter)}
+              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${offBarsFilter
+                ? 'bg-rose-950 text-rose-200 border-rose-800 shadow-2xs ring-1 ring-rose-500/30'
+                : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200/70'
+                }`}
+              title={
+                offBarsFilter
+                  ? "Off-Bars & Clubs: ON (hiding properties within close bar & nightlife noise radii). Click to show all."
+                  : "Off-Bars & Clubs: OFF (showing properties near bars & clubs). Click to filter out."
+              }
+            >
+              <span className={offBarsFilter ? "text-rose-300" : "text-zinc-400"}>🍸</span>
+              <span>Off-Bars/Clubs</span>
+              {offBarsFilter && (
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse ml-0.5" />
               )}
             </button>
 
@@ -4891,19 +5424,6 @@ export default function SearchMapPage() {
             >
               <span className={petFriendlyFilter ? "text-pink-300" : "text-zinc-500"}>🐾</span>
               <span>Pet-friendly</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setGasHobFilter(!gasHobFilter)}
-              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${gasHobFilter
-                ? 'bg-zinc-900 text-white border-zinc-900 shadow-2xs ring-1 ring-zinc-700'
-                : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
-                }`}
-              title="Filter listings: Gas hob cooktop for load-shedding resilience"
-            >
-              <span className={gasHobFilter ? "text-orange-300" : "text-zinc-500"}>🔥</span>
-              <span>Gas hob</span>
             </button>
 
             <button
@@ -4987,14 +5507,26 @@ export default function SearchMapPage() {
                   <h2 className="font-extrabold text-sm text-zinc-950 whitespace-nowrap">
                     {displayProperties.length} Properties
                   </h2>
-                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    Live
-                  </span>
+                  {isScraping ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+                      <CircleNotch size={11} className="animate-spin text-indigo-600" />
+                      <span>Loading</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
+                      Live
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center flex-wrap gap-1.5 mt-0.5">
+                  <p className="text-[11px] text-zinc-400 font-medium truncate max-w-[160px]">
+                    {selectedSuburbs.join(', ')}
+                  </p>
                   {hiddenCount > 0 && (
                     <button
                       type="button"
                       onClick={() => setShowHidden(!showHidden)}
-                      className={`text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 border transition-all cursor-pointer ${showHidden
+                      className={`text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 border transition-all cursor-pointer whitespace-nowrap shrink-0 ${showHidden
                         ? 'bg-amber-500 text-zinc-950 border-amber-600 shadow-2xs'
                         : 'bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200 hover:text-zinc-900'
                         }`}
@@ -5004,11 +5536,6 @@ export default function SearchMapPage() {
                       <span>{showHidden ? `Hide (${hiddenCount})` : `${hiddenCount} Hidden`}</span>
                     </button>
                   )}
-                </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <p className="text-[11px] text-zinc-400 font-medium truncate max-w-[190px]">
-                    {selectedSuburbs.join(', ')}
-                  </p>
                   {showHidden && hiddenCount > 0 && (
                     <button
                       type="button"
@@ -5020,6 +5547,20 @@ export default function SearchMapPage() {
                     </button>
                   )}
                 </div>
+                {withinRadiusFilter && activeAnchor && radiusExcludedCount > 0 && (
+                  <div className="mt-1.5 px-2.5 py-1 rounded-xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-between gap-2 text-[11px]">
+                    <span className="font-semibold text-indigo-900 truncate">
+                      🎯 <strong className="font-extrabold tabular-nums">{radiusExcludedCount}</strong> outside {locationRadiusKm.toFixed(1)} km hidden
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setWithinRadiusFilter(false)}
+                      className="font-extrabold text-indigo-700 hover:text-indigo-950 underline shrink-0 cursor-pointer"
+                    >
+                      Show all {displayProperties.length + radiusExcludedCount}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* View Mode Toggle, Sorting Dropdown & Collapse Toggle */}
@@ -5028,11 +5569,10 @@ export default function SearchMapPage() {
                   <button
                     type="button"
                     onClick={() => setFeedViewMode('cards')}
-                    className={`p-1 rounded-lg transition-colors cursor-pointer ${
-                      feedViewMode === 'cards'
+                    className={`p-1 rounded-lg transition-colors cursor-pointer ${feedViewMode === 'cards'
                         ? 'bg-white text-zinc-950 shadow-2xs'
                         : 'text-zinc-500 hover:text-zinc-800'
-                    }`}
+                      }`}
                     title="Cards View"
                     aria-label="Cards View"
                   >
@@ -5041,11 +5581,10 @@ export default function SearchMapPage() {
                   <button
                     type="button"
                     onClick={() => setFeedViewMode('list')}
-                    className={`p-1 rounded-lg transition-colors cursor-pointer ${
-                      feedViewMode === 'list'
+                    className={`p-1 rounded-lg transition-colors cursor-pointer ${feedViewMode === 'list'
                         ? 'bg-white text-zinc-950 shadow-2xs'
                         : 'text-zinc-500 hover:text-zinc-800'
-                    }`}
+                      }`}
                     title="Compact List View"
                     aria-label="Compact List View"
                   >
@@ -5106,8 +5645,9 @@ export default function SearchMapPage() {
           </div>
 
           {/* Scrollable Property Cards Feed */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3.5 divide-y divide-zinc-100">
-            {displayProperties.map((prop) => {
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-3.5">
+            {(() => {
+              const renderPropertyCard = (prop: PropertyMapItem) => {
               const isSelected = selectedPropertyId === prop.id;
               const isHoveredOnMap = hoveredPropertyId === prop.id;
               const isHidden = hiddenPropertyIds.includes(prop.id);
@@ -5142,13 +5682,12 @@ export default function SearchMapPage() {
                       setSelectedPropertyId(prop.id);
                       setFocusTarget({ lat: prop.lat, lng: prop.lng, zoom: 16.8, timestamp: Date.now() });
                     }}
-                    className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-2.5 ${
-                      isSelected
+                    className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-2.5 ${isSelected
                         ? 'bg-purple-50/70 border-purple-400 ring-1 ring-purple-300'
                         : isHoveredOnMap
-                        ? 'bg-indigo-50/40 border-indigo-200'
-                        : 'bg-white border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50/60'
-                    } ${isHidden ? 'opacity-50' : ''}`}
+                          ? 'bg-indigo-50/40 border-indigo-200'
+                          : 'bg-white border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50/60'
+                      } ${isHidden ? 'opacity-50' : ''}`}
                     title="Click to focus on map"
                   >
                     <img
@@ -5180,11 +5719,10 @@ export default function SearchMapPage() {
                               e.stopPropagation();
                               toggleCompareProperty(prop);
                             }}
-                            className={`px-1.5 py-1 rounded-md text-[10px] font-bold border cursor-pointer ${
-                              compareIds.includes(prop.id)
+                            className={`px-1.5 py-1 rounded-md text-[10px] font-bold border cursor-pointer ${compareIds.includes(prop.id)
                                 ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
                                 : 'bg-white border-zinc-200 text-zinc-600 hover:bg-purple-50'
-                            }`}
+                              }`}
                             title={compareIds.includes(prop.id) ? 'In Compare' : 'Add to Compare'}
                           >
                             <Scales size={11} weight="bold" />
@@ -5223,13 +5761,12 @@ export default function SearchMapPage() {
                         <span className="shrink-0">{prop.bedrooms}bd{prop.sqm ? ` · ${prop.sqm}m²` : ''}</span>
                         {marketVal && (
                           <span
-                            className={`shrink-0 font-bold ${
-                              marketVal.isUnderpriced
+                            className={`shrink-0 font-bold ${marketVal.isUnderpriced
                                 ? 'text-emerald-700'
                                 : marketVal.isOverpriced
-                                ? 'text-rose-700'
-                                : 'text-zinc-500'
-                            }`}
+                                  ? 'text-rose-700'
+                                  : 'text-zinc-500'
+                              }`}
                           >
                             · {marketVal.isUnderpriced ? `-${Math.abs(marketVal.pctDiff)}%` : marketVal.isOverpriced ? `+${Math.abs(marketVal.pctDiff)}%` : 'Fair'}
                           </span>
@@ -5376,10 +5913,10 @@ export default function SearchMapPage() {
                             {marketVal && (
                               <span
                                 className={`px-2 py-0.5 rounded-lg text-[10px] font-black shadow-sm backdrop-blur-xs flex items-center gap-0.5 shrink-0 whitespace-nowrap ${marketVal.isUnderpriced
-                                    ? 'bg-emerald-950/90 text-emerald-400 border border-emerald-500/40'
-                                    : marketVal.isOverpriced
-                                      ? 'bg-rose-950/90 text-rose-400 border border-rose-500/40'
-                                      : 'bg-zinc-900/90 text-zinc-300 border border-zinc-700/50'
+                                  ? 'bg-emerald-950/90 text-emerald-400 border border-emerald-500/40'
+                                  : marketVal.isOverpriced
+                                    ? 'bg-rose-950/90 text-rose-400 border border-rose-500/40'
+                                    : 'bg-zinc-900/90 text-zinc-300 border border-zinc-700/50'
                                   }`}
                                 title={marketVal.badgeTooltip}
                               >
@@ -5410,11 +5947,6 @@ export default function SearchMapPage() {
                             >
                               <Heart size={13} weight={prop.is_favorite ? "fill" : "bold"} className={prop.is_favorite ? "text-white" : "text-zinc-200"} />
                             </button>
-
-                            <div className="px-2 py-0.5 rounded-lg bg-zinc-950/85 backdrop-blur-md text-emerald-400 border border-emerald-500/30 text-[9.5px] font-extrabold flex items-center gap-1 shadow-sm pointer-events-none whitespace-nowrap">
-                              <Sparkle size={10} weight="fill" className="text-emerald-400" />
-                              <span>RealView™ 1.0x</span>
-                            </div>
 
                             <button
                               type="button"
@@ -5484,9 +6016,68 @@ export default function SearchMapPage() {
                       {prop.title}
                     </button>
                   </h3>
-                  <p className="text-[11px] text-zinc-500 font-medium truncate mb-2">
-                    {prop.address}
-                  </p>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-[11px] text-zinc-500 font-medium truncate">
+                      {prop.address}
+                    </p>
+                    {isMissingAddressListing(prop) && editingAddressPropId !== prop.id && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingAddressPropId(prop.id);
+                          setManualAddressInput('');
+                          setManualAddressError(null);
+                        }}
+                        className="shrink-0 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold transition-colors cursor-pointer"
+                        title="Know the street address? Submit it to save for everyone"
+                      >
+                        + Add Address
+                      </button>
+                    )}
+                  </div>
+                  {isMissingAddressListing(prop) && editingAddressPropId === prop.id && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="mb-2.5 p-2 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-1.5"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={manualAddressInput}
+                          onChange={(e) => setManualAddressInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSubmitManualAddress(prop);
+                            if (e.key === 'Escape') setEditingAddressPropId(null);
+                          }}
+                          placeholder={`e.g. 14 Derwent Rd, ${(prop as any).suburb || 'Gardens'}`}
+                          className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-white border border-indigo-200 text-[11px] text-zinc-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          disabled={isSubmittingAddress}
+                          onClick={() => handleSubmitManualAddress(prop)}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[10px] font-bold cursor-pointer"
+                        >
+                          {isSubmittingAddress ? 'Saving...' : 'Save'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingAddressPropId(null);
+                            setManualAddressError(null);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-white hover:bg-zinc-100 text-zinc-600 border border-zinc-200 text-[10px] font-bold cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {manualAddressError && (
+                        <p className="text-[10px] text-rose-600 font-semibold">{manualAddressError}</p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Primary Spec Chips: Beds, Baths, Sqm */}
                   <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-600 mb-1.5">
@@ -5508,17 +6099,15 @@ export default function SearchMapPage() {
                     {marketVal && (
                       <span
                         className={`border px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs ${marketVal.isUnderpriced
-                            ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                            : marketVal.isOverpriced
-                              ? 'bg-rose-50 text-rose-950 border-rose-300'
-                              : 'bg-zinc-100 text-zinc-800 border-zinc-300'
+                          ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                          : marketVal.isOverpriced
+                            ? 'bg-rose-50 text-rose-950 border-rose-300'
+                            : 'bg-zinc-100 text-zinc-800 border-zinc-300'
                           }`}
                         title={marketVal.badgeTooltip}
                       >
                         <span>{marketVal.isUnderpriced ? '📉' : marketVal.isOverpriced ? '📈' : '⚖️'}</span>
-                        <span>
-                          {marketVal.badgeText} vs {marketVal.areaLabel} {marketVal.isRiskAdjusted ? 'Adj. ' : ''}Median (R {marketVal.medianPrice >= 1000 ? `${(marketVal.medianPrice / 1000).toFixed(marketVal.medianPrice % 1000 === 0 ? 0 : 1)}k` : marketVal.medianPrice})
-                        </span>
+                        <span>{marketVal.badgeText}</span>
                       </span>
                     )}
                     {prop.is_favorite && (
@@ -5559,11 +6148,10 @@ export default function SearchMapPage() {
                     )}
                     {crimePerimeter.isNearHighRisk && crimePerimeter.shortFlag && (
                       <span
-                        className={`border px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs ${
-                          crimePerimeter.hasEstateSecurity
+                        className={`border px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs ${crimePerimeter.hasEstateSecurity
                             ? 'bg-slate-50 text-slate-800 border-slate-300'
                             : 'bg-amber-50 text-amber-950 border-amber-300'
-                        }`}
+                          }`}
                         title={crimePerimeter.tooltipReason}
                       >
                         <ShieldWarning
@@ -5583,13 +6171,64 @@ export default function SearchMapPage() {
                         title={privacyInfo.isExplicitLandlord ? "Landlord / Owner lives on property" : "Garden cottage / flatlet on shared property"}
                       >
                         {privacyInfo.isExplicitLandlord ? (
-                          <WarningCircle size={11} weight="fill" className="text-rose-600 shrink-0" />
+                          <>
+                            <WarningCircle size={11} weight="fill" className="text-rose-600 shrink-0" />
+                            <span>{privacyInfo.badgeLabel.replace(/^⚠️\s*/, '')}</span>
+                          </>
                         ) : (
-                          <span>🏡</span>
+                          <span>{privacyInfo.badgeLabel}</span>
                         )}
-                        <span>{privacyInfo.badgeLabel}</span>
                       </span>
                     )}
+                    {/* Listing Date / Stale Listing Badge */}
+                    {(() => {
+                      const firstSeen = (prop as any).first_seen_at;
+                      const availFrom = (prop as any).available_from;
+                      const nodes: React.ReactNode[] = [];
+                      if (firstSeen && typeof firstSeen === 'number') {
+                        const days = Math.max(0, Math.floor((Date.now() / 1000 - firstSeen) / 86400));
+                        const dateStr = new Date(firstSeen * 1000).toLocaleDateString('en-ZA', {
+                          day: 'numeric',
+                          month: 'short',
+                        });
+                        if (days >= 21) {
+                          nodes.push(
+                            <span
+                              key="listed-stale"
+                              className="border border-amber-300 bg-amber-50 text-amber-950 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs"
+                              title={`First seen ${dateStr} (${days} days ago) — still unrented`}
+                            >
+                              <span>⏳</span>
+                              <span>Listed {dateStr} ({days}d+ Stale)</span>
+                            </span>
+                          );
+                        } else {
+                          nodes.push(
+                            <span
+                              key="listed-date"
+                              className="bg-zinc-100 text-zinc-700 border border-zinc-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
+                              title={`First seen on HomeSeek: ${dateStr}${days > 0 ? ` (${days}d ago)` : ' (today)'}`}
+                            >
+                              <span>📅</span>
+                              <span>Listed {dateStr}{days > 0 ? ` · ${days}d` : ''}</span>
+                            </span>
+                          );
+                        }
+                      }
+                      if (availFrom) {
+                        nodes.push(
+                          <span
+                            key="avail-from"
+                            className="bg-sky-50 text-sky-900 border border-sky-200/80 px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1"
+                            title={`Available from ${availFrom}`}
+                          >
+                            <span>🗓️</span>
+                            <span>Avail {availFrom}</span>
+                          </span>
+                        );
+                      }
+                      return nodes.length > 0 ? <>{nodes}</> : null;
+                    })()}
                     {/* Stove Badge */}
                     {prop.stove_type === 'gas' ? (
                       <span
@@ -5773,7 +6412,7 @@ export default function SearchMapPage() {
                   })()}
 
                   {/* Links / Action Footer */}
-                  <div className="flex items-center justify-between pt-2.5 mt-1.5 border-t border-zinc-100 text-xs">
+                  <div className="flex items-center justify-between flex-wrap gap-1.5 pt-2.5 mt-1.5 border-t border-zinc-100 text-xs">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -5792,18 +6431,17 @@ export default function SearchMapPage() {
                       <NavigationArrow size={11} weight="fill" />
                     </button>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center flex-wrap gap-1 min-w-0">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleCompareProperty(prop);
                         }}
-                        className={`px-2 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1 border transition-colors whitespace-nowrap cursor-pointer ${
-                          compareIds.includes(prop.id)
+                        className={`px-2 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1 border transition-colors whitespace-nowrap cursor-pointer ${compareIds.includes(prop.id)
                             ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
                             : 'bg-white hover:bg-purple-50 border-zinc-200 text-zinc-700 hover:border-purple-200'
-                        }`}
+                          }`}
                         title={compareIds.includes(prop.id) ? 'Remove from AI Compare' : 'Add to AI Compare (2–4 properties)'}
                       >
                         <Scales size={12} weight="bold" className="shrink-0" />
@@ -5826,12 +6464,28 @@ export default function SearchMapPage() {
                         <span>{viewingAiReportProp?.id === prop.id ? 'Close' : 'AI Analysis'}</span>
                       </button>
 
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openCommentsModal(prop);
+                        }}
+                        className={`px-2 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1 border transition-colors whitespace-nowrap cursor-pointer ${(commentCounts[prop.id] || 0) > 0
+                          ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200'
+                          : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600 border-zinc-200'
+                          }`}
+                        title={(commentCounts[prop.id] || 0) > 0 ? `Open ${commentCounts[prop.id]} comment(s)` : 'Add a comment on this listing'}
+                      >
+                        <span>💬</span>
+                        {(commentCounts[prop.id] || 0) > 0 && <span>{commentCounts[prop.id]}</span>}
+                      </button>
+
                       <a
                         href={resolveGoogleMapsUrl(prop)}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="px-2 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 hover:text-zinc-950 text-[10.5px] font-bold flex items-center gap-1 border border-zinc-200 transition-colors whitespace-nowrap cursor-pointer"
+                        className="px-1.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 hover:text-zinc-950 text-[10.5px] font-bold flex items-center gap-1 border border-zinc-200 transition-colors whitespace-nowrap cursor-pointer"
                         title="Show exact address / location on Google Maps (opens in a new tab)"
                       >
                         <MapPin size={12} weight="bold" className="text-rose-500 shrink-0" />
@@ -5844,7 +6498,7 @@ export default function SearchMapPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => openProperty24Url(e, resolveProperty24Url(prop))}
-                        className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-indigo-600 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
+                        className="px-2 py-1.5 rounded-lg bg-zinc-900 hover:bg-indigo-600 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
                         title="Open original listing on Property24"
                       >
                         <span>P24</span>
@@ -5852,9 +6506,103 @@ export default function SearchMapPage() {
                       </a>
                     </div>
                   </div>
+                  {recentComments[prop.id] && recentComments[prop.id].length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCommentsModal(prop);
+                      }}
+                      className="w-full text-left mt-2 px-2.5 py-2 rounded-xl bg-indigo-50/75 hover:bg-indigo-100/75 border border-indigo-200/70 text-[11px] text-zinc-700 transition-colors cursor-pointer space-y-1"
+                      title="Click to view or add comments"
+                    >
+                      {recentComments[prop.id].slice(0, 3).map((c) => (
+                        <div key={c.id} className="leading-snug line-clamp-2">
+                          <span className="font-extrabold text-indigo-800">u/{c.nickname}:</span>{' '}
+                          <span className="text-zinc-700">{c.body}</span>
+                        </div>
+                      ))}
+                      {(commentCounts[prop.id] || 0) > 3 && (
+                        <div className="text-[10px] font-bold text-indigo-600 pt-0.5">
+                          View all {commentCounts[prop.id]} comments →
+                        </div>
+                      )}
+                    </button>
+                  )}
                 </div>
               );
-            })}
+              };
+
+              if (displayProperties.length === 0) {
+                return null;
+              }
+
+              const getKnownSqm = (p: PropertyMapItem) => {
+                if (p.sqm && p.sqm > 0) return p.sqm;
+                const m = `${p.title} ${p.address}`.match(/(\d+)\s*(?:m²|sqm|m2)/i);
+                return m ? parseInt(m[1], 10) : 0;
+              };
+
+              const knownSizeProps = displayProperties.filter((p) => getKnownSqm(p) > 0);
+              const unknownSizeProps = displayProperties.filter((p) => getKnownSqm(p) <= 0);
+
+              const inRadiusProps = activeAnchor ? knownSizeProps.filter((p) => !p.is_outside_radius) : [];
+              const outOfRadiusProps = activeAnchor ? knownSizeProps.filter((p) => p.is_outside_radius) : knownSizeProps;
+
+              return (
+                <>
+                  {activeAnchor && inRadiusProps.length > 0 && (
+                    <div className="rounded-2xl bg-indigo-50/75 border border-indigo-200/80 p-2.5 space-y-3">
+                      <div className="flex items-center justify-between gap-2 px-1">
+                        <span className="text-[11px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5 min-w-0">
+                          <Target size={13} weight="bold" className="text-indigo-600 shrink-0" />
+                          <span className="truncate">Within Radius to {activeAnchor.label}</span>
+                        </span>
+                        <span className="text-[10px] font-extrabold text-indigo-700 bg-white/90 border border-indigo-200 px-2 py-0.5 rounded-full shrink-0">
+                          {inRadiusProps.length} · ≤{locationRadiusKm.toFixed(1)} km
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {inRadiusProps.map(renderPropertyCard)}
+                      </div>
+                    </div>
+                  )}
+
+                  {outOfRadiusProps.length > 0 && (
+                    <div className="space-y-3 pt-1">
+                      {activeAnchor && (
+                        <div className="flex items-center justify-between px-1">
+                          <span className="text-[10.5px] font-bold uppercase tracking-wider text-zinc-400">
+                            Outside {locationRadiusKm.toFixed(1)} km radius
+                          </span>
+                          <span className="text-[10px] font-bold text-zinc-400">
+                            {outOfRadiusProps.length}
+                          </span>
+                        </div>
+                      )}
+                      {outOfRadiusProps.map(renderPropertyCard)}
+                    </div>
+                  )}
+
+                  {unknownSizeProps.length > 0 && (
+                    <div className="rounded-2xl bg-amber-50/75 border border-amber-200/80 p-2.5 space-y-3">
+                      <div className="flex items-center justify-between gap-2 px-1">
+                        <span className="text-[11px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5 min-w-0">
+                          <span>📐</span>
+                          <span className="truncate">Size Unknown</span>
+                        </span>
+                        <span className="text-[10px] font-extrabold text-amber-800 bg-white/90 border border-amber-200 px-2 py-0.5 rounded-full shrink-0">
+                          {unknownSizeProps.length}
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {unknownSizeProps.map(renderPropertyCard)}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             {displayProperties.length === 0 && (
               <div className="p-8 text-center flex flex-col items-center justify-center space-y-3">
@@ -5928,13 +6676,183 @@ export default function SearchMapPage() {
             selectedSuburbs={selectedSuburbs}
             onAddSuburb={(suburb: string) => handleAddSuburb(suburb)}
             onOpenAiReport={(p: PropertyMapItem) => handleTogglePropertyAiReport(p)}
+            commentCounts={commentCounts}
+            onOpenComments={(p: PropertyMapItem) => openCommentsModal(p)}
             proximityFilter={activeAnchor ? { label: activeAnchor.label, lat: activeAnchor.lat, lng: activeAnchor.lng, radiusKm: locationRadiusKm } : null}
             onRadiusChange={(r) => setLocationRadiusKm(r)}
+            withinRadiusFilter={withinRadiusFilter}
+            onToggleWithinRadiusFilter={(next) => setWithinRadiusFilter(next)}
             className="w-full h-full"
           />
         </div>
 
       </main>
+
+      {/* LISTING COMMENTS MODAL */}
+      {commentModalProp && (
+        <div
+          className="fixed inset-0 z-[120] bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setCommentModalProp(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col max-h-[82vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-zinc-100 flex items-center justify-between gap-3 bg-zinc-50/80">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black text-zinc-950 truncate">
+                    💬 {commentModalProp.title}
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 shrink-0">
+                    {listingComments.length} {listingComments.length === 1 ? 'comment' : 'comments'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-500 truncate">{commentModalProp.address}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCommentModalProp(null)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-200/60 cursor-pointer"
+                aria-label="Close comments"
+              >
+                <X size={16} weight="bold" />
+              </button>
+            </div>
+
+            <div className="p-4 border-b border-zinc-100 space-y-2 bg-white">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-zinc-500">
+                  Posting as{' '}
+                  <span className="font-extrabold text-indigo-700">
+                    u/{activeCommentNickname || 'Generating...'}
+                  </span>
+                </span>
+                {user ? (
+                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                    Google Verified
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-semibold text-zinc-500">
+                    Guest Seeker
+                  </span>
+                )}
+              </div>
+              <textarea
+                rows={2}
+                value={newCommentText}
+                onChange={(e) => setNewCommentText(e.target.value)}
+                placeholder="Share viewing notes, noise observations, landlord/agency feedback..."
+                className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 resize-none"
+              />
+              {commentError && (
+                <p className="text-[11px] text-rose-600 font-semibold">{commentError}</p>
+              )}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  disabled={isPostingComment || !newCommentText.trim()}
+                  onClick={handleCreateComment}
+                  className="px-3.5 py-1.5 rounded-xl bg-zinc-950 hover:bg-indigo-600 disabled:opacity-40 text-white text-xs font-bold transition-colors cursor-pointer"
+                >
+                  {isPostingComment ? 'Posting...' : 'Post Comment'}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-zinc-50/40">
+              {isLoadingComments ? (
+                <p className="text-xs text-zinc-400 text-center py-6">Loading comments...</p>
+              ) : listingComments.length === 0 ? (
+                <p className="text-xs text-zinc-400 text-center py-6">
+                  No comments yet. Be the first to share notes on this listing!
+                </p>
+              ) : (
+                listingComments.map((c) => {
+                  const isOwner = c.user_id === activeCommentUid;
+                  const isEditing = editingCommentId === c.id;
+                  const isEdited = c.updated_at - c.created_at > 2;
+                  return (
+                    <div
+                      key={c.id}
+                      className="p-3 rounded-xl bg-white border border-zinc-200/80 shadow-2xs space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[11px] font-black text-indigo-700 truncate">
+                            u/{c.nickname}
+                          </span>
+                          {isOwner && (
+                            <span className="text-[9.5px] font-bold px-1.5 py-0.2 rounded bg-zinc-100 text-zinc-600">
+                              You
+                            </span>
+                          )}
+                          <span className="text-[10px] text-zinc-400">
+                            · {new Date(c.created_at * 1000).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
+                            {isEdited ? ' (edited)' : ''}
+                          </span>
+                        </div>
+                        {isOwner && !isEditing && (
+                          <div className="flex items-center flex-wrap gap-1 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCommentId(c.id);
+                                setEditingCommentText(c.body);
+                              }}
+                              className="text-[10.5px] font-bold text-zinc-500 hover:text-indigo-700 cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteComment(c.id)}
+                              className="text-[10.5px] font-bold text-zinc-400 hover:text-rose-600 cursor-pointer"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {isEditing ? (
+                        <div className="space-y-1.5 pt-1">
+                          <textarea
+                            rows={2}
+                            value={editingCommentText}
+                            onChange={(e) => setEditingCommentText(e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-indigo-300 text-xs text-zinc-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                          />
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditingCommentId(null)}
+                              className="px-2.5 py-1 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[10.5px] font-bold cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateComment(c.id)}
+                              className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10.5px] font-bold cursor-pointer"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-zinc-800 whitespace-pre-wrap leading-relaxed">
+                          {c.body}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI DEEP ANALYSIS MODAL */}
       {isAiModalOpen && (
@@ -6022,11 +6940,6 @@ export default function SearchMapPage() {
                     ✓ 🌐 Fibre ready
                   </span>
                 )}
-                {northFacingFilter && (
-                  <span className="bg-zinc-900 text-amber-300 px-2 py-0.5 rounded-md border border-zinc-800 shadow-2xs">
-                    ✓ ☀️ North-facing
-                  </span>
-                )}
                 {parkingFilter && (
                   <span className="bg-zinc-900 text-emerald-300 px-2 py-0.5 rounded-md border border-zinc-800 shadow-2xs">
                     ✓ 🚗 Off-street parking
@@ -6037,12 +6950,7 @@ export default function SearchMapPage() {
                     ✓ 🐾 Pet-friendly
                   </span>
                 )}
-                {gasHobFilter && (
-                  <span className="bg-zinc-900 text-orange-300 px-2 py-0.5 rounded-md border border-zinc-800 shadow-2xs">
-                    ✓ 🔥 Gas hob
-                  </span>
-                )}
-                {!fibreFilter && !northFacingFilter && !parkingFilter && !petFriendlyFilter && !gasHobFilter && (
+                {!fibreFilter && !parkingFilter && !petFriendlyFilter && (
                   <span className="bg-white/80 text-zinc-400 px-2 py-0.5 rounded-md border border-zinc-200/60 text-[10.5px]">
                     (No feature toggles active · showing all verified)
                   </span>
@@ -6095,8 +7003,8 @@ export default function SearchMapPage() {
                       <label
                         key={item.label}
                         className={`flex items-center gap-2 p-2 rounded-xl border text-[11px] font-bold cursor-pointer transition-all select-none ${isChecked
-                            ? 'bg-purple-50/90 border-purple-300 text-purple-950 shadow-2xs font-extrabold ring-1 ring-purple-400/40'
-                            : 'bg-white hover:bg-zinc-50 border-zinc-200/90 text-zinc-700'
+                          ? 'bg-purple-50/90 border-purple-300 text-purple-950 shadow-2xs font-extrabold ring-1 ring-purple-400/40'
+                          : 'bg-white hover:bg-zinc-50 border-zinc-200/90 text-zinc-700'
                           }`}
                       >
                         <input
@@ -6143,8 +7051,8 @@ export default function SearchMapPage() {
                       <label
                         key={factor.label}
                         className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-[10.5px] font-bold cursor-pointer transition-all select-none ${isChecked
-                            ? 'bg-purple-100/80 border-purple-300 text-purple-950 font-black shadow-2xs'
-                            : 'bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-700'
+                          ? 'bg-purple-100/80 border-purple-300 text-purple-950 font-black shadow-2xs'
+                          : 'bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-700'
                           }`}
                       >
                         <input
@@ -6375,11 +7283,6 @@ export default function SearchMapPage() {
                     ✓ 🌐 Fibre ready
                   </span>
                 )}
-                {northFacingFilter && (
-                  <span className="bg-amber-50 text-amber-900 px-2 py-0.5 rounded-md border border-amber-300 shadow-2xs">
-                    ✓ ☀️ North-facing
-                  </span>
-                )}
                 {parkingFilter && (
                   <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-md border border-emerald-300 shadow-2xs">
                     ✓ 🚗 Parking
@@ -6388,11 +7291,6 @@ export default function SearchMapPage() {
                 {petFriendlyFilter && (
                   <span className="bg-pink-50 text-pink-900 px-2 py-0.5 rounded-md border border-pink-300 shadow-2xs">
                     ✓ 🐾 Pet-friendly
-                  </span>
-                )}
-                {gasHobFilter && (
-                  <span className="bg-orange-50 text-orange-900 px-2 py-0.5 rounded-md border border-orange-300 shadow-2xs">
-                    ✓ 🔥 Gas hob
                   </span>
                 )}
                 {offMainRoadFilter && (
@@ -6453,8 +7351,8 @@ export default function SearchMapPage() {
                       <label
                         key={item.label}
                         className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-[10.5px] font-bold cursor-pointer transition-all select-none ${isChecked
-                            ? 'bg-purple-50/90 border-purple-300 text-purple-950 shadow-2xs font-extrabold ring-1 ring-purple-400/40'
-                            : 'bg-white hover:bg-zinc-50 border-zinc-200/90 text-zinc-700'
+                          ? 'bg-purple-50/90 border-purple-300 text-purple-950 shadow-2xs font-extrabold ring-1 ring-purple-400/40'
+                          : 'bg-white hover:bg-zinc-50 border-zinc-200/90 text-zinc-700'
                           }`}
                       >
                         <input
@@ -6482,1078 +7380,1122 @@ export default function SearchMapPage() {
                 </div>
               </div>
 
-                {/* Pro Feature: Viewing / Off-Portal Photo Upload */}
-                <div className="pt-2 border-t border-zinc-200/60 space-y-2">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-1.5">
-                      <Camera size={13} weight="bold" className="text-purple-600" />
-                      <span className="text-[10px] font-black uppercase tracking-wider text-zinc-700">
-                        Viewing / Off-Portal Photos
+              {/* Pro Feature: Viewing / Off-Portal Photo Upload */}
+              <div className="pt-2 border-t border-zinc-200/60 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <Camera size={13} weight="bold" className="text-purple-600" />
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-700">
+                      Viewing / Off-Portal Photos
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black uppercase tracking-wider">
+                      {planSummary?.tier === 'free' ? 'Pro' : planSummary?.tier === 'hunter_pass' ? 'Hunter Pass' : 'Pro Active'}
+                    </span>
+                    {planSummary && (
+                      <span className="text-[10px] font-semibold text-zinc-500">
+                        • {planSummary.remainingAudits} {planSummary.remainingAudits === 1 ? 'audit' : 'audits'} left
                       </span>
-                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black uppercase tracking-wider">
-                        {planSummary?.tier === 'free' ? 'Pro' : planSummary?.tier === 'hunter_pass' ? 'Hunter Pass' : 'Pro Active'}
-                      </span>
-                      {planSummary && (
-                        <span className="text-[10px] font-semibold text-zinc-500">
-                          • {planSummary.remainingAudits} {planSummary.remainingAudits === 1 ? 'audit' : 'audits'} left
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {planSummary?.tier === 'free' ? (
-                        <a
-                          href="/pricing"
-                          className="text-[10px] font-black text-purple-700 hover:text-purple-900 underline"
-                        >
-                          Unlock R149 Hunter Pass →
-                        </a>
-                      ) : (
-                        <a
-                          href="/pricing"
-                          className="text-[10px] font-bold text-zinc-500 hover:text-zinc-800 underline"
-                        >
-                          Manage Plan
-                        </a>
-                      )}
-                    </div>
+                    )}
                   </div>
-
-                  {planSummary && !planSummary.canUploadPhotos ? (
-                    <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-[11px] text-amber-900">
-                      <span>
-                        Upload photos you snapped at a viewing (cracks, damp, plug points, street noise, kitchen) or off-portal Gumtree/Facebook screenshots for Gemini Vision inspection.
-                      </span>
+                  <div className="flex items-center gap-1.5">
+                    {planSummary?.tier === 'free' ? (
                       <a
                         href="/pricing"
-                        className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black transition-colors"
+                        className="text-[10px] font-black text-purple-700 hover:text-purple-900 underline"
                       >
-                        Upgrade
+                        Unlock R149 Hunter Pass →
                       </a>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white hover:bg-purple-50 border border-dashed border-purple-300 text-[11px] font-bold text-purple-800 cursor-pointer transition-colors">
-                          <Camera size={13} weight="bold" />
-                          <span>Upload Viewing Photos ({uploadedViewingPhotos.length}/8)</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            className="hidden"
-                            onChange={(e) => {
-                              handleUploadViewingPhotos(e.target.files);
-                              e.target.value = '';
-                            }}
-                          />
-                        </label>
+                    ) : (
+                      <a
+                        href="/pricing"
+                        className="text-[10px] font-bold text-zinc-500 hover:text-zinc-800 underline"
+                      >
+                        Manage Plan
+                      </a>
+                    )}
+                  </div>
+                </div>
 
-                        {uploadedViewingPhotos.length > 0 && (
-                          <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-zinc-200">
-                            {(
-                              [
-                                { id: 'both', label: 'Listing + Mine' },
-                                { id: 'uploaded', label: 'My Photos Only' },
-                                { id: 'listing', label: 'Listing Only' },
-                              ] as const
-                            ).map((mode) => (
-                              <button
-                                key={mode.id}
-                                type="button"
-                                onClick={() => setPhotoSourceMode(mode.id)}
-                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer ${
-                                  photoSourceMode === mode.id
-                                    ? 'bg-purple-700 text-white'
-                                    : 'text-zinc-600 hover:bg-zinc-100'
-                                }`}
-                              >
-                                {mode.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                {planSummary && !planSummary.canUploadPhotos ? (
+                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-[11px] text-amber-900">
+                    <span>
+                      Upload photos you snapped at a viewing (cracks, damp, plug points, street noise, kitchen) or off-portal Gumtree/Facebook screenshots for Gemini Vision inspection.
+                    </span>
+                    <a
+                      href="/pricing"
+                      className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black transition-colors"
+                    >
+                      Upgrade
+                    </a>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white hover:bg-purple-50 border border-dashed border-purple-300 text-[11px] font-bold text-purple-800 cursor-pointer transition-colors">
+                        <Camera size={13} weight="bold" />
+                        <span>Upload Viewing Photos ({uploadedViewingPhotos.length}/8)</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => {
+                            handleUploadViewingPhotos(e.target.files);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
 
                       {uploadedViewingPhotos.length > 0 && (
-                        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                          {uploadedViewingPhotos.map((src, idx) => (
-                            <div key={idx} className="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-purple-200 bg-zinc-100">
-                              <img src={src} alt={`Viewing photo ${idx + 1}`} className="w-full h-full object-cover" />
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setUploadedViewingPhotos((prev) => prev.filter((_, i) => i !== idx))
-                                }
-                                className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-zinc-900/80 text-white text-[9px] font-black flex items-center justify-center cursor-pointer"
-                                title="Remove photo"
-                              >
-                                ×
-                              </button>
-                            </div>
+                        <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-zinc-200">
+                          {(
+                            [
+                              { id: 'both', label: 'Listing + Mine' },
+                              { id: 'uploaded', label: 'My Photos Only' },
+                              { id: 'listing', label: 'Listing Only' },
+                            ] as const
+                          ).map((mode) => (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              onClick={() => setPhotoSourceMode(mode.id)}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer ${photoSourceMode === mode.id
+                                  ? 'bg-purple-700 text-white'
+                                  : 'text-zinc-600 hover:bg-zinc-100'
+                                }`}
+                            >
+                              {mode.label}
+                            </button>
                           ))}
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
 
-                {/* Submit / Re-Run Button & Quick-Add Chips */}
-                <div className="pt-2 border-t border-zinc-200/60 flex items-center justify-between gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (viewingAiReportProp) {
-                        runForensicAiInspection(viewingAiReportProp);
-                      }
-                    }}
-                    disabled={Boolean((viewingAiReportProp as any).deep_ai_audit?.isVisionLoading)}
-                    className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 active:scale-95 text-white text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Sparkle size={13} weight="fill" />
-                    <span>
-                      {(viewingAiReportProp as any).deep_ai_audit?.isVisionLoading
-                        ? 'Analyzing Property...'
-                        : 'Submit Preferences & Run AI Report'}
-                    </span>
-                  </button>
-                  <div className="flex items-center flex-wrap gap-1">
-                    {[
-                      '🔒 100% Private (No Landlord)',
-                      '🌿 Quiet Sanctuary',
-                      '☀️ North-Facing Sunlight',
-                      '🍳 Gas Cooking',
-                      '💻 High-Speed Fibre',
-                      '🐾 Pet-Friendly',
-                      '🚗 Secure Parking',
-                      '🏔️ Mountain or Ocean Views'
-                    ].map((chip) => {
-                      const chipKey = chip.replace(/^[^\w\s]+\s*/, '');
-                      const isAlreadyIn = personalPreferences.toLowerCase().includes(chipKey.toLowerCase());
-                      return (
-                        <button
-                          key={chip}
-                          type="button"
-                          onClick={() => {
-                            if (isAlreadyIn) {
-                              handleUpdatePreferences(
-                                personalPreferences.replace(new RegExp(chipKey, 'gi'), '').replace(/,\s*,/g, ',').trim()
-                              );
-                            } else {
-                              handleUpdatePreferences(
-                                personalPreferences ? `${personalPreferences.trim().replace(/\.$/, '')}, ${chipKey}.` : `${chipKey}.`
-                              );
-                            }
-                          }}
-                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${isAlreadyIn
-                              ? 'bg-purple-100 border-purple-300 text-purple-900 shadow-2xs font-black'
-                              : 'bg-white hover:bg-zinc-100 text-zinc-600 border-zinc-200/80'
-                            }`}
-                        >
-                          {chip}
-                        </button>
-                      );
-                    })}
+                    {uploadedViewingPhotos.length > 0 && (
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                        {uploadedViewingPhotos.map((src, idx) => (
+                          <div key={idx} className="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-purple-200 bg-zinc-100">
+                            <img src={src} alt={`Viewing photo ${idx + 1}`} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setUploadedViewingPhotos((prev) => prev.filter((_, i) => i !== idx))
+                              }
+                              className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-zinc-900/80 text-white text-[9px] font-black flex items-center justify-center cursor-pointer"
+                              title="Remove photo"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
               </div>
 
-              {/* Section: AI Forensic Report Results Container */}
-              <div className="pt-2">
-                <div className="p-4 rounded-2xl bg-gradient-to-b from-purple-50/60 via-white to-white border-2 border-purple-200/90 shadow-md space-y-4">
-                  {/* Formal Report Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-purple-100">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-purple-700 text-white flex items-center justify-center shrink-0 shadow-xs">
-                        <Sparkle size={18} weight="fill" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-black text-zinc-950 uppercase tracking-wide">
-                            AI Property Forensic Report
-                          </h3>
-                          {viewingAiReportProp.fit_score && (
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-200">
-                              {viewingAiReportProp.fit_score}% Fit
-                            </span>
-                          )}
-                          {(viewingAiReportProp as any).deep_ai_audit?.hasAiRun && (
-                            <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                              ✓ Verified Run
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-zinc-500 font-medium">
-                          Autonomous multimodal vision, acoustic decibel modeling &amp; lease audit.
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Metadata Stamp (Time + Status) + Compare / Snag Export Actions */}
-                    <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => viewingAiReportProp && toggleCompareProperty(viewingAiReportProp)}
-                        className={`px-2.5 py-1 rounded-xl border text-[11px] font-black flex items-center gap-1 transition-colors cursor-pointer ${
-                          viewingAiReportProp && compareIds.includes(viewingAiReportProp.id)
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                            : 'bg-white border-zinc-200 text-zinc-700 hover:bg-purple-50 hover:border-purple-200'
-                        }`}
-                      >
-                        <Scales size={13} weight="bold" />
-                        <span>
-                          {viewingAiReportProp && compareIds.includes(viewingAiReportProp.id) ? '✓ In Compare' : '+ Compare'}
-                        </span>
-                      </button>
-
-                      {compareIds.length >= 2 && (
-                        <a
-                          href="/compare"
-                          className="px-2.5 py-1 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-black transition-colors"
-                        >
-                          Open Compare ({compareIds.length}) →
-                        </a>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => viewingAiReportProp && handleCopySnagReport(viewingAiReportProp)}
-                        className="px-2.5 py-1 rounded-xl bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 text-[11px] font-bold transition-colors cursor-pointer"
-                        title="Copy formatted viewing / move-in snag checklist"
-                      >
-                        {snagCopied ? '✓ Snag Copied' : 'Copy Snag Report'}
-                      </button>
-
-                      <div className="flex items-center gap-2 text-[11px] text-zinc-500 font-semibold bg-white px-2.5 py-1 rounded-xl border border-zinc-200 shadow-2xs">
-                        <Clock size={13} weight="bold" className="text-purple-600" />
-                        <span>
-                          Generated: {(viewingAiReportProp as any).deep_ai_audit?.generatedAt || 'Standby (Pending Submission)'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Consolidated Preference Alignment & Search Baseline Card (Zero Duplication) */}
-                  <div className="p-3.5 rounded-2xl bg-purple-50/75 border border-purple-200/80 space-y-2.5">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <Sparkle size={16} weight="fill" className="text-purple-600" />
-                        <h4 className="text-xs font-black uppercase tracking-wider text-purple-950">
-                          Preference Alignment &amp; Search Baseline
-                        </h4>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold text-zinc-500">
-                          {selectedSuburbs.length > 0 ? selectedSuburbs.join(', ') : 'All Suburbs'} · R {formatPrice(minPrice)}–{formatPrice(maxPrice)}
-                        </span>
-                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                          {viewingAiReportProp.rank ? `Rank #${viewingAiReportProp.rank}` : 'Forensic Match'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Active Search Filters (only shown if any filters or anchor are active) */}
-                    {(activeAnchor || safeishFilter || fibreFilter || northFacingFilter || parkingFilter || petFriendlyFilter || gasHobFilter || offMainRoadFilter || privateOnlyFilter) && (
-                      <div className="flex items-center flex-wrap gap-1.5 text-[10px] font-semibold">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mr-0.5 flex items-center gap-1">
-                          <SlidersHorizontal size={11} weight="bold" className="text-indigo-500" />
-                          Filters:
-                        </span>
-                        {activeAnchor && (
-                          <span className="bg-indigo-50 text-indigo-900 px-2 py-0.5 rounded-md border border-indigo-200">
-                            🎯 {activeAnchor.label}
-                          </span>
-                        )}
-                        {safeishFilter && (
-                          <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                            Safe-ish
-                          </span>
-                        )}
-                        {fibreFilter && (
-                          <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                            Fibre
-                          </span>
-                        )}
-                        {northFacingFilter && (
-                          <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                            North-facing
-                          </span>
-                        )}
-                        {parkingFilter && (
-                          <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                            Parking
-                          </span>
-                        )}
-                        {petFriendlyFilter && (
-                          <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                            Pet-friendly
-                          </span>
-                        )}
-                        {gasHobFilter && (
-                          <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                            Gas hob
-                          </span>
-                        )}
-                        {offMainRoadFilter && (
-                          <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                            Off-Main Rd
-                          </span>
-                        )}
-                        {privateOnlyFilter && (
-                          <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                            100% Private
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Applied Lifestyle Input + AI Verdict in a clean 2-part card */}
-                    <div className="bg-white/90 rounded-xl border border-purple-100 divide-y divide-purple-100/70">
-                      <div className="p-2.5 text-[11px] text-zinc-600 flex items-start gap-1.5">
-                        <span className="font-extrabold text-purple-900 shrink-0">Your Brief:</span>
-                        <span className="italic text-zinc-700">
-                          {(viewingAiReportProp as any).deep_ai_audit?.appliedPreferences ||
-                            personalPreferences.trim() ||
-                            'Standard optimal rental baseline (no custom criteria provided).'}
-                        </span>
-                      </div>
-                      <div className="p-2.5 text-[11.5px] font-semibold text-purple-950 leading-relaxed flex items-start gap-1.5">
-                        <span className="font-extrabold text-purple-700 shrink-0">Verdict:</span>
-                        <span>
-                          {(viewingAiReportProp as any).deep_ai_audit?.personalMatchVerdict ||
-                            (viewingAiReportProp as any).deep_ai_audit?.amenitiesVerdict ||
-                            'Evaluated against your active search criteria and property telemetry.'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Verified Property Telemetry & Risk Badges (Shown Once) */}
-                    <div className="flex items-center flex-wrap gap-1.5 pt-0.5">
-                      {(() => {
-                        const rep = getAgencyReputationInfo(viewingAiReportProp);
-                        if (!rep.isPoorAgency) return null;
-                        return (
-                          <span
-                            className="text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-600 border border-rose-700 text-white flex items-center gap-1 shadow-2xs"
-                            title={rep.tooltipReason}
-                          >
-                            <WarningCircle size={11} weight="fill" className="text-white" />
-                            <span>{rep.badgeLabel}</span>
-                          </span>
-                        );
-                      })()}
-                      {(() => {
-                        const barNoise = getPropertyBarNoiseExposure(viewingAiReportProp);
-                        if (!barNoise.isExposed || !barNoise.badgeLabel) return null;
-                        return (
-                          <span
-                            className="text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-50 border border-rose-300 text-rose-950 flex items-center gap-1 shadow-2xs"
-                            title={barNoise.tooltipReason}
-                          >
-                            <SpeakerHigh size={11} weight="fill" className="text-rose-600" />
-                            <span>{barNoise.badgeLabel}</span>
-                          </span>
-                        );
-                      })()}
-                      {(() => {
-                        const busyRoad = getPropertyBusyRoadExposure(viewingAiReportProp);
-                        if (!busyRoad.isNearBusyRoad || !busyRoad.badgeLabel) return null;
-                        return (
-                          <span
-                            className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-50 border border-amber-300 text-amber-950 flex items-center gap-1 shadow-2xs"
-                            title={busyRoad.tooltipReason}
-                          >
-                            <Car size={11} weight="fill" className="text-amber-700" />
-                            <span>{busyRoad.badgeLabel}</span>
-                          </span>
-                        );
-                      })()}
-                      {isLandlordOnSiteProperty(viewingAiReportProp) ? (
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-amber-950 flex items-center gap-1 shadow-2xs">
-                          <WarningCircle size={11} weight="fill" className="text-amber-700" />
-                          <span>⚠️ Landlord On-Site / Shared Grounds</span>
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-950 flex items-center gap-1">
-                          <ShieldCheck size={11} weight="bold" className="text-emerald-700" />
-                          <span>Autonomous 100% Private Lease</span>
-                        </span>
-                      )}
-                      {!isPropertyInHighRiskCrimeZone(viewingAiReportProp.lat, viewingAiReportProp.lng) ? (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-emerald-300 text-emerald-900 flex items-center gap-1">
-                          <span>🛡️</span> Safe-ish Verified
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 border border-rose-300 text-rose-900 flex items-center gap-1">
-                          <span>⚠️</span> Near Crime Hotspot
-                        </span>
-                      )}
-                      {Boolean(viewingAiReportProp.fibre_ready) && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-cyan-200 text-cyan-900">
-                          ✓ Fibre Ready
-                        </span>
-                      )}
-                      {(viewingAiReportProp.has_garage || (viewingAiReportProp.parking_type && viewingAiReportProp.parking_type !== 'none')) && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-emerald-200 text-emerald-900">
-                          ✓ Off-Street Parking
-                        </span>
-                      )}
-                      {viewingAiReportProp.stove_type === 'gas' && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-orange-200 text-orange-900">
-                          ✓ Gas Hob
-                        </span>
-                      )}
-                      {viewingAiReportProp.pet_friendly && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-pink-200 text-pink-900">
-                          ✓ Pet Friendly
-                        </span>
-                      )}
-                      {((viewingAiReportProp.acoustic_audit?.facing_direction || '').toLowerCase().includes('north') || viewingAiReportProp.title.toLowerCase().includes('north')) && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-amber-200 text-amber-900">
-                          ✓ North-Facing
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-              {/* Unified Pros & Cons Audit (Info, Images & Strategic Fit) */}
-              {(() => {
-                const audit = (viewingAiReportProp as any).deep_ai_audit;
-                const insights = audit?.strategicInsights;
-                const rawPros: string[] = Array.isArray(audit?.pros) ? audit.pros : [];
-                const rawCons: string[] = Array.isArray(audit?.cons) ? audit.cons : [];
-                const reasonsToRent: string[] = Array.isArray(insights?.reasonsToRent) ? insights.reasonsToRent : [];
-                const reasonsToAvoid: string[] = Array.isArray(insights?.reasonsToAvoid) ? insights.reasonsToAvoid : [];
-                const watchouts: string[] = Array.isArray(insights?.criticalWatchouts) ? insights.criticalWatchouts : [];
-
-                // Deduplicate and consolidate all good-fit reasons and raw pros
-                const unifiedPros = Array.from(new Set([...reasonsToRent, ...rawPros]));
-                const unifiedCons = Array.from(new Set([...reasonsToAvoid, ...rawCons]));
-
-                if (unifiedPros.length === 0 && unifiedCons.length === 0 && watchouts.length === 0) return null;
-
-                return (
-                  <div className="space-y-3">
-                    {/* Header */}
-                    <div className="flex items-center justify-between px-1">
-                      <div className="flex items-center gap-2">
-                        <Sparkle size={16} weight="fill" className="text-purple-600" />
-                        <h4 className="text-xs font-black uppercase tracking-wider text-zinc-900">
-                          Pros &amp; Cons (Info, Images &amp; Strategic Fit)
-                        </h4>
-                      </div>
-                      <span className="text-[10px] font-bold text-zinc-500">
-                        {unifiedPros.length} Pros · {unifiedCons.length} Cons · {watchouts.length} Watchouts
-                      </span>
-                    </div>
-
-                    {/* 3-Column Grid for Pros, Cons & Things to Be Aware Of */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {/* PROS: Good Fit & Visual Highlights */}
-                      <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/90 flex flex-col justify-between space-y-2.5">
-                        <div>
-                          <div className="flex items-center justify-between pb-1.5 border-b border-emerald-200/60">
-                            <h5 className="text-[11.5px] font-extrabold uppercase tracking-wide text-emerald-950 flex items-center gap-1.5">
-                              <CheckCircle size={15} weight="fill" className="text-emerald-600 shrink-0" />
-                              <span>Pros ({unifiedPros.length})</span>
-                            </h5>
-                            <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                              Good Fit
-                            </span>
-                          </div>
-                          <ul className="mt-2 space-y-2 text-[11px] font-medium text-emerald-950 leading-snug">
-                            {unifiedPros.map((item, idx) => {
-                              const isPhoto = /photo|visual|gallery|finishes|worktop|cabinetry|daylight/i.test(item);
-                              return (
-                                <li key={idx} className="flex items-start gap-1.5">
-                                  <span className="text-emerald-600 font-black shrink-0 mt-0.5">
-                                    {isPhoto ? '📷' : '✓'}
-                                  </span>
-                                  <span>{item}</span>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                        <div className="pt-2 border-t border-emerald-200/40 text-[9.5px] font-bold text-emerald-700">
-                          {unifiedPros.length} positive fit indicator{unifiedPros.length === 1 ? '' : 's'}
-                        </div>
-                      </div>
-
-                      {/* CONS: Friction Points & Visual Gaps */}
-                      <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/90 flex flex-col justify-between space-y-2.5">
-                        <div>
-                          <div className="flex items-center justify-between pb-1.5 border-b border-rose-200/60">
-                            <h5 className="text-[11.5px] font-extrabold uppercase tracking-wide text-rose-950 flex items-center gap-1.5">
-                              <WarningCircle size={15} weight="fill" className="text-rose-600 shrink-0" />
-                              <span>Cons &amp; Risks ({unifiedCons.length})</span>
-                            </h5>
-                            <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800">
-                              Watchouts
-                            </span>
-                          </div>
-                          <ul className="mt-2 space-y-2 text-[11px] font-medium text-rose-950 leading-snug">
-                            {unifiedCons.map((item, idx) => {
-                              const isPhoto = /photo|visual|gallery|withheld|focal length|proportions|gap|sanitaryware/i.test(item);
-                              return (
-                                <li key={idx} className="flex items-start gap-1.5">
-                                  <span className="text-rose-600 font-black shrink-0 mt-0.5">
-                                    {isPhoto ? '📷' : '⚠️'}
-                                  </span>
-                                  <span>{item}</span>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                        <div className="pt-2 border-t border-rose-200/40 text-[9.5px] font-bold text-rose-700">
-                          {unifiedCons.length} potential friction point{unifiedCons.length === 1 ? '' : 's'}
-                        </div>
-                      </div>
-
-                      {/* THINGS TO BE AWARE OF: Tenant Vigilance Checklist */}
-                      <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/90 flex flex-col justify-between space-y-2.5">
-                        <div>
-                          <div className="flex items-center justify-between pb-1.5 border-b border-indigo-200/60">
-                            <h5 className="text-[11.5px] font-extrabold uppercase tracking-wide text-indigo-950 flex items-center gap-1.5">
-                              <Info size={15} weight="fill" className="text-indigo-600 shrink-0" />
-                              <span>Things to Be Aware Of</span>
-                            </h5>
-                            <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800">
-                              Checklist
-                            </span>
-                          </div>
-                          <ul className="mt-2 space-y-2 text-[11px] font-medium text-indigo-950 leading-snug">
-                            {watchouts.map((item, idx) => (
-                              <li key={idx} className="flex items-start gap-1.5">
-                                <span className="text-indigo-600 font-black shrink-0 mt-0.5">🔍</span>
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className="pt-2 border-t border-indigo-200/40 text-[9.5px] font-bold text-indigo-700">
-                          Tenant checklist before signing
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Notice if Gemini Quota Depleted */}
-                    {audit?.isVisionFallback && (
-                      <div className="text-[10px] text-zinc-500 bg-amber-50/80 border border-amber-200/60 rounded-xl px-3 py-2 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-amber-600">ℹ️</span>
-                          <span><strong>Photo Analysis:</strong> Showing visual gallery inspection findings (AI Studio prepayment balance depleted).</span>
-                        </div>
-                        <a
-                          href="https://aistudio.google.com/billing"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-amber-800 font-bold underline hover:text-amber-950"
-                        >
-                          Top up credits in AI Studio →
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Architecture, Space & Building Intelligence Audit */}
-              {(() => {
-                const audit = (viewingAiReportProp as any).deep_ai_audit;
-                if (!audit) return null;
-                const bIntel = audit.buildingIntel;
-                const archCards = [
-                  { icon: '💻', title: 'Space & WFH Ergonomics', text: audit.wfhLayoutVerdict },
-                  { icon: '☀️', title: 'Window Placement & Daylight', text: audit.windowLightAudit },
-                  { icon: '🧱', title: 'Wall Type & Acoustics', text: audit.wallAcousticAudit },
-                  { icon: '📐', title: 'Ceiling Height & Volume', text: audit.ceilingVolumeAudit },
-                  { icon: '💡', title: 'Light Fixtures & Evening Mood', text: audit.lightingFixturesAudit },
-                  { icon: '🏢', title: 'Exterior & Building Signal', text: audit.exteriorBuildingAudit },
-                ].filter((c) => Boolean(c.text));
-
-                if (archCards.length === 0 && !bIntel?.building_name) return null;
-
-                return (
-                  <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/90 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Ruler size={17} weight="bold" className="text-slate-700" />
-                        <div>
-                          <h4 className="text-xs font-black uppercase tracking-wider text-slate-900">
-                            Architecture, Space &amp; Building Intelligence
-                          </h4>
-                          <p className="text-[10px] text-slate-500 font-medium">
-                            Evaluated against WFH ergonomics, daylight/sightlines, wall transmission, ceilings, lighting &amp; block reputation
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-800 shrink-0">
-                        6-Point Audit
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {archCards.map((card, i) => (
-                        <div key={i} className="p-3 rounded-xl bg-white border border-slate-200/80 space-y-1 shadow-2xs">
-                          <div className="flex items-center gap-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-slate-800">
-                            <span>{card.icon}</span>
-                            <span>{card.title}</span>
-                          </div>
-                          <p className="text-[11px] font-medium text-slate-700 leading-relaxed">
-                            {card.text}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-
-                    {bIntel?.building_name && (
-                      <div className="p-3.5 rounded-xl bg-white border border-indigo-200/80 space-y-2 shadow-2xs">
-                        <div className="flex items-center justify-between flex-wrap gap-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm">🏙️</span>
-                            <span className="text-xs font-black text-indigo-950">
-                              Block Intel: {bIntel.building_name}
-                            </span>
-                          </div>
-                          {bIntel.google_rating && (
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-                              ★ {bIntel.google_rating} {bIntel.review_count ? `(${bIntel.review_count} reviews)` : ''}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
-                          {bIntel.has_lift && bIntel.has_lift !== 'unknown' && (
-                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 border border-slate-200">
-                              Lift: {bIntel.has_lift === 'yes' ? 'Yes' : 'Walk-up (No Lift)'}
-                            </span>
-                          )}
-                          {bIntel.airbnb_risk && (
-                            <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-900 border border-purple-200">
-                              Airbnb/Short-Let Risk: {String(bIntel.airbnb_risk).split('—')[0].trim()}
-                            </span>
-                          )}
-                          {bIntel.backup_power && (
-                            <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-900 border border-emerald-200">
-                              Power: {String(bIntel.backup_power).split('—')[0].trim()}
-                            </span>
-                          )}
-                        </div>
-
-                        {bIntel.review_summary && (
-                          <p className="text-[11px] font-medium text-slate-700 leading-relaxed">
-                            {bIntel.review_summary}
-                          </p>
-                        )}
-                        {(bIntel.soundproofing || bIntel.body_corporate) && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[10.5px] text-slate-600">
-                            {bIntel.soundproofing && (
-                              <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                <span className="font-bold text-slate-800">Acoustics:</span> {bIntel.soundproofing}
-                              </div>
-                            )}
-                            {bIntel.body_corporate && (
-                              <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                <span className="font-bold text-slate-800">Body Corporate:</span> {bIntel.body_corporate}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Section 1: Acoustic Decibel & Orientation Audit (Moved from Map Card) */}
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-white border border-indigo-200/80 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <SpeakerHigh size={18} weight="bold" className="text-indigo-600" />
-                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-indigo-950">
-                      Acoustic Decibel &amp; Orientation Audit
-                    </h4>
-                  </div>
-                  <span className={`text-xs font-black px-2.5 py-0.5 rounded-full border ${(viewingAiReportProp.acoustic_audit?.estimated_db || 40) <= 40
-                    ? 'bg-emerald-100/80 text-emerald-900 border-emerald-300'
-                    : 'bg-rose-100/80 text-rose-900 border-rose-300'
-                    }`}>
-                    {viewingAiReportProp.acoustic_audit?.estimated_db || (viewingAiReportProp.noise_risk === 'sanctuary' ? 38 : 45)} dBA
+              {/* Submit / Re-Run Button & Quick-Add Chips */}
+              <div className="pt-2 border-t border-zinc-200/60 flex items-center justify-between gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (viewingAiReportProp) {
+                      runForensicAiInspection(viewingAiReportProp);
+                    }
+                  }}
+                  disabled={Boolean((viewingAiReportProp as any).deep_ai_audit?.isVisionLoading)}
+                  className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 active:scale-95 text-white text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Sparkle size={13} weight="fill" />
+                  <span>
+                    {(viewingAiReportProp as any).deep_ai_audit?.isVisionLoading
+                      ? 'Analyzing Property...'
+                      : 'Submit Preferences & Run AI Report'}
                   </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div className="p-2.5 rounded-xl bg-white/90 border border-indigo-100/80 space-y-1">
-                    <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">
-                      Sound Shadow Status
-                    </div>
-                    <div className="font-bold text-zinc-800 text-[11px]">
-                      {viewingAiReportProp.acoustic_audit?.sound_shadow_status ||
-                        (viewingAiReportProp.noise_risk === 'sanctuary'
-                          ? 'Quiet Sanctuary Setback'
-                          : 'Standard Residential Buffer')}
-                    </div>
-                    <div className="text-[10px] text-zinc-500 leading-relaxed">
-                      Shielded from direct traffic reverberations and arterial corridors via natural elevation and building setback.
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-white/90 border border-indigo-100/80 space-y-1">
-                    <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">
-                      Orientation &amp; Natural Shielding
-                    </div>
-                    <div className="font-bold text-zinc-800 text-[11px]">
-                      Facing: {viewingAiReportProp.acoustic_audit?.facing_direction || 'Not specified in listing'}
-                    </div>
-                    <div className="text-[10px] text-zinc-500 leading-relaxed">
-                      Balcony and main living windows oriented away from prevailing winds and transit noise.
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 2: Multimodal Computer Vision Photo Audit */}
-              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Eye size={18} weight="bold" className="text-purple-600" />
-                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-zinc-900">
-                      Computer Vision Photo Inspection
-                    </h4>
-                  </div>
-                  {((viewingAiReportProp as any).deep_ai_audit?.isVisionLoading) ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 animate-pulse">
-                      Inspecting photos…
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200/80 text-zinc-700">
-                      {(cardGalleries[viewingAiReportProp.id]?.length || viewingAiReportProp.images?.length || 1)} photo(s)
-                    </span>
-                  )}
-                </div>
-
-                {(() => {
-                  const imgs = cardGalleries[viewingAiReportProp.id]?.length
-                    ? cardGalleries[viewingAiReportProp.id]
-                    : viewingAiReportProp.images?.length
-                      ? viewingAiReportProp.images
-                      : viewingAiReportProp.image
-                        ? [viewingAiReportProp.image]
-                        : [];
-                  const photoStory = (viewingAiReportProp as any).deep_ai_audit?.photoStory;
-                  return (
-                    <>
-                      {imgs.length > 0 && (
-                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                          {imgs.slice(0, 6).map((src, idx) => (
-                            <img
-                              key={idx}
-                              src={src}
-                              alt={`Gallery ${idx + 1}`}
-                              className="w-16 h-12 rounded-lg object-cover border border-zinc-200 shrink-0"
-                            />
-                          ))}
-                        </div>
-                      )}
-                      {photoStory && (
-                        <div className="p-2.5 rounded-xl bg-purple-50/70 border border-purple-200/80 text-[11.5px] font-medium text-purple-950 leading-relaxed">
-                          <span className="font-extrabold text-purple-900">Photo Story: </span>
-                          {photoStory}
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-
-                <div className="space-y-2 text-xs">
-                  {/* Stove Inspection */}
-                  <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
-                    <span className="text-base leading-none mt-0.5">🍳</span>
-                    <div className="min-w-0">
-                      <div className="font-extrabold text-zinc-900 text-[11px]">
-                        Stove &amp; Cooktop Verification
-                      </div>
-                      <div className="text-[11px] text-zinc-600">
-                        {(viewingAiReportProp as any).deep_ai_audit?.stoveType ||
-                          (viewingAiReportProp.stove_type === 'gas' ? 'Gas hob detected (4-burner)' : viewingAiReportProp.stove_type === 'induction' ? 'Induction hob detected' : 'Built-in stove & oven verified')}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Natural Light & Glazing */}
-                  <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
-                    <span className="text-base leading-none mt-0.5">☀️</span>
-                    <div className="min-w-0">
-                      <div className="font-extrabold text-zinc-900 text-[11px]">
-                        Daylight &amp; Glazing Angles
-                      </div>
-                      <div className="text-[11px] text-zinc-600">
-                        {(viewingAiReportProp as any).deep_ai_audit?.glazing ||
-                          'Direct natural daylight verified across main living spaces.'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Plumbing Connections */}
-                  <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
-                    <span className="text-base leading-none mt-0.5">🚰</span>
-                    <div className="min-w-0">
-                      <div className="font-extrabold text-zinc-900 text-[11px]">
-                        Kitchen Appliance Plumbing
-                      </div>
-                      <div className="text-[11px] text-zinc-600">
-                        {(viewingAiReportProp as any).deep_ai_audit?.plumbing ||
-                          'Dedicated washing machine and dishwasher plumbing connection points verified.'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Lens Distortion Check */}
-                  <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
-                    <span className="text-base leading-none mt-0.5">📐</span>
-                    <div className="min-w-0">
-                      <div className="font-extrabold text-zinc-900 text-[11px]">
-                        Camera Perspective &amp; Distortion Check
-                      </div>
-                      <div className="text-[11px] text-zinc-600">
-                        {(viewingAiReportProp as any).deep_ai_audit?.distortion ||
-                          'Standard 28mm architectural lens ratio; zero deceptive fish-eye room stretching detected.'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 3: Agent Copy & Lease Forensic Audit */}
-              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2.5">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck size={18} weight="bold" className="text-emerald-600" />
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-zinc-900">
-                    Agent Copy &amp; Lease Forensic Verdict
-                  </h4>
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  {(() => {
-                    const rep = getAgencyReputationInfo(viewingAiReportProp);
-                    if (rep.isPoorAgency) {
-                      return (
-                        <div className="flex items-start gap-2 p-2.5 rounded-xl bg-rose-50 border border-rose-300">
-                          <WarningCircle size={16} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
-                          <div>
-                            <div className="font-extrabold text-rose-950 text-[11px]">
-                              🚩 High Agency Risk: {rep.agencyName} ({rep.rating}★)
-                            </div>
-                            <div className="text-[11px] text-rose-900 mt-0.5 leading-snug">
-                              {rep.tooltipReason}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    if (rep.agencyName) {
-                      return (
-                        <div className="flex items-start gap-2 p-2 rounded-xl bg-white border border-zinc-200/70">
-                          <CheckCircle size={15} weight="bold" className="text-emerald-600 shrink-0 mt-0.5" />
-                          <div>
-                            <div className="font-extrabold text-zinc-900 text-[11px]">
-                              Managing Agency Reputation
-                            </div>
-                            <div className="text-[11px] text-zinc-600">
-                              {rep.agencyName}{rep.rating ? ` (${rep.rating}★ verified Google rating)` : ' — Standard tenancy verification.'}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                  <div className="flex items-start gap-2 p-2 rounded-xl bg-white border border-zinc-200/70">
-                    {((viewingAiReportProp as any).deep_ai_audit?.isLandlordOnSite) ? (
-                      <Info size={15} weight="bold" className="text-amber-600 shrink-0 mt-0.5" />
-                    ) : (
-                      <CheckCircle size={15} weight="bold" className="text-emerald-600 shrink-0 mt-0.5" />
-                    )}
-                    <div>
-                      <div className="font-extrabold text-zinc-900 text-[11px]">Private Tenancy Verification</div>
-                      <div className="text-[11px] text-zinc-600">
-                        {(viewingAiReportProp as any).deep_ai_audit?.tenancyType ||
-                          '100% self-contained private lease (zero student digs or shared commune clauses).'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-2 p-2 rounded-xl bg-white border border-zinc-200/70">
-                    <CheckCircle size={15} weight="bold" className="text-emerald-600 shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-extrabold text-zinc-900 text-[11px]">Quiet Hours &amp; Rules</div>
-                      <div className="text-[11px] text-zinc-600">
-                        {(viewingAiReportProp as any).deep_ai_audit?.quietRules ||
-                          'Formal residential tenancy agreement prohibiting noise disturbances or disruptive short-lets.'}
-                      </div>
-                    </div>
-                  </div>
+                </button>
+                <div className="flex items-center flex-wrap gap-1">
+                  {[
+                    '🔒 100% Private (No Landlord)',
+                    '🌿 Quiet Sanctuary',
+                    '☀️ North-Facing Sunlight',
+                    '🍳 Gas Cooking',
+                    '💻 High-Speed Fibre',
+                    '🐾 Pet-Friendly',
+                    '🚗 Secure Parking',
+                    '🏔️ Mountain or Ocean Views'
+                  ].map((chip) => {
+                    const chipKey = chip.replace(/^[^\w\s]+\s*/, '');
+                    const isAlreadyIn = personalPreferences.toLowerCase().includes(chipKey.toLowerCase());
+                    return (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => {
+                          if (isAlreadyIn) {
+                            handleUpdatePreferences(
+                              personalPreferences.replace(new RegExp(chipKey, 'gi'), '').replace(/,\s*,/g, ',').trim()
+                            );
+                          } else {
+                            handleUpdatePreferences(
+                              personalPreferences ? `${personalPreferences.trim().replace(/\.$/, '')}, ${chipKey}.` : `${chipKey}.`
+                            );
+                          }
+                        }}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${isAlreadyIn
+                          ? 'bg-purple-100 border-purple-300 text-purple-900 shadow-2xs font-black'
+                          : 'bg-white hover:bg-zinc-100 text-zinc-600 border-zinc-200/80'
+                          }`}
+                      >
+                        {chip}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
 
-                {/* Modal Footer */}
-                <div className="pt-3 border-t border-zinc-100 flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setViewingAiReportProp(null)}
-                    className="px-4 py-2.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 text-xs font-bold text-zinc-700 transition-all cursor-pointer"
-                  >
-                    Close Report
-                  </button>
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={resolveGoogleMapsUrl(viewingAiReportProp)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="py-2.5 px-3.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold flex items-center justify-center gap-1.5 border border-zinc-200 transition-all cursor-pointer"
-                      title="Show this location in Google Maps (opens in a new tab)"
-                    >
-                      <MapPin size={13} weight="bold" className="text-rose-500" />
-                      <span>Google Maps</span>
-                      <ArrowSquareOut size={12} weight="bold" className="text-zinc-400" />
-                    </a>
-                    <a
-                      href={resolveProperty24Url(viewingAiReportProp)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => openProperty24Url(e, resolveProperty24Url(viewingAiReportProp))}
-                      className="py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-indigo-600 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                    >
-                      <span>View Original on Property24</span>
-                      <ArrowSquareOut size={13} weight="bold" />
-                    </a>
+            {/* Section: AI Forensic Report Results Container */}
+            <div className="pt-2">
+              <div className="p-4 rounded-2xl bg-gradient-to-b from-purple-50/60 via-white to-white border-2 border-purple-200/90 shadow-md space-y-4">
+                {/* Formal Report Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-purple-100">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-purple-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <Sparkle size={18} weight="fill" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-black text-zinc-950 uppercase tracking-wide">
+                          AI Property Forensic Report
+                        </h3>
+                        {viewingAiReportProp.fit_score && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-200">
+                            {viewingAiReportProp.fit_score}% Fit
+                          </span>
+                        )}
+                        {(viewingAiReportProp as any).deep_ai_audit?.hasAiRun && (
+                          <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            ✓ Verified Run
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-zinc-500 font-medium">
+                        Autonomous multimodal vision, acoustic decibel modeling &amp; lease audit.
+                      </p>
+                    </div>
                   </div>
+
+                  {/* Metadata Stamp (Time + Status) + Compare / Snag Export Actions */}
+                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => viewingAiReportProp && toggleCompareProperty(viewingAiReportProp)}
+                      className={`px-2.5 py-1 rounded-xl border text-[11px] font-black flex items-center gap-1 transition-colors cursor-pointer ${viewingAiReportProp && compareIds.includes(viewingAiReportProp.id)
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                          : 'bg-white border-zinc-200 text-zinc-700 hover:bg-purple-50 hover:border-purple-200'
+                        }`}
+                    >
+                      <Scales size={13} weight="bold" />
+                      <span>
+                        {viewingAiReportProp && compareIds.includes(viewingAiReportProp.id) ? '✓ In Compare' : '+ Compare'}
+                      </span>
+                    </button>
+
+                    {compareIds.length >= 2 && (
+                      <a
+                        href="/compare"
+                        className="px-2.5 py-1 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-black transition-colors"
+                      >
+                        Open Compare ({compareIds.length}) →
+                      </a>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => viewingAiReportProp && handleCopySnagReport(viewingAiReportProp)}
+                      className="px-2.5 py-1 rounded-xl bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Copy formatted viewing / move-in snag checklist"
+                    >
+                      {snagCopied ? '✓ Snag Copied' : 'Copy Snag Report'}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isExportingPdf}
+                      onClick={() => viewingAiReportProp && handleDownloadReportPdf(viewingAiReportProp)}
+                      className="px-2.5 py-1 rounded-xl bg-zinc-900 hover:bg-indigo-600 disabled:opacity-50 text-white text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Download this report as a PDF"
+                    >
+                      {isExportingPdf ? 'Generating...' : '📄 Save PDF'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEmailPdfOpen(!isEmailPdfOpen);
+                        setEmailPdfStatus(null);
+                        if (!emailPdfTarget && user?.email) setEmailPdfTarget(user.email);
+                      }}
+                      className="px-2.5 py-1 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Email this PDF report to an email address"
+                    >
+                      ✉️ Email PDF
+                    </button>
+
+                    <div className="flex items-center gap-2 text-[11px] text-zinc-500 font-semibold bg-white px-2.5 py-1 rounded-xl border border-zinc-200 shadow-2xs">
+                      <Clock size={13} weight="bold" className="text-purple-600" />
+                      <span>
+                        Generated: {(viewingAiReportProp as any).deep_ai_audit?.generatedAt || 'Standby (Pending Submission)'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {isEmailPdfOpen && viewingAiReportProp && (
+                  <div className="p-3 rounded-2xl bg-indigo-50/70 border border-indigo-200 flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-bold text-indigo-900">Email PDF Report to:</span>
+                    <input
+                      type="email"
+                      value={emailPdfTarget}
+                      onChange={(e) => setEmailPdfTarget(e.target.value)}
+                      placeholder="name@example.com"
+                      className="flex-1 min-w-[200px] px-3 py-1.5 rounded-xl bg-white border border-indigo-200 text-xs text-zinc-900 focus:outline-none focus:border-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={isSendingEmailPdf}
+                      onClick={() => handleEmailReportPdf(viewingAiReportProp)}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold cursor-pointer"
+                    >
+                      {isSendingEmailPdf ? 'Sending...' : 'Send PDF'}
+                    </button>
+                    {emailPdfStatus && (
+                      <span className={`text-[11px] font-bold ${emailPdfStatus.type === 'ok' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                        {emailPdfStatus.text}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Consolidated Preference Alignment & Search Baseline Card (Zero Duplication) */}
+                <div className="p-3.5 rounded-2xl bg-purple-50/75 border border-purple-200/80 space-y-2.5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkle size={16} weight="fill" className="text-purple-600" />
+                      <h4 className="text-xs font-black uppercase tracking-wider text-purple-950">
+                        Preference Alignment &amp; Search Baseline
+                      </h4>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold text-zinc-500">
+                        {selectedSuburbs.length > 0 ? selectedSuburbs.join(', ') : 'All Suburbs'} · R {formatPrice(minPrice)}–{formatPrice(maxPrice)}
+                      </span>
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                        {viewingAiReportProp.rank ? `Rank #${viewingAiReportProp.rank}` : 'Forensic Match'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Active Search Filters (only shown if any filters or anchor are active) */}
+                  {(activeAnchor || safeishFilter || fibreFilter || parkingFilter || petFriendlyFilter || offMainRoadFilter || offBarsFilter || privateOnlyFilter) && (
+                    <div className="flex items-center flex-wrap gap-1.5 text-[10px] font-semibold">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mr-0.5 flex items-center gap-1">
+                        <SlidersHorizontal size={11} weight="bold" className="text-indigo-500" />
+                        Filters:
+                      </span>
+                      {activeAnchor && (
+                        <span className="bg-indigo-50 text-indigo-900 px-2 py-0.5 rounded-md border border-indigo-200">
+                          🎯 {activeAnchor.label}
+                        </span>
+                      )}
+                      {safeishFilter && (
+                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
+                          Safe-ish
+                        </span>
+                      )}
+                      {offBarsFilter && (
+                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
+                          Off-Bars/Clubs
+                        </span>
+                      )}
+                      {fibreFilter && (
+                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
+                          Fibre
+                        </span>
+                      )}
+                      {parkingFilter && (
+                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
+                          Parking
+                        </span>
+                      )}
+                      {petFriendlyFilter && (
+                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
+                          Pet-friendly
+                        </span>
+                      )}
+                      {offMainRoadFilter && (
+                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
+                          Off-Main Rd
+                        </span>
+                      )}
+                      {privateOnlyFilter && (
+                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
+                          100% Private
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Applied Lifestyle Input + AI Verdict in a clean 2-part card */}
+                  <div className="bg-white/90 rounded-xl border border-purple-100 divide-y divide-purple-100/70">
+                    <div className="p-2.5 text-[11px] text-zinc-600 flex items-start gap-1.5">
+                      <span className="font-extrabold text-purple-900 shrink-0">Your Brief:</span>
+                      <span className="italic text-zinc-700">
+                        {(viewingAiReportProp as any).deep_ai_audit?.appliedPreferences ||
+                          personalPreferences.trim() ||
+                          'Standard optimal rental baseline (no custom criteria provided).'}
+                      </span>
+                    </div>
+                    <div className="p-2.5 text-[11.5px] font-semibold text-purple-950 leading-relaxed flex items-start gap-1.5">
+                      <span className="font-extrabold text-purple-700 shrink-0">Verdict:</span>
+                      <span>
+                        {(viewingAiReportProp as any).deep_ai_audit?.personalMatchVerdict ||
+                          (viewingAiReportProp as any).deep_ai_audit?.amenitiesVerdict ||
+                          'Evaluated against your active search criteria and property telemetry.'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Verified Property Telemetry & Risk Badges (Shown Once) */}
+                  <div className="flex items-center flex-wrap gap-1.5 pt-0.5">
+                    {(() => {
+                      const rep = getAgencyReputationInfo(viewingAiReportProp);
+                      if (!rep.isPoorAgency) return null;
+                      return (
+                        <span
+                          className="text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-600 border border-rose-700 text-white flex items-center gap-1 shadow-2xs"
+                          title={rep.tooltipReason}
+                        >
+                          <WarningCircle size={11} weight="fill" className="text-white" />
+                          <span>{rep.badgeLabel}</span>
+                        </span>
+                      );
+                    })()}
+                    {(() => {
+                      const barNoise = getPropertyBarNoiseExposure(viewingAiReportProp);
+                      if (!barNoise.isExposed || !barNoise.badgeLabel) return null;
+                      return (
+                        <span
+                          className="text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-50 border border-rose-300 text-rose-950 flex items-center gap-1 shadow-2xs"
+                          title={barNoise.tooltipReason}
+                        >
+                          <SpeakerHigh size={11} weight="fill" className="text-rose-600" />
+                          <span>{barNoise.badgeLabel}</span>
+                        </span>
+                      );
+                    })()}
+                    {(() => {
+                      const busyRoad = getPropertyBusyRoadExposure(viewingAiReportProp);
+                      if (!busyRoad.isNearBusyRoad || !busyRoad.badgeLabel) return null;
+                      return (
+                        <span
+                          className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-50 border border-amber-300 text-amber-950 flex items-center gap-1 shadow-2xs"
+                          title={busyRoad.tooltipReason}
+                        >
+                          <Car size={11} weight="fill" className="text-amber-700" />
+                          <span>{busyRoad.badgeLabel}</span>
+                        </span>
+                      );
+                    })()}
+                    {isLandlordOnSiteProperty(viewingAiReportProp) ? (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-amber-950 flex items-center gap-1 shadow-2xs">
+                        <WarningCircle size={11} weight="fill" className="text-amber-700" />
+                        <span>Landlord On-Site / Shared Grounds</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <ShieldCheck size={11} weight="bold" className="text-emerald-700" />
+                        <span>Autonomous 100% Private Lease</span>
+                      </span>
+                    )}
+                    {!isPropertyInHighRiskCrimeZone(viewingAiReportProp.lat, viewingAiReportProp.lng) ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-emerald-300 text-emerald-900 flex items-center gap-1">
+                        <span>🛡️</span> Safe-ish Verified
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 border border-rose-300 text-rose-900 flex items-center gap-1">
+                        <span>⚠️</span> Near Crime Hotspot
+                      </span>
+                    )}
+                    {Boolean(viewingAiReportProp.fibre_ready) && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-cyan-200 text-cyan-900">
+                        ✓ Fibre Ready
+                      </span>
+                    )}
+                    {(viewingAiReportProp.has_garage || (viewingAiReportProp.parking_type && viewingAiReportProp.parking_type !== 'none')) && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-emerald-200 text-emerald-900">
+                        ✓ Off-Street Parking
+                      </span>
+                    )}
+                    {viewingAiReportProp.stove_type === 'gas' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-orange-200 text-orange-900">
+                        ✓ Gas Hob
+                      </span>
+                    )}
+                    {viewingAiReportProp.pet_friendly && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-pink-200 text-pink-900">
+                        ✓ Pet Friendly
+                      </span>
+                    )}
+                    {((viewingAiReportProp.acoustic_audit?.facing_direction || '').toLowerCase().includes('north') || viewingAiReportProp.title.toLowerCase().includes('north')) && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-amber-200 text-amber-900">
+                        ✓ North-Facing
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Unified Pros & Cons Audit (Info, Images & Strategic Fit) */}
+                {(() => {
+                  const audit = (viewingAiReportProp as any).deep_ai_audit;
+                  const insights = audit?.strategicInsights;
+                  const rawPros: string[] = Array.isArray(audit?.pros) ? audit.pros : [];
+                  const rawCons: string[] = Array.isArray(audit?.cons) ? audit.cons : [];
+                  const reasonsToRent: string[] = Array.isArray(insights?.reasonsToRent) ? insights.reasonsToRent : [];
+                  const reasonsToAvoid: string[] = Array.isArray(insights?.reasonsToAvoid) ? insights.reasonsToAvoid : [];
+                  const watchouts: string[] = Array.isArray(insights?.criticalWatchouts) ? insights.criticalWatchouts : [];
+
+                  // Deduplicate and consolidate all good-fit reasons and raw pros (excluding baseline "has photos" filler)
+                  const unifiedPros = Array.from(new Set([...reasonsToRent, ...rawPros])).filter(
+                    (p) => !/gallery includes \d+\+? photos|comprehensive \d+-photo gallery/i.test(p)
+                  );
+                  const unifiedCons = Array.from(new Set([...reasonsToAvoid, ...rawCons]));
+
+                  if (unifiedPros.length === 0 && unifiedCons.length === 0 && watchouts.length === 0) return null;
+
+                  return (
+                    <div className="space-y-3">
+                      {/* Header */}
+                      <div className="flex items-center justify-between px-1">
+                        <div className="flex items-center gap-2">
+                          <Sparkle size={16} weight="fill" className="text-purple-600" />
+                          <h4 className="text-xs font-black uppercase tracking-wider text-zinc-900">
+                            Pros &amp; Cons (Info, Images &amp; Strategic Fit)
+                          </h4>
+                        </div>
+                        <span className="text-[10px] font-bold text-zinc-500">
+                          {unifiedPros.length} Pros · {unifiedCons.length} Cons · {watchouts.length} Watchouts
+                        </span>
+                      </div>
+
+                      {/* 3-Column Grid for Pros, Cons & Things to Be Aware Of */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {/* PROS: Good Fit & Visual Highlights */}
+                        <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/90 flex flex-col justify-between space-y-2.5">
+                          <div>
+                            <div className="flex items-center justify-between pb-1.5 border-b border-emerald-200/60">
+                              <h5 className="text-[11.5px] font-extrabold uppercase tracking-wide text-emerald-950 flex items-center gap-1.5">
+                                <CheckCircle size={15} weight="fill" className="text-emerald-600 shrink-0" />
+                                <span>Pros ({unifiedPros.length})</span>
+                              </h5>
+                              <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                                Good Fit
+                              </span>
+                            </div>
+                            <ul className="mt-2 space-y-2 text-[11px] font-medium text-emerald-950 leading-snug">
+                              {unifiedPros.map((item, idx) => {
+                                const isPhoto = /photo|visual|gallery|finishes|worktop|cabinetry|daylight/i.test(item);
+                                return (
+                                  <li key={idx} className="flex items-start gap-1.5">
+                                    <span className="text-emerald-600 font-black shrink-0 mt-0.5">
+                                      {isPhoto ? '📷' : '✓'}
+                                    </span>
+                                    <span>{item}</span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                          <div className="pt-2 border-t border-emerald-200/40 text-[9.5px] font-bold text-emerald-700">
+                            {unifiedPros.length} positive fit indicator{unifiedPros.length === 1 ? '' : 's'}
+                          </div>
+                        </div>
+
+                        {/* CONS: Friction Points & Visual Gaps */}
+                        <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/90 flex flex-col justify-between space-y-2.5">
+                          <div>
+                            <div className="flex items-center justify-between pb-1.5 border-b border-rose-200/60">
+                              <h5 className="text-[11.5px] font-extrabold uppercase tracking-wide text-rose-950 flex items-center gap-1.5">
+                                <WarningCircle size={15} weight="fill" className="text-rose-600 shrink-0" />
+                                <span>Cons &amp; Risks ({unifiedCons.length})</span>
+                              </h5>
+                              <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800">
+                                Watchouts
+                              </span>
+                            </div>
+                            <ul className="mt-2 space-y-2 text-[11px] font-medium text-rose-950 leading-snug">
+                              {unifiedCons.map((item, idx) => {
+                                const isPhoto = /photo|visual|gallery|withheld|focal length|proportions|gap|sanitaryware/i.test(item);
+                                return (
+                                  <li key={idx} className="flex items-start gap-1.5">
+                                    <span className="text-rose-600 font-black shrink-0 mt-0.5">
+                                      {isPhoto ? '📷' : '⚠️'}
+                                    </span>
+                                    <span>{item}</span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                          <div className="pt-2 border-t border-rose-200/40 text-[9.5px] font-bold text-rose-700">
+                            {unifiedCons.length} potential friction point{unifiedCons.length === 1 ? '' : 's'}
+                          </div>
+                        </div>
+
+                        {/* THINGS TO BE AWARE OF: Tenant Vigilance Checklist */}
+                        <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/90 flex flex-col justify-between space-y-2.5">
+                          <div>
+                            <div className="flex items-center justify-between pb-1.5 border-b border-indigo-200/60">
+                              <h5 className="text-[11.5px] font-extrabold uppercase tracking-wide text-indigo-950 flex items-center gap-1.5">
+                                <Info size={15} weight="fill" className="text-indigo-600 shrink-0" />
+                                <span>Things to Be Aware Of</span>
+                              </h5>
+                              <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800">
+                                Checklist
+                              </span>
+                            </div>
+                            <ul className="mt-2 space-y-2 text-[11px] font-medium text-indigo-950 leading-snug">
+                              {watchouts.map((item, idx) => (
+                                <li key={idx} className="flex items-start gap-1.5">
+                                  <span className="text-indigo-600 font-black shrink-0 mt-0.5">🔍</span>
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="pt-2 border-t border-indigo-200/40 text-[9.5px] font-bold text-indigo-700">
+                            Tenant checklist before signing
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Notice if Gemini Quota Depleted */}
+                      {audit?.isVisionFallback && (
+                        <div className="text-[10px] text-zinc-500 bg-amber-50/80 border border-amber-200/60 rounded-xl px-3 py-2 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-amber-600">ℹ️</span>
+                            <span><strong>Photo Analysis:</strong> Showing visual gallery inspection findings (AI Studio prepayment balance depleted).</span>
+                          </div>
+                          <a
+                            href="https://aistudio.google.com/billing"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-amber-800 font-bold underline hover:text-amber-950"
+                          >
+                            Top up credits in AI Studio →
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Architecture, Space & Building Intelligence Audit */}
+                {(() => {
+                  const audit = (viewingAiReportProp as any).deep_ai_audit;
+                  if (!audit) return null;
+                  const bIntel = audit.buildingIntel;
+                  const archCards = [
+                    { icon: '💻', title: 'Space & WFH Ergonomics', text: audit.wfhLayoutVerdict },
+                    { icon: '☀️', title: 'Window Placement & Daylight', text: audit.windowLightAudit },
+                    { icon: '🧱', title: 'Wall Type & Acoustics', text: audit.wallAcousticAudit },
+                    { icon: '📐', title: 'Ceiling Height & Volume', text: audit.ceilingVolumeAudit },
+                    { icon: '💡', title: 'Light Fixtures & Evening Mood', text: audit.lightingFixturesAudit },
+                    { icon: '🏢', title: 'Exterior & Building Signal', text: audit.exteriorBuildingAudit },
+                  ].filter((c) => Boolean(c.text));
+
+                  if (archCards.length === 0 && !bIntel?.building_name) return null;
+
+                  return (
+                    <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/90 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Ruler size={17} weight="bold" className="text-slate-700" />
+                          <div>
+                            <h4 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                              Architecture, Space &amp; Building Intelligence
+                            </h4>
+                            <p className="text-[10px] text-slate-500 font-medium">
+                              Evaluated against WFH ergonomics, daylight/sightlines, wall transmission, ceilings, lighting &amp; block reputation
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-800 shrink-0">
+                          6-Point Audit
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {archCards.map((card, i) => (
+                          <div key={i} className="p-3 rounded-xl bg-white border border-slate-200/80 space-y-1 shadow-2xs">
+                            <div className="flex items-center gap-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-slate-800">
+                              <span>{card.icon}</span>
+                              <span>{card.title}</span>
+                            </div>
+                            <p className="text-[11px] font-medium text-slate-700 leading-relaxed">
+                              {card.text}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {bIntel?.building_name && (
+                        <div className="p-3.5 rounded-xl bg-white border border-indigo-200/80 space-y-2 shadow-2xs">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm">🏙️</span>
+                              <span className="text-xs font-black text-indigo-950">
+                                Block Intel: {bIntel.building_name}
+                              </span>
+                            </div>
+                            {bIntel.google_rating && (
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                                ★ {bIntel.google_rating} {bIntel.review_count ? `(${bIntel.review_count} reviews)` : ''}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
+                            {bIntel.has_lift && bIntel.has_lift !== 'unknown' && (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 border border-slate-200">
+                                Lift: {bIntel.has_lift === 'yes' ? 'Yes' : 'Walk-up (No Lift)'}
+                              </span>
+                            )}
+                            {bIntel.airbnb_risk && (
+                              <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-900 border border-purple-200">
+                                Airbnb/Short-Let Risk: {String(bIntel.airbnb_risk).split('—')[0].trim()}
+                              </span>
+                            )}
+                            {bIntel.backup_power && (
+                              <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-900 border border-emerald-200">
+                                Power: {String(bIntel.backup_power).split('—')[0].trim()}
+                              </span>
+                            )}
+                          </div>
+
+                          {bIntel.review_summary && (
+                            <p className="text-[11px] font-medium text-slate-700 leading-relaxed">
+                              {bIntel.review_summary}
+                            </p>
+                          )}
+                          {(bIntel.soundproofing || bIntel.body_corporate) && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[10.5px] text-slate-600">
+                              {bIntel.soundproofing && (
+                                <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                  <span className="font-bold text-slate-800">Acoustics:</span> {bIntel.soundproofing}
+                                </div>
+                              )}
+                              {bIntel.body_corporate && (
+                                <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                  <span className="font-bold text-slate-800">Body Corporate:</span> {bIntel.body_corporate}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Section 1: Acoustic Decibel & Orientation Audit (Moved from Map Card) */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-white border border-indigo-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <SpeakerHigh size={18} weight="bold" className="text-indigo-600" />
+                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-indigo-950">
+                        Acoustic Decibel &amp; Orientation Audit
+                      </h4>
+                    </div>
+                    <span className={`text-xs font-black px-2.5 py-0.5 rounded-full border ${(viewingAiReportProp.acoustic_audit?.estimated_db || 40) <= 40
+                      ? 'bg-emerald-100/80 text-emerald-900 border-emerald-300'
+                      : 'bg-rose-100/80 text-rose-900 border-rose-300'
+                      }`}>
+                      {viewingAiReportProp.acoustic_audit?.estimated_db || (viewingAiReportProp.noise_risk === 'sanctuary' ? 38 : 45)} dBA
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div className="p-2.5 rounded-xl bg-white/90 border border-indigo-100/80 space-y-1">
+                      <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">
+                        Sound Shadow Status
+                      </div>
+                      <div className="font-bold text-zinc-800 text-[11px]">
+                        {viewingAiReportProp.acoustic_audit?.sound_shadow_status ||
+                          (viewingAiReportProp.noise_risk === 'sanctuary'
+                            ? 'Quiet Sanctuary Setback'
+                            : 'Standard Residential Buffer')}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 leading-relaxed">
+                        Shielded from direct traffic reverberations and arterial corridors via natural elevation and building setback.
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white/90 border border-indigo-100/80 space-y-1">
+                      <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">
+                        Orientation &amp; Natural Shielding
+                      </div>
+                      <div className="font-bold text-zinc-800 text-[11px]">
+                        Facing: {viewingAiReportProp.acoustic_audit?.facing_direction || 'Not specified in listing'}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 leading-relaxed">
+                        Balcony and main living windows oriented away from prevailing winds and transit noise.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Multimodal Computer Vision Photo Audit */}
+                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Eye size={18} weight="bold" className="text-purple-600" />
+                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-zinc-900">
+                        Computer Vision Photo Inspection
+                      </h4>
+                    </div>
+                    {((viewingAiReportProp as any).deep_ai_audit?.isVisionLoading) ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 animate-pulse">
+                        Inspecting photos…
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200/80 text-zinc-700">
+                        {(cardGalleries[viewingAiReportProp.id]?.length || viewingAiReportProp.images?.length || 1)} photo(s)
+                      </span>
+                    )}
+                  </div>
+
+                  {(() => {
+                    const imgs = cardGalleries[viewingAiReportProp.id]?.length
+                      ? cardGalleries[viewingAiReportProp.id]
+                      : viewingAiReportProp.images?.length
+                        ? viewingAiReportProp.images
+                        : viewingAiReportProp.image
+                          ? [viewingAiReportProp.image]
+                          : [];
+                    const photoStory = (viewingAiReportProp as any).deep_ai_audit?.photoStory;
+                    return (
+                      <>
+                        {imgs.length > 0 && (
+                          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                            {imgs.slice(0, 6).map((src, idx) => (
+                              <img
+                                key={idx}
+                                src={src}
+                                alt={`Gallery ${idx + 1}`}
+                                className="w-16 h-12 rounded-lg object-cover border border-zinc-200 shrink-0"
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {photoStory && (
+                          <div className="p-2.5 rounded-xl bg-purple-50/70 border border-purple-200/80 text-[11.5px] font-medium text-purple-950 leading-relaxed">
+                            <span className="font-extrabold text-purple-900">Photo Story: </span>
+                            {photoStory}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+
+                  <div className="space-y-2 text-xs">
+                    {/* Stove Inspection */}
+                    <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
+                      <span className="text-base leading-none mt-0.5">🍳</span>
+                      <div className="min-w-0">
+                        <div className="font-extrabold text-zinc-900 text-[11px]">
+                          Stove &amp; Cooktop Verification
+                        </div>
+                        <div className="text-[11px] text-zinc-600">
+                          {(viewingAiReportProp as any).deep_ai_audit?.stoveType ||
+                            (viewingAiReportProp.stove_type === 'gas' ? 'Gas hob detected (4-burner)' : viewingAiReportProp.stove_type === 'induction' ? 'Induction hob detected' : 'Built-in stove & oven verified')}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Natural Light & Glazing */}
+                    <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
+                      <span className="text-base leading-none mt-0.5">☀️</span>
+                      <div className="min-w-0">
+                        <div className="font-extrabold text-zinc-900 text-[11px]">
+                          Daylight &amp; Glazing Angles
+                        </div>
+                        <div className="text-[11px] text-zinc-600">
+                          {(viewingAiReportProp as any).deep_ai_audit?.glazing ||
+                            'Direct natural daylight verified across main living spaces.'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Plumbing Connections */}
+                    <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
+                      <span className="text-base leading-none mt-0.5">🚰</span>
+                      <div className="min-w-0">
+                        <div className="font-extrabold text-zinc-900 text-[11px]">
+                          Kitchen Appliance Plumbing
+                        </div>
+                        <div className="text-[11px] text-zinc-600">
+                          {(viewingAiReportProp as any).deep_ai_audit?.plumbing ||
+                            'Dedicated washing machine and dishwasher plumbing connection points verified.'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Lens Distortion Check */}
+                    <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
+                      <span className="text-base leading-none mt-0.5">📐</span>
+                      <div className="min-w-0">
+                        <div className="font-extrabold text-zinc-900 text-[11px]">
+                          Camera Perspective &amp; Distortion Check
+                        </div>
+                        <div className="text-[11px] text-zinc-600">
+                          {(viewingAiReportProp as any).deep_ai_audit?.distortion ||
+                            'Standard 28mm architectural lens ratio; zero deceptive fish-eye room stretching detected.'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: Agent Copy & Lease Forensic Audit */}
+                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={18} weight="bold" className="text-emerald-600" />
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-zinc-900">
+                      Agent Copy &amp; Lease Forensic Verdict
+                    </h4>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    {(() => {
+                      const rep = getAgencyReputationInfo(viewingAiReportProp);
+                      if (rep.isPoorAgency) {
+                        return (
+                          <div className="flex items-start gap-2 p-2.5 rounded-xl bg-rose-50 border border-rose-300">
+                            <WarningCircle size={16} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
+                            <div>
+                              <div className="font-extrabold text-rose-950 text-[11px]">
+                                🚩 High Agency Risk: {rep.agencyName} ({rep.rating}★)
+                              </div>
+                              <div className="text-[11px] text-rose-900 mt-0.5 leading-snug">
+                                {rep.tooltipReason}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (rep.agencyName) {
+                        return (
+                          <div className="flex items-start gap-2 p-2 rounded-xl bg-white border border-zinc-200/70">
+                            <CheckCircle size={15} weight="bold" className="text-emerald-600 shrink-0 mt-0.5" />
+                            <div>
+                              <div className="font-extrabold text-zinc-900 text-[11px]">
+                                Managing Agency Reputation
+                              </div>
+                              <div className="text-[11px] text-zinc-600">
+                                {rep.agencyName}{rep.rating ? ` (${rep.rating}★ verified Google rating)` : ' — Standard tenancy verification.'}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                    <div className="flex items-start gap-2 p-2 rounded-xl bg-white border border-zinc-200/70">
+                      {((viewingAiReportProp as any).deep_ai_audit?.isLandlordOnSite) ? (
+                        <Info size={15} weight="bold" className="text-amber-600 shrink-0 mt-0.5" />
+                      ) : (
+                        <CheckCircle size={15} weight="bold" className="text-emerald-600 shrink-0 mt-0.5" />
+                      )}
+                      <div>
+                        <div className="font-extrabold text-zinc-900 text-[11px]">Private Tenancy Verification</div>
+                        <div className="text-[11px] text-zinc-600">
+                          {(viewingAiReportProp as any).deep_ai_audit?.tenancyType ||
+                            '100% self-contained private lease (zero student digs or shared commune clauses).'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2 p-2 rounded-xl bg-white border border-zinc-200/70">
+                      <CheckCircle size={15} weight="bold" className="text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-extrabold text-zinc-900 text-[11px]">Quiet Hours &amp; Rules</div>
+                        <div className="text-[11px] text-zinc-600">
+                          {(viewingAiReportProp as any).deep_ai_audit?.quietRules ||
+                            'Formal residential tenancy agreement prohibiting noise disturbances or disruptive short-lets.'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-3 border-t border-zinc-100 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setViewingAiReportProp(null)}
+                  className="px-4 py-2.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 text-xs font-bold text-zinc-700 transition-all cursor-pointer"
+                >
+                  Close Report
+                </button>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={resolveGoogleMapsUrl(viewingAiReportProp)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="py-2.5 px-3.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold flex items-center justify-center gap-1.5 border border-zinc-200 transition-all cursor-pointer"
+                    title="Show this location in Google Maps (opens in a new tab)"
+                  >
+                    <MapPin size={13} weight="bold" className="text-rose-500" />
+                    <span>Google Maps</span>
+                    <ArrowSquareOut size={12} weight="bold" className="text-zinc-400" />
+                  </a>
+                  <a
+                    href={resolveProperty24Url(viewingAiReportProp)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => openProperty24Url(e, resolveProperty24Url(viewingAiReportProp))}
+                    className="py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-indigo-600 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <span>View Original on Property24</span>
+                    <ArrowSquareOut size={13} weight="bold" />
+                  </a>
                 </div>
               </div>
             </div>
           </div>
+        </div>
       )}
 
-          {/* PROPERTY24 FAVOURITES IMPORT MODAL */}
-          {isImportModalOpen && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-sm animate-in fade-in duration-200"
-              onClick={() => setIsImportModalOpen(false)}
-            >
-              <div
-                className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-zinc-200 p-6 flex flex-col gap-4 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* Modal Header */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center">
-                      <Heart size={20} weight="fill" />
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-base text-zinc-950">Import Property24 Favourites</h3>
-                      <p className="text-xs text-zinc-500">Paste your saved Property24 links or page HTML</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsImportModalOpen(false)}
-                    className="p-1.5 rounded-xl hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
-                  >
-                    <X size={18} weight="bold" />
-                  </button>
+      {/* PROPERTY24 FAVOURITES IMPORT MODAL */}
+      {isImportModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setIsImportModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-zinc-200 p-6 flex flex-col gap-4 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center">
+                  <Heart size={20} weight="fill" />
                 </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-zinc-950">Import Property24 Favourites</h3>
+                  <p className="text-xs text-zinc-500">Paste your saved Property24 links or page HTML</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
+              >
+                <X size={18} weight="bold" />
+              </button>
+            </div>
 
-                {/* Input area */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-bold text-zinc-700">
-                    Paste Property24 Links, Listing IDs, or copied HTML from favourites:
-                  </label>
-                  <textarea
-                    value={importInputText}
-                    onChange={(e) => setImportInputText(e.target.value)}
-                    placeholder="Paste one or more Property24 links, e.g.:
+            {/* Input area */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold text-zinc-700">
+                Paste Property24 Links, Listing IDs, or copied HTML from favourites:
+              </label>
+              <textarea
+                value={importInputText}
+                onChange={(e) => setImportInputText(e.target.value)}
+                placeholder="Paste one or more Property24 links, e.g.:
 https://www.property24.com/to-rent/tamboerskloof/cape-town/western-cape/9151/117183204
 https://www.property24.com/to-rent/gardens/cape-town/western-cape/9143/116982405
 
 Tip: You can also copy all text (Ctrl+A, Ctrl+C) from your Property24 Favourites page and paste it here!"
-                    className="w-full h-36 p-3 rounded-2xl border border-zinc-200 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400 resize-none font-mono"
-                  />
-                </div>
-
-                {/* Quick Load Sample Links for instant testing */}
-                <div className="flex items-center justify-between text-xs">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImportInputText(
-                        'https://www.property24.com/to-rent/tamboerskloof/cape-town/western-cape/9151/117183204\nhttps://www.property24.com/to-rent/gardens/cape-town/western-cape/9143/116982405\nhttps://www.property24.com/to-rent/sea-point/cape-town/western-cape/11013/116849201'
-                      );
-                    }}
-                    className="text-rose-600 hover:text-rose-800 font-bold hover:underline cursor-pointer"
-                  >
-                    + Load Sample Property24 Links
-                  </button>
-                  {importedFavourites.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={clearAllFavourites}
-                      className="text-zinc-400 hover:text-rose-600 font-semibold cursor-pointer"
-                    >
-                      Clear {importedFavourites.length} imported favourites
-                    </button>
-                  )}
-                </div>
-
-                {/* Status Feedback */}
-                {importStatusMsg && (
-                  <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${importStatusMsg.type === 'success'
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                    : 'bg-rose-50 border-rose-200 text-rose-800'
-                    }`}>
-                    <Sparkle size={14} weight="fill" className={importStatusMsg.type === 'success' ? "text-emerald-500 shrink-0" : "text-rose-500 shrink-0"} />
-                    <span>{importStatusMsg.text}</span>
-                  </div>
-                )}
-
-                {/* Modal Actions */}
-                <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-100">
-                  <button
-                    type="button"
-                    onClick={() => setIsImportModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleImportFavourites}
-                    disabled={isImporting || !importInputText.trim()}
-                    className={`px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md cursor-pointer ${isImporting || !importInputText.trim()
-                      ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed'
-                      : 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20 active:scale-95'
-                      }`}
-                  >
-                    {isImporting ? (
-                      <>
-                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>Importing &amp; Geocoding...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Heart size={14} weight="fill" />
-                        <span>Import Favourites</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+                className="w-full h-36 p-3 rounded-2xl border border-zinc-200 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400 resize-none font-mono"
+              />
             </div>
-          )}
 
+            {/* Quick Load Sample Links for instant testing */}
+            <div className="flex items-center justify-between text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setImportInputText(
+                    'https://www.property24.com/to-rent/tamboerskloof/cape-town/western-cape/9151/117183204\nhttps://www.property24.com/to-rent/gardens/cape-town/western-cape/9143/116982405\nhttps://www.property24.com/to-rent/sea-point/cape-town/western-cape/11013/116849201'
+                  );
+                }}
+                className="text-rose-600 hover:text-rose-800 font-bold hover:underline cursor-pointer"
+              >
+                + Load Sample Property24 Links
+              </button>
+              {importedFavourites.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAllFavourites}
+                  className="text-zinc-400 hover:text-rose-600 font-semibold cursor-pointer"
+                >
+                  Clear {importedFavourites.length} imported favourites
+                </button>
+              )}
+            </div>
+
+            {/* Status Feedback */}
+            {importStatusMsg && (
+              <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${importStatusMsg.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}>
+                <Sparkle size={14} weight="fill" className={importStatusMsg.type === 'success' ? "text-emerald-500 shrink-0" : "text-rose-500 shrink-0"} />
+                <span>{importStatusMsg.text}</span>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-100">
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleImportFavourites}
+                disabled={isImporting || !importInputText.trim()}
+                className={`px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md cursor-pointer ${isImporting || !importInputText.trim()
+                  ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed'
+                  : 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20 active:scale-95'
+                  }`}
+              >
+                {isImporting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Importing &amp; Geocoding...</span>
+                  </>
+                ) : (
+                  <>
+                    <Heart size={14} weight="fill" />
+                    <span>Import Favourites</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
-      );
+      )}
+
+    </div>
+  );
 }

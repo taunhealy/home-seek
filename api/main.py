@@ -136,6 +136,32 @@ async def on_shutdown():
     scheduler.stop()
     print_safe("[SHUTDOWN] Scheduler safely stopped.")
 
+class AuthCredentialsPayload(BaseModel):
+    email: str
+    password: str
+    display_name: Optional[str] = ""
+
+
+@app.post("/api/auth/register")
+async def register_user_endpoint(payload: AuthCredentialsPayload):
+    from services.community_db import register_email_user
+    res = register_email_user(payload.email, payload.password, payload.display_name or "")
+    if res["status"] == "invalid":
+        raise HTTPException(status_code=400, detail=res["detail"])
+    if res["status"] == "conflict":
+        raise HTTPException(status_code=409, detail=res["detail"])
+    return res
+
+
+@app.post("/api/auth/login")
+async def login_user_endpoint(payload: AuthCredentialsPayload):
+    from services.community_db import login_email_user
+    res = login_email_user(payload.email, payload.password)
+    if res["status"] == "unauthorized":
+        raise HTTPException(status_code=401, detail=res["detail"])
+    return res
+
+
 @app.get("/user-profile/{user_id}")
 async def fetch_user_profile(user_id: str):
     # LOCAL: We default to the master tester UID for dev convenience
@@ -144,7 +170,39 @@ async def fetch_user_profile(user_id: str):
     profile = await get_user_profile(effective_id)
     if "pro_credits" not in profile:
         profile["pro_credits"] = 5
+    try:
+        from services.community_db import get_user_community_profile
+        cprof = get_user_community_profile(effective_id)
+        profile["nickname"] = cprof.get("nickname")
+        if cprof.get("avatar_url"):
+            profile["avatar_url"] = cprof["avatar_url"]
+    except Exception:
+        pass
     return {**profile, "id": user_id}
+
+
+class ProfileSettingsPayload(BaseModel):
+    nickname: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+@app.put("/api/user-profile/{user_id}/settings")
+async def update_user_profile_settings(user_id: str, payload: ProfileSettingsPayload):
+    from services.community_db import update_user_community_profile
+    dummy_uid = "R4R2k7z2XAQGgRjB57ctZcOkEbp2"
+    effective_id = get_effective_user_id(user_id, dummy_uid)
+    res = update_user_community_profile(
+        effective_id,
+        nickname=payload.nickname,
+        avatar_url=payload.avatar_url,
+    )
+    if res.get("status") in ("invalid_nickname", "nickname_taken", "invalid_avatar", "invalid_user"):
+        raise HTTPException(status_code=400, detail=res.get("detail") or "Invalid profile settings.")
+    return {
+        "status": "success",
+        "nickname": res.get("nickname"),
+        "avatar_url": res.get("avatar_url"),
+    }
 
 @app.get("/listings/{user_id}")
 async def fetch_user_listings(user_id: str):
@@ -423,6 +481,182 @@ class VerifyFavouritesItem(BaseModel):
     id: str
     p24_id: Optional[str] = None
     url: Optional[str] = None
+
+class SubmitAddressRequest(BaseModel):
+    listing_id: str
+    address: str
+    suburb: Optional[str] = ""
+
+
+@app.post("/api/listings/submit-address")
+async def submit_listing_address(req: SubmitAddressRequest):
+    """
+    Allows a user to manually submit a street address for a listing whose address
+    was withheld/unknown, geocodes it, and persists it in the shared DB pool & cache.
+    Strictly rejects listings that already have a verified street address.
+    """
+    import re
+    from services.listings_db import get_listing_by_id, is_missing_address_text, update_listing_address
+    from services.live_search import update_cached_listing_address
+    from services.address_normalizer import CAPE_TOWN_SUBURBS, _haversine_km, geocode_address_precision
+
+    clean_addr = (req.address or "").strip()
+    if len(clean_addr) < 4 or is_missing_address_text(clean_addr):
+        raise HTTPException(status_code=400, detail="Please enter a valid street name/number (e.g. 14 Derwent Rd, Gardens).")
+
+    stored_listing = get_listing_by_id(req.listing_id)
+    if stored_listing and stored_listing.get("is_address_withheld") == 0 and not is_missing_address_text(stored_listing.get("address")):
+        raise HTTPException(status_code=409, detail="This listing already has a street address.")
+
+    designated_suburb = (stored_listing.get("suburb") if stored_listing else None) or (req.suburb or "").strip()
+    sub_key = designated_suburb.lower().strip()
+    sub_center = CAPE_TOWN_SUBURBS.get(sub_key)
+    if not sub_center and stored_listing and stored_listing.get("lat") is not None and stored_listing.get("lng") is not None:
+        sub_center = (float(stored_listing["lat"]), float(stored_listing["lng"]))
+
+    geo = geocode_address_precision(clean_addr, default_suburb=designated_suburb)
+    new_lat = geo.get("lat")
+    new_lng = geo.get("lng")
+    formatted_addr = geo.get("formatted_address") or (
+        f"{clean_addr}, {designated_suburb}" if designated_suburb and designated_suburb.lower() not in clean_addr.lower() else clean_addr
+    )
+
+    if new_lat is None or new_lng is None or geo.get("is_withheld"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not pinpoint that street address in {designated_suburb or 'the designated area'}. Please include street name and number.",
+        )
+
+    # Anti-spoofing Rule 1: Must remain within 3.5 km of the listing's designated suburb center
+    if sub_center:
+        dist_km = _haversine_km(float(new_lat), float(new_lng), sub_center[0], sub_center[1])
+        if dist_km > 3.5:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Address must stay within {designated_suburb or 'the designated area'} (geocoded point is {dist_km:.1f} km away).",
+            )
+
+    # Anti-spoofing Rule 2: Reject if the submitted text names a different Cape Town suburb
+    if sub_key:
+        raw_lower = clean_addr.lower()
+        for other_sub in CAPE_TOWN_SUBURBS.keys():
+            if other_sub != sub_key and len(other_sub) >= 4 and re.search(rf"\b{re.escape(other_sub)}\b", raw_lower):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Address cannot reference {other_sub.title()} — it must stay within {designated_suburb}.",
+                )
+
+    suburb = designated_suburb
+
+    extra_fields: Dict[str, Any] = {}
+    try:
+        from services.acoustic_registry import evaluate_listing_acoustics
+        if new_lat is not None and new_lng is not None:
+            ac = evaluate_listing_acoustics(address=formatted_addr, lat=float(new_lat), lng=float(new_lng), suburb=suburb)
+            if isinstance(ac, dict):
+                extra_fields["acoustic_audit"] = ac
+                if ac.get("noise_risk"):
+                    extra_fields["noise_risk"] = ac["noise_risk"]
+                if "is_main_road" in ac:
+                    extra_fields["is_main_road"] = bool(ac["is_main_road"])
+    except Exception:
+        pass
+
+    db_res = update_listing_address(
+        listing_id=req.listing_id,
+        new_address=formatted_addr,
+        lat=new_lat,
+        lng=new_lng,
+        extra_fields=extra_fields,
+    )
+    if db_res.get("status") == "already_has_address":
+        raise HTTPException(status_code=409, detail="This listing already has a street address.")
+
+    cache_patch = {
+        "address": formatted_addr,
+        "is_address_withheld": False,
+        "address_source": "user_submitted",
+        **({"lat": new_lat} if new_lat is not None else {}),
+        **({"lng": new_lng} if new_lng is not None else {}),
+        **extra_fields,
+    }
+    cache_updated = update_cached_listing_address(req.listing_id, cache_patch)
+    if db_res.get("status") == "not_found" and not cache_updated:
+        raise HTTPException(status_code=404, detail="Listing not found in database or cache.")
+
+    return {
+        "status": "success",
+        "listing_id": req.listing_id,
+        "address": formatted_addr,
+        "lat": new_lat,
+        "lng": new_lng,
+        "is_address_withheld": False,
+        "address_source": "user_submitted",
+        **extra_fields,
+    }
+
+
+class CommentPayload(BaseModel):
+    user_id: str
+    body: str
+
+
+@app.get("/api/listings/comments/counts")
+async def get_all_comment_counts():
+    from services.community_db import get_comment_counts, get_latest_comments_by_listing, get_recent_comments_by_listing
+    return {
+        "counts": get_comment_counts(),
+        "latest": get_latest_comments_by_listing(),
+        "recent": get_recent_comments_by_listing(3),
+    }
+
+
+@app.get("/api/listings/nickname/{user_id}")
+async def get_user_nickname_endpoint(user_id: str):
+    from services.community_db import get_or_create_nickname
+    return {"user_id": user_id, "nickname": get_or_create_nickname(user_id)}
+
+
+@app.get("/api/listings/{listing_id}/comments")
+async def list_listing_comments(listing_id: str):
+    from services.community_db import get_listing_comments
+    return {"comments": get_listing_comments(listing_id)}
+
+
+@app.post("/api/listings/{listing_id}/comments")
+async def add_listing_comment(listing_id: str, payload: CommentPayload):
+    from services.community_db import create_listing_comment
+    try:
+        comment = create_listing_comment(listing_id, payload.user_id, payload.body)
+        return {"status": "success", "comment": comment}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/listings/comments/{comment_id}")
+async def edit_listing_comment(comment_id: str, payload: CommentPayload):
+    from services.community_db import update_listing_comment
+    try:
+        res = update_listing_comment(comment_id, payload.user_id, payload.body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if res["status"] == "not_found":
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    if res["status"] == "forbidden":
+        raise HTTPException(status_code=403, detail="You can only edit your own comments.")
+    return {"status": "success", "comment": res["comment"]}
+
+
+@app.delete("/api/listings/comments/{comment_id}")
+async def remove_listing_comment(comment_id: str, user_id: str):
+    from services.community_db import delete_listing_comment
+    status = delete_listing_comment(comment_id, user_id)
+    if status == "not_found":
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    if status == "forbidden":
+        raise HTTPException(status_code=403, detail="You can only delete your own comments.")
+    return {"status": "success"}
+
 
 class VerifyFavouritesRequest(BaseModel):
     items: List[VerifyFavouritesItem] = []
@@ -1503,7 +1737,7 @@ async def listing_forensic_vision(req: ForensicVisionRequest):
 
         prompt = f"""You are a sharp, architect-trained Cape Town / South Africa rental property inspector.
 Inspect the {len(image_contents)} attached listing photo(s) alongside the listing details and apply these FORENSIC GUIDELINES:
-1. SPACE & WFH ERGONOMICS: If it is a 0.5-bed/studio or <=55 m² open-plan unit, evaluate whether full-time WFH is viable (acoustic door vs fridge/kitchen hum, bed in video-call backdrop, desk nook >=1.2m near natural light & plugs). Tailor to User Preferences ({req.personal_preferences or 'None specified'}).
+1. SPACE & WFH ERGONOMICS (VISUAL DESK PLACEMENT): Visually inspect the room layouts in the photos to judge where a proper WFH desk (>=1.2m x 0.6m) + ergonomic chair can actually fit without blocking walkways, sofas, or wardrobes. Note specific spots (e.g., lounge window wall, alcove, bedroom corner) or flag if tight circulation/open-plan kitchen-lounge forces a laptop onto a dining counter. Check acoustic separation (real door vs fridge/kitchen hum), video-call backdrop (bed/kitchen visible?), natural light angle (side light vs screen glare), and visible plug points. Tailor to User Preferences ({req.personal_preferences or 'None specified'}).
 2. WINDOW PLACEMENT & DAYLIGHT: Check sightlines (brick wall/airshaft 'blind-lock' vs open sky/greenery), single-aspect vs cross-ventilation, Cape Town sun glare/damp risk, and window frame quality (thin aluminum vs double-glazed/timber).
 3. WALL TYPE & ACOUSTICS: Infer solid brick/concrete (Art Deco/older) vs hollow drywall/studs (modern infill), hard-tile Zoom echo risk, and upstairs/party-wall exposure.
 4. CEILING HEIGHT & VOLUME: Judge ceiling height (high >=2.8m vs standard 2.4m vs low <2.3m bulkheads) and flag 0.5x ultra-wide lens distortion.
@@ -1523,7 +1757,7 @@ Return STRICT JSON only (no markdown fences) with these exact keys:
   "photo_story": "3-4 concise sentences telling the real story across the photos: layout, finishes, light, surroundings, and what key rooms/angles are missing.",
   "photo_pros": ["3 to 5 specific visual pros directly observed in the photos"],
   "photo_cons": ["2 to 5 specific visual cons, WFH/layout friction, or missing-photo gaps observed"],
-  "wfh_layout_verdict": "1-2 concise sentences on workspace zoning, desk placement, acoustic separation, and suitability for the tenant's work mode.",
+  "wfh_layout_verdict": "2-3 concise sentences based on what you SEE in the photos: where a desk + chair can/cannot be placed, circulation clearance, acoustic/door separation, video-call backdrop, and overall WFH suitability.",
   "window_light_audit": "1-2 concise sentences on window placement, sightlines, cross-ventilation, glare/damp risk, and glazing.",
   "wall_acoustic_audit": "1-2 concise sentences on wall construction (brick vs drywall), echo surfaces, and neighbour noise insulation.",
   "ceiling_volume_audit": "1 concise sentence on ceiling height, spatial volume, and 0.5x lens distortion.",
@@ -1556,6 +1790,14 @@ Return STRICT JSON only (no markdown fences) with these exact keys:
                 parsed["building_intel"] = building_intel
                 parsed["is_fallback"] = False
                 _forensic_vision_cache[cache_key] = parsed
+                if req.id and parsed.get("stove_type") in ("gas", "induction", "electric"):
+                    try:
+                        from services.listings_db import update_listing_vision_attributes
+                        from services.live_search import update_cached_listing_fields
+                        update_listing_vision_attributes(req.id, stove_type=parsed["stove_type"], vision_summary=parsed)
+                        update_cached_listing_fields(req.id, {"stove_type": parsed["stove_type"], "vision_verified": True})
+                    except Exception:
+                        pass
                 return {"status": "success", "vision": parsed, "cached": False}
             except Exception as e:
                 last_err = e
@@ -1573,6 +1815,102 @@ Return STRICT JSON only (no markdown fences) with these exact keys:
         fallback_parsed = _build_heuristic_vision_fallback(req, clean_imgs, is_quota_err=is_quota_err, err_str=err_str, building_intel=building_intel)
         _forensic_vision_cache[cache_key] = fallback_parsed
         return {"status": "fallback", "vision": fallback_parsed, "cached": False}
+
+
+class ReportPdfRequest(BaseModel):
+    report: Dict[str, Any]
+
+
+class EmailReportPdfRequest(BaseModel):
+    to_email: str
+    report: Dict[str, Any]
+
+
+@app.post("/api/reports/pdf")
+async def generate_report_pdf_endpoint(req: ReportPdfRequest):
+    from fastapi.responses import Response
+    from services.pdf_report import build_property_report_pdf
+    pdf_bytes = build_property_report_pdf(req.report)
+    raw_id = str(req.report.get("id") or "listing").replace("/", "-")
+    filename = f"homeseek-report-{raw_id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/reports/email-pdf")
+async def email_report_pdf_endpoint(req: EmailReportPdfRequest):
+    import base64
+    import smtplib
+    from email.message import EmailMessage
+    from services.pdf_report import build_property_report_pdf
+
+    to_email = (req.to_email or "").strip()
+    if "@" not in to_email or "." not in to_email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Please enter a valid recipient email address.")
+
+    pdf_bytes = build_property_report_pdf(req.report)
+    raw_id = str(req.report.get("id") or "listing").replace("/", "-")
+    filename = f"homeseek-report-{raw_id}.pdf"
+    title = str(req.report.get("title") or "Property Report")
+    address = str(req.report.get("address") or "")
+    subject = f"HomeSeek Property Report: {title}"
+    html_body = (
+        f"<p>Attached is your <strong>HomeSeek Forensic Property & Viewing Report</strong> for "
+        f"<strong>{title}</strong> ({address}).</p>"
+    )
+
+    resend_key = os.getenv("RESEND_API_KEY")
+    if resend_key:
+        import httpx
+        from_email = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+        payload = {
+            "from": f"HomeSeek Intelligence <{from_email}>",
+            "to": [to_email],
+            "subject": subject,
+            "html": html_body,
+            "attachments": [
+                {
+                    "filename": filename,
+                    "content": base64.b64encode(pdf_bytes).decode("ascii"),
+                }
+            ],
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            res = await client.post(
+                "https://api.resend.com/emails",
+                json=payload,
+                headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+            )
+            if res.status_code >= 400:
+                raise HTTPException(status_code=502, detail=f"Resend email error: {res.text[:200]}")
+        return {"status": "success", "to_email": to_email, "provider": "resend"}
+
+    smtp_host = os.getenv("SMTP_HOST")
+    if smtp_host:
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_user = os.getenv("SMTP_USER", "")
+        smtp_pass = os.getenv("SMTP_PASSWORD", "")
+        from_addr = os.getenv("SMTP_FROM_EMAIL") or smtp_user or "noreply@homeseek.local"
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = from_addr
+        msg["To"] = to_email
+        msg.set_content(f"Attached is your HomeSeek Property Report for {title} ({address}).")
+        msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            server.starttls()
+            if smtp_user and smtp_pass:
+                server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        return {"status": "success", "to_email": to_email, "provider": "smtp"}
+
+    raise HTTPException(
+        status_code=400,
+        detail="Email delivery is not configured yet (set RESEND_API_KEY or SMTP_HOST in api/.env). You can still save the PDF directly.",
+    )
 
 
 class ComparePropertiesRequest(BaseModel):

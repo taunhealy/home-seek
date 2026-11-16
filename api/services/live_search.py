@@ -218,6 +218,32 @@ def remove_listing_ids_from_cache(p24_ids: Set[str]) -> int:
     return removed
 
 
+def update_cached_listing_fields(listing_id: str, updated_fields: Dict[str, Any]) -> bool:
+    """Updates a listing's fields in `.p24_live_cache.json` so cached reads reflect them."""
+    target = str(listing_id).replace("p24-", "").strip()
+    if not target:
+        return False
+
+    _load_disk_cache(force=True)
+    updated_any = False
+    for entry in _MEMORY_CACHE.values():
+        items = entry.get("items")
+        if not isinstance(items, list):
+            continue
+        for it in items:
+            lid = str(it.get("p24_id") or it.get("id") or "").replace("p24-", "").strip()
+            if lid == target:
+                it.update(updated_fields)
+                updated_any = True
+    if updated_any:
+        _save_disk_cache()
+    return updated_any
+
+
+def update_cached_listing_address(listing_id: str, updated_fields: Dict[str, Any]) -> bool:
+    return update_cached_listing_fields(listing_id, updated_fields)
+
+
 def deduplicate_property_listings(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Intelligent cross-agency multi-listing deduplication:
@@ -408,6 +434,8 @@ def _wait_for_polite_slot() -> bool:
         now = time.time()
         try:
             from services.p24_client import p24_client
+            if not p24_client.has_request_budget():
+                return False
             p24_client._load_circuit_state()
             _LAST_REQUEST_TS = max(_LAST_REQUEST_TS, p24_client._last_request_time)
         except Exception:
@@ -625,7 +653,7 @@ def _build_p24_search_url(base_url: str, min_price: int, max_price: int, beds: s
         sp_parts.append(f"pf={min_price}")
     if max_price < 999999:
         sp_parts.append(f"pt={max_price}")
-    if beds and beds != 'any':
+    if beds and beds not in ('any', '0.5', '0.5+'):
         bed_num = re.sub(r'[^\d]', '', str(beds))
         if bed_num:
             sp_parts.append(f"bd={bed_num}")
@@ -732,7 +760,8 @@ def scrape_p24_live(
         if not clean_suburb:
             continue
 
-        cache_key = f"{clean_suburb.lower()}|{min_price}|{max_price}|{beds}"
+        # Always cache & scrape the canonical unfiltered suburb pool so filter changes never re-hit P24
+        cache_key = f"{clean_suburb.lower()}|0|999999|any"
         now = time.time()
         cached_entry = _MEMORY_CACHE.get(cache_key)
         cache_age = (now - cached_entry.get("ts", 0)) if cached_entry else 999999999
@@ -740,6 +769,23 @@ def scrape_p24_live(
         suburb_cache_age = (now - newest_sub_ts) if newest_sub_ts > 0 else 999999999
         allow_dev_refresh = force_fresh and (cache_age >= _MANUAL_REFRESH_MIN_AGE_SECONDS) and (suburb_cache_age >= _MANUAL_REFRESH_MIN_AGE_SECONDS)
         html_cache_ttl = _MANUAL_REFRESH_MIN_AGE_SECONDS if (force_fresh and (allow_dev_refresh or not P24_DEV_MODE or os.environ.get("P24_LIVE_FORCE"))) else _CACHE_TTL_SECONDS
+
+        try:
+            _min_bed_filter = float(re.sub(r"[^\d.]", "", str(beds))) if (beds and beds != "any") else 0.0
+        except Exception:
+            _min_bed_filter = 0.0
+
+        def _matches_local_filters(it: Dict[str, Any]) -> bool:
+            p = it.get("price") or 0
+            if min_price > 0 and p > 0 and p < min_price:
+                return False
+            if max_price < 999999 and p > max_price:
+                return False
+            if _min_bed_filter > 0:
+                b = it.get("bedrooms")
+                if b is not None and float(b) < _min_bed_filter:
+                    return False
+            return True
 
         # 1. Check Centralized DB Pool: Serve instantly if suburb data is already populated
         if not force_fresh:
@@ -761,7 +807,10 @@ def scrape_p24_live(
         if P24_DEV_MODE and not os.environ.get("P24_LIVE_FORCE") and not allow_dev_refresh:
             if cached_entry and cache_age < _CACHE_TTL_SECONDS:
                 cached_suburbs.append(clean_suburb)
-                for item in _enrich_distance(cached_entry.get("items", []), anchor_lat, anchor_lng):
+                filtered_items = [it for it in cached_entry.get("items", []) if _matches_local_filters(it)]
+                for item in _enrich_distance(filtered_items, anchor_lat, anchor_lng):
+                    if not item.get("first_seen_at") and cached_entry.get("ts"):
+                        item["first_seen_at"] = cached_entry["ts"]
                     lid = item.get("p24_id") or item.get("id")
                     if lid not in seen_ids:
                         seen_ids.add(lid)
@@ -771,7 +820,8 @@ def scrape_p24_live(
         # 1. Serve fresh cache hit immediately (0 network traffic), unless caller requested force_fresh
         if not force_fresh and cached_entry and cache_age < _CACHE_TTL_SECONDS:
             cached_suburbs.append(clean_suburb)
-            for item in _enrich_distance(cached_entry.get("items", []), anchor_lat, anchor_lng):
+            filtered_items = [it for it in cached_entry.get("items", []) if _matches_local_filters(it)]
+            for item in _enrich_distance(filtered_items, anchor_lat, anchor_lng):
                 lid = item.get("p24_id") or item.get("id")
                 if lid not in seen_ids:
                     seen_ids.add(lid)
@@ -782,7 +832,7 @@ def scrape_p24_live(
         if not base_url:
             continue
 
-        search_url = _build_p24_search_url(base_url, min_price, max_price, beds)
+        search_url = _build_p24_search_url(base_url, 0, 999999, "any")
 
         # 2. Check if fresh Page 1 HTML is already cached in `p24_cache.json` (0 network calls)
         from services.p24_client import p24_client as _p24c
@@ -791,7 +841,7 @@ def scrape_p24_live(
         # If not in `p24_cache.json` and shared circuit breaker is open or batch cap reached, serve cached fallback only
         if not p1_is_disk_cached and (_is_circuit_open() or network_fetches >= _MAX_SUBURBS_PER_BATCH):
             stale_suburbs.append(clean_suburb)
-            fallback = cached_entry.get("items", []) if cached_entry else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
+            fallback = [it for it in cached_entry.get("items", []) if _matches_local_filters(it)] if (cached_entry and cached_entry.get("items")) else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
             for item in _enrich_distance(fallback, anchor_lat, anchor_lng):
                 lid = item.get("p24_id") or item.get("id")
                 if lid not in seen_ids:
@@ -819,7 +869,7 @@ def scrape_p24_live(
 
         if not html_p1:
             stale_suburbs.append(clean_suburb)
-            fallback = cached_entry.get("items", []) if cached_entry else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
+            fallback = [it for it in cached_entry.get("items", []) if _matches_local_filters(it)] if (cached_entry and cached_entry.get("items")) else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
             for item in _enrich_distance(fallback, anchor_lat, anchor_lng):
                 lid = item.get("p24_id") or item.get("id")
                 if lid not in seen_ids:
@@ -943,7 +993,12 @@ def scrape_p24_live(
             pkg_el = t.find('span', title='Parking Spaces')
             sqm_el = t.find('span', title='Floor Size')
 
-            beds_cnt = int(beds_el.get_text(strip=True)) if beds_el and beds_el.get_text(strip=True).isdigit() else 1
+            beds_raw = beds_el.get_text(strip=True) if beds_el else ""
+            item_text_peek = t.get_text(' ', strip=True).lower()
+            try:
+                beds_cnt = float(beds_raw) if beds_raw else (0.5 if any(k in item_text_peek for k in ("studio", "bachelor", "0.5 bed")) else 1.0)
+            except Exception:
+                beds_cnt = 0.5 if any(k in item_text_peek for k in ("studio", "bachelor", "0.5 bed")) else 1.0
             baths_cnt = int(baths_el.get_text(strip=True)) if baths_el and baths_el.get_text(strip=True).isdigit() else 1
             pkg_cnt = int(pkg_el.get_text(strip=True)) if pkg_el and pkg_el.get_text(strip=True).isdigit() else 0
             sqm_val = None
@@ -1154,8 +1209,14 @@ def scrape_p24_live(
                 except Exception:
                     agency_name_val = tile_agency
 
+            avail_el = t.find(class_='p24_availableBadge')
+            avail_text = avail_el.get_text(' ', strip=True) if avail_el else ''
+            avail_from = re.sub(r'^available\s*:?\s*', '', avail_text, flags=re.I).strip() or None
+
             item_obj = {
                 'id': f"p24-{lid}",
+                'first_seen_at': int(time.time()),
+                'available_from': avail_from,
                 'p24_id': lid,
                 'title': title_str,
                 'address': final_address,
@@ -1208,11 +1269,11 @@ def scrape_p24_live(
             # Centralized DB Pool: Upsert into persistent shared SQLite database pool
             try:
                 from services.listings_db import upsert_listings
-                upsert_listings(suburb_items, clean_suburb)
+                upsert_listings(suburb_items, clean_suburb, is_full_suburb_scrape=True)
             except Exception as e:
                 print(f"[DB POOL] Warning: failed to upsert into listings_db: {e}")
 
-        for item in _enrich_distance(suburb_items, anchor_lat, anchor_lng):
+        for item in _enrich_distance([it for it in suburb_items if _matches_local_filters(it)], anchor_lat, anchor_lng):
             lid = item.get("p24_id") or item.get("id")
             if lid not in seen_ids:
                 seen_ids.add(lid)

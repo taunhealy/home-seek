@@ -73,27 +73,6 @@ SEED_GYM_DETAILS = [
         "category": "gym"
     },
     {
-        "place_id": "seed_gym_va_kloof_street",
-        "query_key": "virgin active kloof street",
-        "name": "Virgin Active Kloof Street",
-        "formatted_address": "Lifestyle On Kloof, 50 Kloof St, Gardens, Cape Town, 8001",
-        "lat": -33.929839,
-        "lng": 18.410876,
-        "rating": 4.4,
-        "user_ratings_total": 640,
-        "photo_url": "https://images.unsplash.com/photo-1540497077202-7c8a3999166f?auto=format&fit=crop&w=800&q=80",
-        "photo_urls": json.dumps([
-            "https://images.unsplash.com/photo-1540497077202-7c8a3999166f?auto=format&fit=crop&w=800&q=80",
-            "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=800&q=80"
-        ]),
-        "open_now": 1,
-        "opening_hours": "Mon-Thu: 05:30 – 20:30 · Fri: 05:30 – 20:00 · Sat-Sun: 07:00 – 18:00",
-        "website": "https://www.virginactive.co.za/clubs/kloof-street",
-        "phone": "+27 21 422 2300",
-        "google_maps_url": "https://maps.google.com/?q=Virgin+Active+Kloof+Street+Cape+Town",
-        "category": "gym"
-    },
-    {
         "place_id": "seed_gym_va_point",
         "query_key": "virgin active green point",
         "name": "Virgin Active Green Point (Collection Club)",
@@ -439,8 +418,8 @@ async def get_place_details(query: str, lat: Optional[float] = None, lng: Option
                     if row and _within_expected_coords(dict(row)):
                         return dict(row)
 
-            # Try lat/lng proximity match within 250 meters
-            if lat is not None and lng is not None:
+            # Try lat/lng proximity match within 250 meters only when no query name was provided
+            if not clean_q and lat is not None and lng is not None:
                 rows = conn.execute("SELECT * FROM places_details WHERE lat IS NOT NULL AND lng IS NOT NULL").fetchall()
                 for r in rows:
                     dist = _haversine_distance_m(lat, lng, r["lat"], r["lng"])
@@ -743,14 +722,6 @@ CAPE_TOWN_PRESET_PLACES = [
         "suggested_mode": "walking",
         "default_label": "Gym (Virgin Active Wembley)",
         "default_mins": 8
-    },
-    {
-        "main_text": "Virgin Active Kloof Street",
-        "secondary_text": "Kloof Street, Gardens, Cape Town",
-        "category": "gym",
-        "suggested_mode": "walking",
-        "default_label": "Gym (Virgin Active Kloof)",
-        "default_mins": 10
     },
     {
         "main_text": "Virgin Active Point",

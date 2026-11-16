@@ -4,7 +4,7 @@ import os
 import random
 from typing import List, Dict, Any, Optional
 from services.listings_db import get_suburb_sync_age_seconds, upsert_listings, get_pool_stats
-from services.live_search import scrape_p24_live, get_p24_circuit_status
+from services.live_search import scrape_p24_live, get_p24_circuit_status, P24_DEV_MODE
 
 # Comprehensive Cape Town Suburbs for background sync cycle (Metro-wide coverage)
 TARGET_SYNC_SUBURBS = [
@@ -93,8 +93,13 @@ TARGET_SYNC_SUBURBS = [
     "George",
 ]
 
-# Sync Interval: Check each suburb if older than 45 minutes (gently refreshed with 4s spacing)
-SUBURB_MAX_AGE_SECONDS = 45 * 60
+# Sync Interval: 7 days in P24_DEV_MODE (cache-first rule), 45 minutes otherwise
+SUBURB_MAX_AGE_SECONDS = (7 * 24 * 60 * 60) if P24_DEV_MODE else (45 * 60)
+
+def is_background_poller_enabled() -> bool:
+    """Background 75-suburb scraping is disabled by default in both dev and prod to prevent IP blocks.
+    Use on-demand per-suburb scraping with shared cooldowns + request budgets instead, or opt in explicitly."""
+    return os.environ.get("P24_ENABLE_BACKGROUND_POLLER", "").lower() in ("true", "1", "yes")
 
 # Background task state
 _SYNC_TASK: Optional[asyncio.Task] = None
@@ -117,7 +122,7 @@ async def _sync_single_suburb(suburb: str):
     print(f"[BACKGROUND POLLER] Syncing suburb '{suburb}' (cache age: {round(age / 60, 1)}m)...")
     loop = asyncio.get_event_loop()
     
-    # Scrape off-thread to avoid event loop stalls
+    # Scrape off-thread to avoid event loop stalls (never force_fresh in P24_DEV_MODE)
     listings = await loop.run_in_executor(
         None,
         lambda: scrape_p24_live(
@@ -125,7 +130,7 @@ async def _sync_single_suburb(suburb: str):
             min_price=0,
             max_price=999999,
             beds="any",
-            force_fresh=True
+            force_fresh=not P24_DEV_MODE
         )
     )
 
@@ -165,6 +170,9 @@ async def background_suburb_sync_loop():
 
 def start_background_poller():
     global _SYNC_TASK
+    if not is_background_poller_enabled():
+        print("[BACKGROUND POLLER] Disabled by default (on-demand per-suburb cooldown + request budget active). Set P24_ENABLE_BACKGROUND_POLLER=true to opt in.")
+        return False
     if _SYNC_TASK is None or _SYNC_TASK.done():
         _SYNC_TASK = asyncio.create_task(background_suburb_sync_loop())
         return True

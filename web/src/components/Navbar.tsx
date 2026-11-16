@@ -20,6 +20,7 @@ import {
   Crown
 } from '@phosphor-icons/react';
 import { getCompareList } from '@/lib/pro-plan';
+import { useAuth } from '@/lib/auth-context';
 
 interface NavbarProps {
   user?: any;
@@ -40,17 +41,87 @@ const NAV_ITEMS = [
 ];
 
 export const Navbar: React.FC<NavbarProps> = ({ 
-  user, 
-  profile, 
-  loading, 
-  handleLogout, 
-  handleLogin, 
+  user: propUser, 
+  profile: propProfile, 
+  loading: propLoading, 
+  handleLogout: propLogout, 
+  handleLogin: propLogin, 
   onUpdateProfile 
 }) => {
   const pathname = usePathname();
+  const {
+    user: ctxUser,
+    profile: ctxProfile,
+    loading: ctxLoading,
+    logout: ctxLogout,
+    login: ctxLogin,
+    loginWithEmail,
+    registerWithEmail,
+    refreshProfile,
+  } = useAuth();
+  const user = propUser !== undefined ? propUser : ctxUser;
+  const profile = propProfile !== undefined ? propProfile : ctxProfile;
+  const loading = propLoading !== undefined ? propLoading : ctxLoading;
+  const handleLogout = propLogout || ctxLogout;
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authDisplayName, setAuthDisplayName] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+
+  const handleOpenAuthModal = () => {
+    setAuthError(null);
+    setIsAuthModalOpen(true);
+  };
+
+  const handleGoogleAuth = async () => {
+    setAuthError(null);
+    setIsAuthSubmitting(true);
+    try {
+      if (propLogin) {
+        await propLogin();
+      } else {
+        await ctxLogin();
+      }
+      setIsAuthModalOpen(false);
+    } catch {
+      setAuthError('Google sign-in failed.');
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleEmailAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setIsAuthSubmitting(true);
+    try {
+      const res =
+        authMode === 'register'
+          ? await registerWithEmail(authEmail, authPassword, authDisplayName)
+          : await loginWithEmail(authEmail, authPassword);
+      if (!res.ok) {
+        setAuthError(res.error || 'Authentication failed.');
+        return;
+      }
+      setIsAuthModalOpen(false);
+      setAuthEmail('');
+      setAuthPassword('');
+      setAuthDisplayName('');
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
   const [isOpen, setIsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [whatsappInput, setWhatsappInput] = useState('');
+  const [nicknameInput, setNicknameInput] = useState('');
+  const [avatarInput, setAvatarInput] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileSaveMsg, setProfileSaveMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [compareCount, setCompareCount] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -64,6 +135,64 @@ export const Navbar: React.FC<NavbarProps> = ({
   useEffect(() => {
     if (profile?.whatsapp) setWhatsappInput(profile.whatsapp);
   }, [profile?.whatsapp]);
+
+  useEffect(() => {
+    if (profile?.nickname) setNicknameInput(profile.nickname);
+    if (profile?.avatar_url !== undefined) setAvatarInput(profile.avatar_url || '');
+  }, [profile?.nickname, profile?.avatar_url]);
+
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const size = 128;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const minDim = Math.min(img.width, img.height);
+          const sx = (img.width - minDim) / 2;
+          const sy = (img.height - minDim) / 2;
+          ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+          setAvatarInput(canvas.toDataURL('image/jpeg', 0.85));
+        }
+      };
+      if (typeof reader.result === 'string') img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveProfileSettings = async () => {
+    if (!user?.uid) return;
+    setIsSavingProfile(true);
+    setProfileSaveMsg(null);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendBase}/api/user-profile/${encodeURIComponent(user.uid)}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nickname: nicknameInput.trim() || undefined,
+          avatar_url: avatarInput.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setProfileSaveMsg({ type: 'err', text: data?.detail || 'Failed to save.' });
+        return;
+      }
+      await refreshProfile();
+      setProfileSaveMsg({ type: 'ok', text: 'Profile updated!' });
+    } catch {
+      setProfileSaveMsg({ type: 'err', text: 'Network error saving profile.' });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   // Persist current route in localStorage so returning to the app restores the user's last page
   useEffect(() => {
@@ -163,38 +292,126 @@ export const Navbar: React.FC<NavbarProps> = ({
                   suppressHydrationWarning
                   className="flex items-center gap-2 bg-zinc-50 border border-zinc-200 pl-1.5 pr-3 py-1 rounded-full hover:bg-zinc-100 transition-colors"
                 >
-                  {user.photoURL ? (
-                    <img src={user.photoURL} className="w-7 h-7 rounded-full object-cover border border-zinc-200" alt="avatar" />
+                  {(profile?.avatar_url || user.photoURL) ? (
+                    <img src={profile?.avatar_url || user.photoURL} className="w-7 h-7 rounded-full object-cover border border-zinc-200" alt="avatar" />
                   ) : (
                     <div className="w-7 h-7 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs uppercase">
-                      {user.email?.[0] || 'U'}
+                      {(profile?.nickname || user.email || 'U')[0]}
                     </div>
                   )}
-                  <span className="text-xs font-medium text-zinc-700 max-w-[90px] truncate hidden sm:inline">
-                    {user.displayName || user.email?.split('@')[0]}
+                  <span className="text-xs font-medium text-zinc-700 max-w-[110px] truncate hidden sm:inline">
+                    {profile?.nickname ? `u/${profile.nickname}` : (user.displayName || user.email?.split('@')[0])}
                   </span>
                   <CaretDown size={12} className={`text-zinc-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} weight="bold" />
                 </button>
 
                 {/* Dropdown Menu */}
                 {isOpen && (
-                  <div className="absolute right-0 mt-2 w-72 bg-white border border-zinc-200 rounded-2xl shadow-xl overflow-hidden p-2 z-[100] animate-in fade-in duration-150">
-                    <div className="p-3 border-b border-zinc-100">
-                      <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">Signed in as</p>
-                      <p className="text-xs font-semibold text-zinc-950 truncate">{user.displayName || 'HomeSeek User'}</p>
-                      <p className="text-[11px] text-zinc-600 truncate">{user.email}</p>
+                  <div className="absolute right-0 mt-2 w-80 max-h-[85vh] overflow-y-auto bg-white border border-zinc-200 rounded-2xl shadow-2xl p-2 z-[100] animate-in fade-in duration-150">
+                    <div className="p-3 border-b border-zinc-100 flex items-center gap-2.5">
+                      {(avatarInput || profile?.avatar_url || user.photoURL) ? (
+                        <img
+                          src={avatarInput || profile?.avatar_url || user.photoURL}
+                          alt="avatar"
+                          className="w-9 h-9 rounded-full object-cover border border-zinc-200 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                          {(profile?.nickname || user.email || 'U')[0]}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                          {profile?.nickname ? `u/${profile.nickname}` : 'Signed in as'}
+                        </p>
+                        <p className="text-xs font-semibold text-zinc-950 truncate">{user.displayName || 'HomeSeek User'}</p>
+                        <p className="text-[11px] text-zinc-600 truncate">{user.email}</p>
+                      </div>
                     </div>
 
                     <div className="p-2 space-y-1">
-                      {/* Manage Alerts Link */}
-                      <Link
-                        href="/alerts"
-                        onClick={() => setIsOpen(false)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-zinc-800 hover:bg-zinc-100 text-xs font-semibold transition-colors"
-                      >
-                        <Bell size={16} weight="bold" className="text-zinc-900" />
-                        <span>Manage Radar Alerts</span>
-                      </Link>
+                      {/* Profile Settings (Nickname & Avatar) */}
+                      <div className="p-2 space-y-2 bg-indigo-50/50 border border-indigo-100 rounded-xl mb-1.5">
+                        <label className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider block">
+                          Profile Settings
+                        </label>
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            placeholder="Nickname (3-24 chars)"
+                            value={nicknameInput}
+                            onChange={(e) => setNicknameInput(e.target.value)}
+                            className="w-full bg-white border border-zinc-200 rounded-lg px-2.5 py-1 text-xs text-zinc-900 focus:outline-none focus:border-indigo-500"
+                          />
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              placeholder="Image URL or upload →"
+                              value={avatarInput.startsWith('data:image/') ? 'Uploaded image ready' : avatarInput}
+                              onChange={(e) => setAvatarInput(e.target.value)}
+                              className="flex-1 min-w-0 bg-white border border-zinc-200 rounded-lg px-2 py-1 text-[11px] text-zinc-900 focus:outline-none focus:border-indigo-500"
+                            />
+                            <label className="px-2 py-1 rounded-lg bg-white border border-zinc-200 hover:bg-zinc-100 text-[10.5px] font-bold text-zinc-700 cursor-pointer shrink-0">
+                              Upload
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleAvatarFileChange}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                        {profileSaveMsg && (
+                          <p className={`text-[10.5px] font-semibold ${profileSaveMsg.type === 'ok' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                            {profileSaveMsg.text}
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          disabled={isSavingProfile}
+                          onClick={handleSaveProfileSettings}
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-colors"
+                        >
+                          {isSavingProfile ? 'Saving...' : 'Save Profile'}
+                        </button>
+                      </div>
+
+                      {/* Quick Dashboard Navigation */}
+                      <div className="grid grid-cols-2 gap-1 pb-1.5 mb-1 border-b border-zinc-100">
+                        <Link
+                          href="/search"
+                          onClick={() => setIsOpen(false)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-zinc-800 hover:bg-zinc-100 text-[11px] font-semibold transition-colors"
+                        >
+                          <MagnifyingGlass size={14} weight="bold" className="text-indigo-600" />
+                          <span>Search Radar</span>
+                        </Link>
+                        <Link
+                          href="/alerts"
+                          onClick={() => setIsOpen(false)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-zinc-800 hover:bg-zinc-100 text-[11px] font-semibold transition-colors"
+                        >
+                          <Bell size={14} weight="bold" className="text-zinc-900" />
+                          <span>Saved Alerts</span>
+                        </Link>
+                        <Link
+                          href="/compare"
+                          onClick={() => setIsOpen(false)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-zinc-800 hover:bg-zinc-100 text-[11px] font-semibold transition-colors"
+                        >
+                          <Scales size={14} weight="bold" className="text-emerald-600" />
+                          <span>Compare</span>
+                        </Link>
+                        <Link
+                          href="/discover"
+                          onClick={() => setIsOpen(false)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-zinc-800 hover:bg-zinc-100 text-[11px] font-semibold transition-colors"
+                        >
+                          <Sparkle size={14} weight="bold" className="text-purple-600" />
+                          <span>AI Scout</span>
+                        </Link>
+                      </div>
                       {/* WhatsApp Routing */}
                       <div className="p-2 space-y-1.5 bg-zinc-50 rounded-xl mb-1.5">
                         <label className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">Alert WhatsApp</label>
@@ -258,9 +475,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             ) : (
               <button
-                onClick={handleLogin}
+                onClick={handleOpenAuthModal}
                 suppressHydrationWarning
-                className="bg-zinc-950 text-white px-4 py-2 rounded-xl text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs"
+                className="bg-zinc-950 text-white px-4 py-2 rounded-xl text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
               >
                 Sign In
               </button>
@@ -306,6 +523,122 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
 
       </div>
+
+      {/* Sign In / Registration Modal */}
+      {isAuthModalOpen && (
+        <div
+          className="fixed inset-0 z-[200] bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setIsAuthModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-black text-zinc-950">
+                  {authMode === 'login' ? 'Sign in to HomeSeek' : 'Create HomeSeek Account'}
+                </h2>
+                <p className="text-[11px] text-zinc-500">
+                  {authMode === 'login'
+                    ? 'Access your saved alerts, profile, and comments.'
+                    : 'Get an auto-generated community nickname on signup.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAuthModalOpen(false)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 cursor-pointer"
+                aria-label="Close"
+              >
+                <X size={16} weight="bold" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-100 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthError(null);
+                }}
+                className={`py-1.5 rounded-lg transition-all cursor-pointer ${authMode === 'login' ? 'bg-white text-zinc-950 shadow-2xs' : 'text-zinc-500 hover:text-zinc-800'}`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('register');
+                  setAuthError(null);
+                }}
+                className={`py-1.5 rounded-lg transition-all cursor-pointer ${authMode === 'register' ? 'bg-white text-zinc-950 shadow-2xs' : 'text-zinc-500 hover:text-zinc-800'}`}
+              >
+                Create Account
+              </button>
+            </div>
+
+            <button
+              type="button"
+              disabled={isAuthSubmitting}
+              onClick={handleGoogleAuth}
+              className="w-full py-2 px-3 rounded-xl border border-zinc-200 hover:bg-zinc-50 text-xs font-bold text-zinc-900 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <span>G</span>
+              <span>Continue with Google</span>
+            </button>
+
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+              <div className="flex-1 h-px bg-zinc-200" />
+              <span>or with email</span>
+              <div className="flex-1 h-px bg-zinc-200" />
+            </div>
+
+            <form onSubmit={handleEmailAuthSubmit} className="space-y-2.5">
+              {authMode === 'register' && (
+                <input
+                  type="text"
+                  placeholder="Display Name (optional)"
+                  value={authDisplayName}
+                  onChange={(e) => setAuthDisplayName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs text-zinc-900 focus:outline-none focus:border-indigo-500"
+                />
+              )}
+              <input
+                type="email"
+                required
+                placeholder="Email address"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs text-zinc-900 focus:outline-none focus:border-indigo-500"
+              />
+              <input
+                type="password"
+                required
+                minLength={6}
+                placeholder="Password (min 6 characters)"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs text-zinc-900 focus:outline-none focus:border-indigo-500"
+              />
+              {authError && (
+                <p className="text-[11px] text-rose-600 font-semibold">{authError}</p>
+              )}
+              <button
+                type="submit"
+                disabled={isAuthSubmitting}
+                className="w-full py-2 rounded-xl bg-zinc-950 hover:bg-indigo-600 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer"
+              >
+                {isAuthSubmitting
+                  ? 'Please wait...'
+                  : authMode === 'login'
+                    ? 'Sign In'
+                    : 'Create Account'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </nav>
   );
 };

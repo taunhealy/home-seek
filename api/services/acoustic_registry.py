@@ -6,13 +6,13 @@ from typing import Dict, Any, List, Optional, Tuple
 NOISE_HOTSPOTS: List[Dict[str, Any]] = [
     {
         "id": "kloof_aruba_nightlife",
-        "name": "Aruba Bar (Malan St) & Kloof Street Strip (Asoka, Café Paradiso, Yours Truly)",
-        "lat": -33.932366,
-        "lng": 18.408386,
+        "name": "Aruba Bar & Café Paradiso (108–110 Kloof St, off Derwent Rd)",
+        "lat": -33.934103,
+        "lng": 18.407182,
         "base_db": 86,
         "radius_m": 220,
         "corridor_type": "nightlife_bar",
-        "corridor_description": "Aruba Bar on Malan St & Asoka — late-night DJ bass, outdoor cocktail patio crowds, Uber idling, and direct Malan St -> Derwent Rd acoustic waveguide."
+        "corridor_description": "Aruba Bar (108 Kloof St) & Café Paradiso (110 Kloof St) — late-night DJ bass, outdoor cocktail patio crowds, Uber idling, and Derwent Rd acoustic spillover."
     },
     {
         "id": "kloof_blondie_park_rd",

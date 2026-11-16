@@ -147,6 +147,8 @@ export interface PropertyMapProps {
   onSelectAnchor?: (anchor: ProximityAnchor) => void;
   proximityFilter?: ProximityFilterConfig | null;
   onRadiusChange?: (radiusKm: number) => void;
+  withinRadiusFilter?: boolean;
+  onToggleWithinRadiusFilter?: (next: boolean) => void;
   className?: string;
   mode?: 'default' | 'search';
   selectedSuburbs?: string[];
@@ -157,6 +159,8 @@ export interface PropertyMapProps {
   showCardPopupOnMap?: boolean;
   onAddSuburb?: (suburb: string) => void;
   onOpenAiReport?: (p: PropertyMapItem) => void;
+  commentCounts?: Record<string, number>;
+  onOpenComments?: (p: PropertyMapItem) => void;
   searchSummary?: {
     minPrice?: string | number;
     maxPrice?: string | number;
@@ -246,8 +250,8 @@ export const CAPE_TOWN_HOTSPOTS = [
     id: 'sp_the_nines_rooftop',
     name: 'The Nines & Station House Rooftop (19 Kloof Rd, Sea Point)',
     shortName: 'The Nines',
-    lat: -33.9189,
-    lng: 18.3845,
+    lat: -33.918892,
+    lng: 18.387432,
     base_db: 82,
     radius_m: 140,
     type: 'nightlife',
@@ -268,8 +272,8 @@ export const CAPE_TOWN_HOTSPOTS = [
     id: 'sp_hugo_social_club',
     name: 'Hugo Social Club Rooftop (2 Kings Rd, Sea Point)',
     shortName: 'Hugo Social Club',
-    lat: -33.9142,
-    lng: 18.3905,
+    lat: -33.922532,
+    lng: 18.381131,
     base_db: 82,
     radius_m: 140,
     type: 'nightlife',
@@ -301,8 +305,8 @@ export const CAPE_TOWN_HOTSPOTS = [
     id: 'kloof_power_and_glory',
     name: 'The Power & The Glory (13D Kloof Nek Rd, Tamboerskloof)',
     shortName: 'The Power & The Glory',
-    lat: -33.9317,
-    lng: 18.4069,
+    lat: -33.929937,
+    lng: 18.408129,
     base_db: 84,
     radius_m: 160,
     type: 'nightlife',
@@ -321,25 +325,25 @@ export const CAPE_TOWN_HOTSPOTS = [
   },
   {
     id: 'kloof_blondie_park_rd',
-    name: 'Blondie & Park Road Bars (71 Kloof St, Gardens)',
+    name: 'Blondie & Park Road Bars (69 Kloof St, Gardens)',
     shortName: 'Blondie',
-    lat: -33.9293,
-    lng: 18.4114,
+    lat: -33.930144,
+    lng: 18.411004,
     base_db: 85,
     radius_m: 160,
     type: 'nightlife',
-    desc: 'Packed pavement bar crowds at Blondie & Park Rd corner with late-night street spillover.'
+    desc: 'Packed pavement bar crowds at Blondie (69 Kloof St) & Park Rd corner with late-night street spillover.'
   },
   {
     id: 'kloof_aruba_nightlife',
-    name: 'Kloof & Malan St (Aruba, Paradiso)',
+    name: 'Aruba & Café Paradiso (108–110 Kloof St, off Derwent Rd)',
     shortName: 'Aruba & Paradiso',
-    lat: -33.9323,
-    lng: 18.4108,
+    lat: -33.934103,
+    lng: 18.407182,
     base_db: 84,
     radius_m: 220,
     type: 'nightlife',
-    desc: 'Late-night DJ bass & patio crowds down Malan St waveguide.'
+    desc: 'Late-night DJ bass & patio crowds at Aruba (108 Kloof St) & Café Paradiso (110 Kloof St), right off Derwent Rd.'
   },
   {
     id: 'bree_long_cbd',
@@ -878,15 +882,16 @@ export function getPropertyBarNoiseExposure(prop: any) {
   const text = `${prop.address || ''} ${prop.title || ''}`.toLowerCase();
   for (const bar of CAPE_TOWN_HOTSPOTS) {
     if (bar.type !== 'nightlife') continue;
-    const nameKeywords = (bar.shortName || bar.name).toLowerCase().split(/[\s,&()]+/);
-    const hasNameMatch = nameKeywords.some(kw => kw.length > 3 && text.includes(kw));
-    
+    const fullShortName = (bar.shortName || '').toLowerCase().trim();
+    // Only match by name if the full venue name appears in the listing text (never generic suburb words like "hout" or "beach")
+    const hasNameMatch = fullShortName.length >= 6 && text.includes(fullShortName);
+
     let distM = 9999;
     if (prop.lat && prop.lng) {
       distM = Math.hypot(prop.lat - bar.lat, (prop.lng - bar.lng) * Math.cos(prop.lat * Math.PI / 180)) * 111320;
     }
 
-    if (hasNameMatch || distM <= bar.radius_m) {
+    if (distM <= bar.radius_m || (!prop.lat && hasNameMatch)) {
       const isClose = distM <= bar.radius_m * 0.6 || hasNameMatch;
       const severity = isClose ? ('high' as const) : ('moderate' as const);
       const bName = bar.shortName || bar.name.split('(')[0].trim();
@@ -1016,11 +1021,15 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   onSelectAnchor,
   proximityFilter = null,
   onRadiusChange,
+  withinRadiusFilter = false,
+  onToggleWithinRadiusFilter,
   className = '',
   mode = 'default',
   selectedSuburbs = [],
   searchSummary,
-  focusTarget
+  focusTarget,
+  commentCounts,
+  onOpenComments
 }) => {
   const isSearchMode = mode === 'search';
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1093,9 +1102,45 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   }, []);
   const [showAnchors, setShowAnchors] = useState(true);
   const [showRadius, setShowRadius] = useState(true);
-  const [showNoiseRadar, setShowNoiseRadar] = useState(mode !== 'search');
+  const [showBars, setShowBars] = useState(false);
+  const [showGyms, setShowGyms] = useState(false);
+  const [showCafes, setShowCafes] = useState(false);
+  const [showShops, setShowShops] = useState(false);
   const [showCrimeRadar, setShowCrimeRadar] = useState(true);
-  const [isHudCollapsed, setIsHudCollapsed] = useState(false);
+  const hasLoadedLayerPrefsRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('homeseek_map_layers');
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (typeof saved.showAnchors === 'boolean') setShowAnchors(saved.showAnchors);
+        if (typeof saved.showRadius === 'boolean') setShowRadius(saved.showRadius);
+        if (typeof saved.showBars === 'boolean') setShowBars(saved.showBars);
+        if (typeof saved.showGyms === 'boolean') setShowGyms(saved.showGyms);
+        if (typeof saved.showCafes === 'boolean') setShowCafes(saved.showCafes);
+        if (typeof saved.showShops === 'boolean') setShowShops(saved.showShops);
+        if (typeof saved.showCrimeRadar === 'boolean') setShowCrimeRadar(saved.showCrimeRadar);
+      }
+    } catch {
+      // ignore storage errors
+    } finally {
+      hasLoadedLayerPrefsRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedLayerPrefsRef.current) return;
+    try {
+      localStorage.setItem(
+        'homeseek_map_layers',
+        JSON.stringify({ showAnchors, showRadius, showBars, showGyms, showCafes, showShops, showCrimeRadar })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [showAnchors, showRadius, showBars, showGyms, showCafes, showShops, showCrimeRadar]);
+  const [isHudCollapsed, setIsHudCollapsed] = useState(true);
   const [isSearchRadarCollapsed, setIsSearchRadarCollapsed] = useState(false);
   const [isRadiusCollapsed, setIsRadiusCollapsed] = useState(false);
   const [isMissingAddressCollapsed, setIsMissingAddressCollapsed] = useState(false);
@@ -1652,6 +1697,13 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         continue;
       }
 
+      // At street-level zoom (>= 14.5), render all markers as full Airbnb-style pills (allow natural overlap)
+      if (zoom >= 14.5) {
+        result[prop.id] = { isCompact: false };
+        placed.push({ x: pos.x, y: pos.y });
+        continue;
+      }
+
       // Check collision with already-placed badges: wide pill needs ~70px X, ~30px Y
       const hasCollision = placed.some((other) => {
         const dx = Math.abs(pos.x - other.x);
@@ -1836,13 +1888,12 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
             if (!mVal) return <span />;
             return (
               <span
-                className={`text-[9.5px] font-black px-2 py-0.5 rounded-md backdrop-blur-md shadow-xs flex items-center gap-0.5 whitespace-nowrap ${
-                  mVal.isUnderpriced
-                    ? 'bg-emerald-950/90 text-emerald-400 border border-emerald-500/50'
-                    : mVal.isOverpriced
+                className={`text-[9.5px] font-black px-2 py-0.5 rounded-md backdrop-blur-md shadow-xs flex items-center gap-0.5 whitespace-nowrap ${mVal.isUnderpriced
+                  ? 'bg-emerald-950/90 text-emerald-400 border border-emerald-500/50'
+                  : mVal.isOverpriced
                     ? 'bg-rose-950/90 text-rose-400 border border-rose-500/50'
                     : 'bg-zinc-900/90 text-zinc-300 border border-zinc-700/50'
-                }`}
+                  }`}
                 title={mVal.badgeTooltip}
               >
                 <span>{mVal.badgeText}</span>
@@ -1987,8 +2038,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
           </radialGradient>
         </defs>
 
-        {/* Noise Radar Layer: Calibrated Noise Hotspots & Mountain Sanctuary Zones */}
-        {showNoiseRadar && (
+        {/* Noise Radar Layer: Calibrated Noise Hotspots & Mountain Sanctuary Zones (compiled into Bars & Restaurants) */}
+        {showBars && (
           <g id="noise-radar-svg-layer">
             {/* Sanctuary Enclaves (Emerald Calm Zones) */}
             {CAPE_TOWN_SANCTUARIES.map((s) => {
@@ -2332,7 +2383,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       </svg>
 
       {/* Floating Noise Hotspot & Sanctuary Labels on Map (Level of Detail LOD) */}
-      {showNoiseRadar && (
+      {showBars && (
         <div id="noise-radar-html-labels">
           {/* Sanctuary Labels - Icon Only, Hover reveals Title */}
           {CAPE_TOWN_SANCTUARIES.map((s) => {
@@ -2357,7 +2408,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
           })}
 
           {/* Hotspot Labels & Clickable Bars - Icon Only, Hover reveals Title */}
-          {CAPE_TOWN_HOTSPOTS.map((h) => {
+          {showBars && CAPE_TOWN_HOTSPOTS.map((h) => {
             const pos = getScreenPos(h.lat, h.lng);
             if (pos.x < -100 || pos.x > dimensions.width + 100 || pos.y < -100 || pos.y > dimensions.height + 100) return null;
             return (
@@ -2439,22 +2490,22 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               depthTier === 'high'
                 ? 'bg-black/95 group-hover/crime:bg-black border-zinc-700 shadow-sm'
                 : depthTier === 'moderate'
-                ? 'bg-black/58 group-hover/crime:bg-black/85 border-white/80 shadow-xs'
-                : 'bg-black/28 group-hover/crime:bg-black/65 border-white/90 shadow-2xs';
+                  ? 'bg-black/58 group-hover/crime:bg-black/85 border-white/80 shadow-xs'
+                  : 'bg-black/28 group-hover/crime:bg-black/65 border-white/90 shadow-2xs';
 
             const badgeDepthClass =
               depthTier === 'high'
                 ? 'bg-black text-white border-zinc-600'
                 : depthTier === 'moderate'
-                ? 'bg-zinc-700 text-zinc-100 border-zinc-500'
-                : 'bg-zinc-300 text-zinc-900 border-zinc-400';
+                  ? 'bg-zinc-700 text-zinc-100 border-zinc-500'
+                  : 'bg-zinc-300 text-zinc-900 border-zinc-400';
 
             const depthLabel =
               depthTier === 'high'
                 ? 'HIGH RISK'
                 : depthTier === 'moderate'
-                ? 'MEDIUM RISK'
-                : 'LOW RISK';
+                  ? 'MEDIUM RISK'
+                  : 'LOW RISK';
 
             return (
               <div
@@ -2556,8 +2607,17 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       {/* 4. Proximity Anchor Markers Layer (Clean LOD: active expanded, inactive compact) */}
       {showAnchors &&
         anchors.map((anchor) => {
-          const pos = getScreenPos(anchor.lat, anchor.lng);
           const isSelected = activeAnchor?.id === anchor.id;
+          if (!isSelected && anchor.iconType === 'gym' && !showGyms) {
+            return null;
+          }
+          if (!isSelected && anchor.iconType === 'cafe' && !showCafes) {
+            return null;
+          }
+          if (!isSelected && anchor.iconType === 'shop' && !showShops) {
+            return null;
+          }
+          const pos = getScreenPos(anchor.lat, anchor.lng);
 
           if (pos.x < -100 || pos.x > dimensions.width + 100 || pos.y < -100 || pos.y > dimensions.height + 100) {
             return null;
@@ -2566,7 +2626,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
           return (
             <div
               key={anchor.id}
-              className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-none ${isSelected ? 'z-35' : 'z-20'
+              className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-none ${isSelected ? 'z-35 hover:z-[55]' : 'z-20 hover:z-[55]'
                 }`}
               style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
               onClick={(e) => {
@@ -2605,19 +2665,18 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                 ) : (
                   <div className="relative group/anchor">
                     <div
-                      className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center hover:scale-115 transition-all border-2 ${
-                        anchor.iconType === 'gym'
-                          ? 'bg-amber-50 text-amber-800 border-amber-300 hover:border-amber-500'
-                          : anchor.iconType === 'cafe'
+                      className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center hover:scale-115 transition-all border-2 ${anchor.iconType === 'gym'
+                        ? 'bg-amber-50 text-amber-800 border-amber-300 hover:border-amber-500'
+                        : anchor.iconType === 'cafe'
                           ? 'bg-orange-50 text-orange-800 border-orange-300 hover:border-orange-500'
                           : anchor.iconType === 'shop'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:border-emerald-500'
-                          : anchor.iconType === 'beach' || anchor.iconType === 'surf'
-                          ? 'bg-cyan-50 text-cyan-800 border-cyan-300 hover:border-cyan-500'
-                          : anchor.iconType === 'trail'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:border-emerald-500'
-                          : 'bg-white text-zinc-800 border-zinc-300 hover:border-zinc-800'
-                      }`}
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:border-emerald-500'
+                            : anchor.iconType === 'beach' || anchor.iconType === 'surf'
+                              ? 'bg-cyan-50 text-cyan-800 border-cyan-300 hover:border-cyan-500'
+                              : anchor.iconType === 'trail'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:border-emerald-500'
+                                : 'bg-white text-zinc-800 border-zinc-300 hover:border-zinc-800'
+                        }`}
                     >
                       {anchor.iconType === 'gym' ? (
                         <Dumbbell size={13} className="text-amber-700" />
@@ -2736,7 +2795,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
           const isZoomedOut = zoom < 13.8;
           let renderCompact = isZoomedOut;
 
-          if (!renderCompact) {
+          if (!renderCompact && zoom < 14.5) {
             // Check collision for full 110px pill against previously placed markers
             const collides = placedMarkers.some(
               (p) => Math.abs(p.x - rawPos.x) < 85 && Math.abs(p.y - rawPos.y) < 28
@@ -2815,7 +2874,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         return (
           <div
             key={property.id}
-            className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-none ${isHovered ? 'z-[60]' : isSelected ? 'z-[45]' : isCompact ? 'z-20' : 'z-30'
+            className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-none ${isHovered ? 'z-[80]' : isSelected ? 'z-[45]' : isCompact ? 'z-20' : 'z-30'
               }`}
             style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
             onClick={(e) => {
@@ -2830,24 +2889,22 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               {/* Approximate-area dashed zone halo */}
               {isApproxArea && (
                 <span
-                  className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed pointer-events-none ${
-                    isSelected
-                      ? 'w-16 h-16 border-amber-400 bg-amber-400/15'
-                      : 'w-12 h-12 border-amber-500/60 bg-amber-400/10'
-                  }`}
+                  className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed pointer-events-none ${isSelected
+                    ? 'w-16 h-16 border-amber-400 bg-amber-400/15'
+                    : 'w-12 h-12 border-amber-500/60 bg-amber-400/10'
+                    }`}
                 />
               )}
 
               {/* Compact Round Pin vs Full Luxury Price Badge */}
               {isCompact ? (
                 <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-md transition-transform group-hover:scale-125 ${
-                    isApproxArea
-                      ? 'border-2 border-dashed border-amber-400 bg-amber-950/90 text-amber-200 ring-1 ring-amber-400/40'
-                      : isTopMatch
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-md transition-transform group-hover:scale-125 ${isApproxArea
+                    ? 'border-2 border-dashed border-amber-400 bg-amber-950/90 text-amber-200 ring-1 ring-amber-400/40'
+                    : isTopMatch
                       ? 'bg-amber-400 text-zinc-950 border-2 border-white ring-1 ring-amber-400/50'
                       : 'bg-zinc-900 text-white border-2 border-white hover:bg-zinc-800'
-                  }`}
+                    }`}
                   title={
                     isApproxArea
                       ? `~Approx. Area (${property.address}) · #${property.rank} - ${formatPricePill(property.price, property.currency)}`
@@ -2859,29 +2916,27 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               ) : (
                 <div>
                   <div
-                    className={`${zoom < 14.5 && !isSelected && !isHovered ? 'px-2 py-0.5 text-[11px] gap-1' : 'px-2.5 py-1 text-xs gap-1.5'} rounded-full font-bold transition-all flex items-center shadow-md whitespace-nowrap ${
-                      isApproxArea
-                        ? isSelected
-                          ? 'bg-zinc-900/95 text-amber-100 border-2 border-dashed border-amber-400 ring-2 ring-amber-400/40 ring-offset-2 ring-offset-white shadow-xl'
-                          : 'bg-amber-50/95 text-zinc-900 border-2 border-dashed border-amber-500/80 hover:border-amber-600 hover:bg-amber-100/95 hover:shadow-lg'
-                        : isSelected
+                    className={`${zoom < 14.5 && !isSelected && !isHovered ? 'px-2 py-0.5 text-[11px] gap-1' : 'px-2.5 py-1 text-xs gap-1.5'} rounded-full font-bold transition-all flex items-center shadow-md whitespace-nowrap ${isApproxArea
+                      ? isSelected
+                        ? 'bg-zinc-900/95 text-amber-100 border-2 border-dashed border-amber-400 ring-2 ring-amber-400/40 ring-offset-2 ring-offset-white shadow-xl'
+                        : 'bg-amber-50/95 text-zinc-900 border-2 border-dashed border-amber-500/80 hover:border-amber-600 hover:bg-amber-100/95 hover:shadow-lg'
+                      : isSelected
                         ? 'bg-zinc-950 text-white ring-2 ring-emerald-400 ring-offset-2 ring-offset-white shadow-xl'
                         : 'bg-white text-zinc-900 border border-zinc-200/90 hover:border-zinc-950 hover:bg-zinc-50 hover:shadow-lg'
-                    }`}
+                      }`}
                     title={isApproxArea ? `Approximate area center (${property.address}) — exact street address unknown` : undefined}
                   >
                     {property.rank && (
-                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-0.5 ${
-                        isApproxArea
-                          ? isSelected
-                            ? 'bg-amber-400 text-zinc-950'
-                            : 'bg-amber-200/90 text-amber-950'
-                          : isSelected
+                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-0.5 ${isApproxArea
+                        ? isSelected
+                          ? 'bg-amber-400 text-zinc-950'
+                          : 'bg-amber-200/90 text-amber-950'
+                        : isSelected
                           ? 'bg-emerald-400 text-zinc-950'
                           : isTopMatch
-                          ? 'bg-amber-400 text-zinc-950'
-                          : 'bg-zinc-100 text-zinc-800'
-                      }`}>
+                            ? 'bg-amber-400 text-zinc-950'
+                            : 'bg-zinc-100 text-zinc-800'
+                        }`}>
                         {isTopMatch && <Sparkle size={9} weight="fill" />}
                         #{property.rank}
                       </span>
@@ -2889,11 +2944,10 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
 
                     {isApproxArea && (zoom >= 15.2 || isSelected || isHovered) && (
                       <span
-                        className={`text-[9px] font-black uppercase tracking-wider px-1 py-0.5 rounded ${
-                          isSelected
-                            ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
-                            : 'bg-amber-200/70 text-amber-900'
-                        }`}
+                        className={`text-[9px] font-black uppercase tracking-wider px-1 py-0.5 rounded ${isSelected
+                          ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                          : 'bg-amber-200/70 text-amber-900'
+                          }`}
                       >
                         ~Area
                       </span>
@@ -2906,18 +2960,34 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                     <span className={isSelected ? 'font-black' : 'font-extrabold'}>
                       {isApproxArea ? `~${formatPricePill(property.price, property.currency)}` : formatPricePill(property.price, property.currency)}
                     </span>
+                    {(commentCounts?.[property.id] || 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenComments?.(property);
+                        }}
+                        className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[9.5px] font-black flex items-center gap-0.5 cursor-pointer transition-colors ${isSelected
+                          ? 'bg-indigo-500 text-white hover:bg-indigo-400'
+                          : 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200'
+                          }`}
+                        title={`${commentCounts?.[property.id]} comment(s) — click to open`}
+                      >
+                        <span>💬</span>
+                        <span>{commentCounts?.[property.id]}</span>
+                      </button>
+                    )}
                   </div>
 
                   <div
-                    className={`w-2 h-2 rotate-45 -mt-1 mx-auto shadow-2xs transition-colors ${
-                      isApproxArea
-                        ? isSelected
-                          ? 'bg-zinc-900 border-r border-b border-dashed border-amber-400'
-                          : 'bg-amber-50 border-r border-b border-dashed border-amber-500/80'
-                        : isSelected
+                    className={`w-2 h-2 rotate-45 -mt-1 mx-auto shadow-2xs transition-colors ${isApproxArea
+                      ? isSelected
+                        ? 'bg-zinc-900 border-r border-b border-dashed border-amber-400'
+                        : 'bg-amber-50 border-r border-b border-dashed border-amber-500/80'
+                      : isSelected
                         ? 'bg-zinc-950 ring-1 ring-emerald-400/50'
                         : 'bg-white border-r border-b border-zinc-300 group-hover:bg-zinc-50'
-                    }`}
+                      }`}
                   />
                 </div>
               )}
@@ -2925,7 +2995,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
               {/* Hover Mini-Card Tooltip (Floating Micro-Dossier with invisible hover bridge) */}
               {isHovered && !isSelected && (
                 <div
-                  className="absolute bottom-full left-1/2 transform -translate-x-1/2 pb-2 z-50 pointer-events-auto"
+                  className={`absolute left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto ${pos.y < 230 ? 'top-full pt-2' : 'bottom-full pb-2'}`}
                   onMouseEnter={() => handlePropertyMouseEnter(property)}
                   onMouseLeave={handlePropertyMouseLeave}
                 >
@@ -3155,7 +3225,12 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         </div>
       ) : (
         selectedProp && (
-          <div className="absolute top-4 left-4 z-40 bg-white/95 backdrop-blur-xl border border-zinc-200/90 rounded-2xl shadow-xl text-xs max-w-sm pointer-events-auto transition-all duration-200">
+          <div
+            onMouseEnter={() => setIsHudCollapsed(false)}
+            onMouseLeave={() => setIsHudCollapsed(true)}
+            onWheel={(e) => e.stopPropagation()}
+            className="absolute top-4 left-4 z-[70] bg-white/95 backdrop-blur-xl border border-zinc-200/90 rounded-2xl shadow-xl text-xs max-w-sm max-h-[calc(100%-32px)] overflow-y-auto overscroll-contain pointer-events-auto transition-all duration-200"
+          >
             {/* Collapsed Pill State */}
             {isHudCollapsed ? (
               <div
@@ -3357,95 +3432,12 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         </div>
       </div>
 
-      {/* Bottom Left Dock: Dynamic Location Radius Slider + Layer Visibility Toolbar */}
+      {/* Bottom Center Dock: Dynamic Location Radius Slider + Layer Visibility Toolbar */}
       <div
-        className="absolute bottom-6 left-6 z-40 flex flex-col items-start gap-2 pointer-events-auto"
+        className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2 pointer-events-auto"
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >
-        {/* Dynamic Radius Ring Slider (Directly above the toggle visibility switches) */}
-        {showRadius && (proximityFilter || (showAnchors && (activeAnchor || anchors.length > 0))) && (
-          isRadiusCollapsed ? (
-            <div
-              onClick={() => setIsRadiusCollapsed(false)}
-              className="w-64 sm:w-72 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl flex items-center justify-between gap-2 cursor-pointer hover:bg-zinc-50/90 transition-all select-none group"
-              title="Expand Radius Slider"
-            >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Target size={14} weight="bold" className="text-indigo-600 shrink-0 group-hover:scale-110 transition-transform" />
-                <span className="text-xs font-bold text-zinc-800 truncate" title={locationLabel}>
-                  {locationLabel}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-extrabold text-[11px] whitespace-nowrap">
-                  {effectiveRadiusKm.toFixed(1)} km
-                </span>
-                <CaretUp size={14} weight="bold" className="text-zinc-500 shrink-0" />
-              </div>
-            </div>
-          ) : (
-            <div className="w-64 sm:w-72 p-3 rounded-2xl bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl transition-all duration-200 select-none animate-in fade-in duration-150">
-              {/* Header: Location Label & Radius Pill */}
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Target size={14} weight="bold" className="text-indigo-600 shrink-0" />
-                  <span className="text-xs font-bold text-zinc-800 truncate" title={locationLabel}>
-                    {locationLabel}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-extrabold text-[11px] whitespace-nowrap shrink-0">
-                    {effectiveRadiusKm.toFixed(1)} km
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsRadiusCollapsed(true)}
-                    className="p-1 text-zinc-400 hover:text-zinc-800 transition-colors rounded-lg hover:bg-zinc-100 cursor-pointer"
-                    title="Collapse Radius Slider"
-                    aria-label="Collapse Radius Slider"
-                  >
-                    <CaretDown size={14} weight="bold" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Slider Track */}
-              <input
-                type="range"
-                min="1"
-                max="20"
-                step="0.5"
-                value={effectiveRadiusKm}
-                onChange={(e) => handleRadiusChange(parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none"
-                aria-label="Location Radius Ring Slider"
-              />
-
-              {/* Scale & Quick Presets */}
-              <div className="flex items-center justify-between mt-1 text-[10px] font-semibold text-zinc-400">
-                <span>1 km</span>
-                <div className="flex items-center gap-1">
-                  {[2, 5, 10, 15].map((km) => (
-                    <button
-                      key={km}
-                      type="button"
-                      onClick={() => handleRadiusChange(km)}
-                      className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${Math.abs(effectiveRadiusKm - km) < 0.25
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'
-                        }`}
-                    >
-                      {km}k
-                    </button>
-                  ))}
-                </div>
-                <span>20 km</span>
-              </div>
-            </div>
-          )
-        )}
-
         {/* Layer Visibility Toolbar (Gray Container with Title & Tooltips) */}
         <div className="flex items-center p-1.5 rounded-2xl bg-zinc-200/90 backdrop-blur-xl border border-zinc-300/80 shadow-xl gap-1.5">
           {/* Title */}
@@ -3471,24 +3463,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
             </div>
           </div>
 
-          {/* 2. Noise Radar Heatmap Toggle */}
-          <div className="relative group/layer-btn">
-            <button
-              onClick={() => setShowNoiseRadar(!showNoiseRadar)}
-              className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showNoiseRadar
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400/30'
-                : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
-                }`}
-              aria-label="Toggle Noise Radar Layer"
-            >
-              <SpeakerHigh size={16} weight={showNoiseRadar ? 'fill' : 'bold'} />
-            </button>
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
-              Noise Radar: {showNoiseRadar ? 'Visible' : 'Hidden'}
-            </div>
-          </div>
-
-          {/* 3. Crime Hotspots Layer Toggle */}
+          {/* 2. Crime Hotspots Layer Toggle */}
           <div className="relative group/layer-btn">
             <button
               onClick={() => setShowCrimeRadar(!showCrimeRadar)}
@@ -3502,6 +3477,74 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
             </button>
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
               Crime Hotspots: {showCrimeRadar ? 'Visible' : 'Hidden'}
+            </div>
+          </div>
+
+          {/* 3b. Bars & Restaurants Hotspots Toggle */}
+          <div className="relative group/layer-btn">
+            <button
+              onClick={() => setShowBars(!showBars)}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showBars
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/25 ring-2 ring-rose-400/30'
+                : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                }`}
+              aria-label="Toggle Bars & Restaurants"
+            >
+              <Wine size={16} className={showBars ? 'text-white' : 'text-zinc-600'} />
+            </button>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+              Bars, Restaurants &amp; Noise: {showBars ? 'Visible' : 'Hidden'}
+            </div>
+          </div>
+
+          {/* 3c. Gyms & Fitness Toggle */}
+          <div className="relative group/layer-btn">
+            <button
+              onClick={() => setShowGyms(!showGyms)}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showGyms
+                ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25 ring-2 ring-amber-400/30'
+                : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                }`}
+              aria-label="Toggle Gyms & Fitness"
+            >
+              <Dumbbell size={16} className={showGyms ? 'text-white' : 'text-zinc-600'} />
+            </button>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+              Gyms &amp; Fitness: {showGyms ? 'Visible' : 'Hidden'}
+            </div>
+          </div>
+
+          {/* 3d. Cafes Toggle */}
+          <div className="relative group/layer-btn">
+            <button
+              onClick={() => setShowCafes(!showCafes)}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showCafes
+                ? 'bg-orange-600 text-white shadow-md shadow-orange-600/25 ring-2 ring-orange-400/30'
+                : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                }`}
+              aria-label="Toggle Cafes"
+            >
+              <CoffeeLucide size={16} className={showCafes ? 'text-white' : 'text-zinc-600'} />
+            </button>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+              Cafes: {showCafes ? 'Visible' : 'Hidden'}
+            </div>
+          </div>
+
+          {/* 3e. Grocery & Shopping Toggle */}
+          <div className="relative group/layer-btn">
+            <button
+              onClick={() => setShowShops(!showShops)}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showShops
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 ring-2 ring-emerald-400/30'
+                : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                }`}
+              aria-label="Toggle Grocery Shopping"
+            >
+              <ShoppingBag size={16} className={showShops ? 'text-white' : 'text-zinc-600'} />
+            </button>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+              Grocery Shopping: {showShops ? 'Visible' : 'Hidden'}
             </div>
           </div>
 
@@ -3573,40 +3616,40 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         const categoryTitle = isBar
           ? 'Bar & Dining Hotspot'
           : isCafe
-          ? 'Cafe & Bakery'
-          : isGym
-          ? 'Fitness & Gym'
-          : isShop
-          ? 'Shopping & Retail'
-          : isBeach
-          ? 'Beach & Coastal Spot'
-          : isTrail
-          ? 'Trailhead & Scenic Walk'
-          : 'Location Amenity';
+            ? 'Cafe & Bakery'
+            : isGym
+              ? 'Fitness & Gym'
+              : isShop
+                ? 'Shopping & Retail'
+                : isBeach
+                  ? 'Beach & Coastal Spot'
+                  : isTrail
+                    ? 'Trailhead & Scenic Walk'
+                    : 'Location Amenity';
 
         const placeThemeBorder = isBar
           ? 'border-rose-500/35'
           : isCafe
-          ? 'border-orange-500/35'
-          : isGym
-          ? 'border-amber-500/35'
-          : isShop
-          ? 'border-emerald-500/35'
-          : isBeach
-          ? 'border-cyan-500/35'
-          : 'border-indigo-500/35';
+            ? 'border-orange-500/35'
+            : isGym
+              ? 'border-amber-500/35'
+              : isShop
+                ? 'border-emerald-500/35'
+                : isBeach
+                  ? 'border-cyan-500/35'
+                  : 'border-indigo-500/35';
 
         const placeBadgeClass = isBar
           ? 'border-rose-500/40 text-rose-300'
           : isCafe
-          ? 'border-orange-500/40 text-orange-300'
-          : isGym
-          ? 'border-amber-500/40 text-amber-300'
-          : isShop
-          ? 'border-emerald-500/40 text-emerald-300'
-          : isBeach
-          ? 'border-cyan-500/40 text-cyan-300'
-          : 'border-indigo-500/40 text-indigo-300';
+            ? 'border-orange-500/40 text-orange-300'
+            : isGym
+              ? 'border-amber-500/40 text-amber-300'
+              : isShop
+                ? 'border-emerald-500/40 text-emerald-300'
+                : isBeach
+                  ? 'border-cyan-500/40 text-cyan-300'
+                  : 'border-indigo-500/40 text-indigo-300';
 
         const placeName = details?.name || inspectedPlace.label || inspectedPlace.shortName || inspectedPlace.name;
         const placeAddress = details?.formatted_address || inspectedPlace.target_place || inspectedPlace.label || inspectedPlace.name;

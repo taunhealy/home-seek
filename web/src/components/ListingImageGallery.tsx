@@ -173,11 +173,6 @@ export function ListingImageGallery({
         />
 
         {/* Protection / Derivative Transformation Badge */}
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-950/80 backdrop-blur-md text-white text-[10px] font-bold tracking-wider uppercase shadow-sm">
-          <ShieldCheck size={13} weight="bold" className="text-emerald-400" />
-          <span>RealView™ Rectified (1.0x Eye View)</span>
-        </div>
-
         {/* Photo Counter */}
         <div className="absolute top-3 right-3 z-10 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-white text-[10px] font-semibold">
           {currentIndex + 1} / {effectivePhotos.length}

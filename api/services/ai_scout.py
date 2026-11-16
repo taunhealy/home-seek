@@ -221,6 +221,7 @@ def scrape_portal_listings(area: str, max_price: Optional[int] = None, min_price
         url += '?' + '&'.join(params)
 
     from services.p24_client import p24_client
+    from services.live_search import P24_DEV_MODE
     base_clean = base_url.split('?')[0]
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
@@ -231,9 +232,10 @@ def scrape_portal_listings(area: str, max_price: Optional[int] = None, min_price
     pattern = r'<div[^>]*class="[^"]*p24_regularTile[^"]*"[^>]*data-listing-number="(\d+)"'
     listings = []
     seen = set()
+    cache_ttl = (7 * 24 * 60 * 60) if P24_DEV_MODE else (6 * 60 * 60)
 
-    # Multi-page scan (Pages 1 to 3) to uncover deep inventory and hidden gems
-    for page_num in range(1, 4):
+    # Page 1 scan only for background scout to stay well within IP rate limits
+    for page_num in range(1, 2):
         if page_num == 1:
             page_url = base_clean
         else:
@@ -241,17 +243,26 @@ def scrape_portal_listings(area: str, max_price: Optional[int] = None, min_price
         if params:
             page_url += '?' + '&'.join(params)
 
-        cached = p24_client.get_cached(page_url, max_age_seconds=1800)
+        cached = p24_client.get_cached(page_url, max_age_seconds=cache_ttl)
         if cached and "Server unavailable" not in cached:
             html = cached
+        elif P24_DEV_MODE or p24_client.is_circuit_open() or not p24_client.has_request_budget():
+            break
         else:
             try:
+                import random, time
+                time.sleep(random.uniform(3.5, 5.0))
                 req = urllib.request.Request(page_url, headers=headers)
                 html = urllib.request.urlopen(req, timeout=12).read().decode('utf-8', errors='ignore')
-                if "Server unavailable" in html:
+                p24_client.record_request_slot()
+                if "Server unavailable" in html or "Please check back later" in html:
+                    p24_client.trip_circuit("Scout HTTP 'Server unavailable'", base_cooldown=300.0)
                     break
                 p24_client.set_cache(page_url, html)
             except Exception as e:
+                err_str = str(e)
+                if any(code in err_str for code in ("403", "429", "503")):
+                    p24_client.trip_circuit(f"Scout {err_str}", base_cooldown=300.0)
                 print(f"[SCOUT SCRAPER] Error fetching {page_url}: {e}")
                 break
 
