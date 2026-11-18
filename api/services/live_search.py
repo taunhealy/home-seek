@@ -179,6 +179,8 @@ _LAST_BATCH_META: Dict[str, Any] = {
     "cached_suburbs": [],
     "stale_suburbs": [],
     "network_fetches": 0,
+    "oldest_age_seconds": 0,
+    "is_stale": False,
 }
 
 
@@ -751,9 +753,12 @@ def scrape_p24_live(
     all_results: List[Dict[str, Any]] = []
     seen_ids = set()
     network_fetches = 0
+    suburbs_fetched = 0
     refreshed_suburbs: List[str] = []
     cached_suburbs: List[str] = []
     stale_suburbs: List[str] = []
+    oldest_age_seconds: float = 0.0
+    _STALE_PROMPT_AGE_SECONDS = 24 * 60 * 60  # Prompt user to refresh when data is >= 24h old
 
     for suburb in suburbs:
         clean_suburb = suburb.strip()
@@ -790,11 +795,25 @@ def scrape_p24_live(
         # 1. Check Centralized DB Pool: Serve instantly if suburb data is already populated
         if not force_fresh:
             try:
-                from services.listings_db import query_listings
+                from services.listings_db import query_listings, get_suburb_sync_age_seconds
                 db_matches = query_listings([clean_suburb], min_price=min_price, max_price=max_price, beds=beds)
                 if db_matches:
-                    cached_suburbs.append(clean_suburb)
+                    db_age = get_suburb_sync_age_seconds(clean_suburb)
+                    effective_age = db_age if db_age < 999999000 else suburb_cache_age
+                    if effective_age < 999999000:
+                        oldest_age_seconds = max(oldest_age_seconds, effective_age)
+                    if effective_age >= _STALE_PROMPT_AGE_SECONDS:
+                        stale_suburbs.append(clean_suburb)
+                    else:
+                        cached_suburbs.append(clean_suburb)
+                    from services.address_normalizer import detect_security_estate as _detect_est
                     for item in _enrich_distance(db_matches, anchor_lat, anchor_lng):
+                        if not item.get("is_security_estate") and item.get("lat") and item.get("lng"):
+                            _est = _detect_est(item.get("lat"), item.get("lng"), f"{item.get('title', '')} {item.get('address', '')} {item.get('description', '')}")
+                            if _est.get("is_security_estate"):
+                                item["is_security_estate"] = True
+                                if _est.get("estate_name"):
+                                    item["estate_name"] = _est["estate_name"]
                         lid = item.get("p24_id") or item.get("id")
                         if lid not in seen_ids:
                             seen_ids.add(lid)
@@ -806,7 +825,11 @@ def scrape_p24_live(
         # In DEV MODE: serve fresh cache unless force_fresh is requested on >24h old data
         if P24_DEV_MODE and not os.environ.get("P24_LIVE_FORCE") and not allow_dev_refresh:
             if cached_entry and cache_age < _CACHE_TTL_SECONDS:
-                cached_suburbs.append(clean_suburb)
+                oldest_age_seconds = max(oldest_age_seconds, cache_age)
+                if cache_age >= _STALE_PROMPT_AGE_SECONDS:
+                    stale_suburbs.append(clean_suburb)
+                else:
+                    cached_suburbs.append(clean_suburb)
                 filtered_items = [it for it in cached_entry.get("items", []) if _matches_local_filters(it)]
                 for item in _enrich_distance(filtered_items, anchor_lat, anchor_lng):
                     if not item.get("first_seen_at") and cached_entry.get("ts"):
@@ -838,8 +861,8 @@ def scrape_p24_live(
         from services.p24_client import p24_client as _p24c
         p1_is_disk_cached = bool(html_cache_ttl > 0 and _p24c.get_cached(search_url, max_age_seconds=html_cache_ttl))
 
-        # If not in `p24_cache.json` and shared circuit breaker is open or batch cap reached, serve cached fallback only
-        if not p1_is_disk_cached and (_is_circuit_open() or network_fetches >= _MAX_SUBURBS_PER_BATCH):
+        # If not in `p24_cache.json` and shared circuit breaker is open or batch suburb cap reached, serve cached fallback only
+        if not p1_is_disk_cached and (_is_circuit_open() or suburbs_fetched >= _MAX_SUBURBS_PER_BATCH):
             stale_suburbs.append(clean_suburb)
             fallback = [it for it in cached_entry.get("items", []) if _matches_local_filters(it)] if (cached_entry and cached_entry.get("items")) else _find_any_cached_suburb_items(clean_suburb, min_price, max_price)
             for item in _enrich_distance(fallback, anchor_lat, anchor_lng):
@@ -864,8 +887,11 @@ def scrape_p24_live(
                 continue
 
         html_p1, made_net = _fetch_p24_page_html(search_url, html_cache_ttl)
+        suburb_used_net = False
         if made_net:
             network_fetches += 1
+            suburb_used_net = True
+            suburbs_fetched += 1
 
         if not html_p1:
             stale_suburbs.append(clean_suburb)
@@ -882,11 +908,16 @@ def scrape_p24_live(
         next_urls = _extract_p24_next_page_urls(html_p1, search_url, max_pages=3)
         for next_url in next_urls:
             next_is_cached = bool(html_cache_ttl > 0 and _p24c.get_cached(next_url, max_age_seconds=html_cache_ttl))
-            if not next_is_cached and (_is_circuit_open() or network_fetches >= _MAX_SUBURBS_PER_BATCH):
+            if not next_is_cached and _is_circuit_open():
+                break
+            if not next_is_cached and not suburb_used_net and suburbs_fetched >= _MAX_SUBURBS_PER_BATCH:
                 break
             next_html, made_page_net = _fetch_p24_page_html(next_url, html_cache_ttl)
             if made_page_net:
                 network_fetches += 1
+                if not suburb_used_net:
+                    suburb_used_net = True
+                    suburbs_fetched += 1
             if not next_html:
                 break
             page_htmls.append(next_html)
@@ -1213,10 +1244,25 @@ def scrape_p24_live(
             avail_text = avail_el.get_text(' ', strip=True) if avail_el else ''
             avail_from = re.sub(r'^available\s*:?\s*', '', avail_text, flags=re.I).strip() or None
 
+            prev_first_seen = None
+            if cached_entry and isinstance(cached_entry.get("items"), list):
+                for _prev in cached_entry["items"]:
+                    if str(_prev.get("p24_id") or "") == str(lid) and _prev.get("first_seen_at"):
+                        prev_first_seen = _prev.get("first_seen_at")
+                        break
+
+            try:
+                from services.address_normalizer import detect_security_estate as _detect_est
+                _est = _detect_est(lat, lng, f"{title_str} {final_address} {desc_str if 'desc_str' in locals() else ''}")
+            except Exception:
+                _est = {"is_security_estate": False, "estate_name": None}
+
             item_obj = {
                 'id': f"p24-{lid}",
-                'first_seen_at': int(time.time()),
+                'first_seen_at': prev_first_seen or int(time.time()),
                 'available_from': avail_from,
+                'is_security_estate': bool(_est.get("is_security_estate") or (geo_res.get("is_security_estate") if isinstance(geo_res, dict) else False)),
+                'estate_name': _est.get("estate_name") or (geo_res.get("estate_name") if isinstance(geo_res, dict) else None),
                 'p24_id': lid,
                 'title': title_str,
                 'address': final_address,
@@ -1299,7 +1345,9 @@ def scrape_p24_live(
     _LAST_BATCH_META = {
         "refreshed_suburbs": refreshed_suburbs,
         "cached_suburbs": cached_suburbs,
-        "stale_suburbs": stale_suburbs,
+        "stale_suburbs": list(dict.fromkeys(stale_suburbs)),
         "network_fetches": network_fetches,
+        "oldest_age_seconds": int(oldest_age_seconds),
+        "is_stale": bool(stale_suburbs or oldest_age_seconds >= _STALE_PROMPT_AGE_SECONDS),
     }
     return all_results

@@ -565,7 +565,8 @@ export interface DwellingPrivacyInfo {
   isLandlordOnSite: boolean;
   isExplicitLandlord: boolean;
   isSecondaryDwelling: boolean;
-  dwellingType: 'explicit_landlord' | 'garden_cottage' | 'flatlet' | 'shared_property' | 'independent';
+  isPossibleSharedProperty?: boolean;
+  dwellingType: 'explicit_landlord' | 'garden_cottage' | 'flatlet' | 'shared_property' | 'possible_shared' | 'independent';
   badgeLabel: string | null;
   shortFlag: string | null;
   aiInsightNote: string;
@@ -598,18 +599,15 @@ export function getDwellingPrivacyInfo(prop: {
     prop.title || '',
     prop.address || '',
     prop.suburb || '',
-    prop.deep_ai_audit?.textVerdict || '',
-    prop.deep_ai_audit?.personalMatchVerdict || '',
-    prop.deep_ai_audit?.photoAudit || '',
-    prop.ai_insight || '',
     prop.description || '',
   ].join(' ').toLowerCase();
 
-  // 1. Explicit landlord / owner residing on-site
+  // 1. Explicit landlord / owner residing on-site (ignore negated phrases like "no landlord on-site")
+  const textWithoutNegatedLandlord = fullText.replace(/\b(?:no|not|zero|without)\s+(?:landlord|owner)\s+(?:on[- ]?site|residing)\b/gi, '');
   const isExplicitLandlord =
     prop.is_landlord_on_site === true ||
     prop.dwelling_privacy === 'landlord_on_site' ||
-    /\b(landlord lives|owner lives|landlord resides|owner resides|landlord on site|landlord on-site|owner on site|owner on-site|on owners? property|on landlords? property|suit quiet tenant as owner|main house occupied by owner|share with owner)\b/i.test(fullText);
+    /\b(landlord lives|owner lives|landlord resides|owner resides|landlord on site|landlord on-site|owner on site|owner on-site|on owners? property|on landlords? property|suit quiet tenant as owner|main house occupied by owner|share with owner)\b/i.test(textWithoutNegatedLandlord);
 
   // 2. Garden cottage
   const isGardenCottage =
@@ -674,6 +672,30 @@ export function getDwellingPrivacyInfo(prop: {
       badgeLabel: '⚠️ Shared Property',
       shortFlag: 'Shared Property',
       aiInsightNote: '⚠️ Shared grounds / secondary dwelling',
+    };
+  }
+
+  // 5. Implicit South African shared-erf / attached-studio indicators
+  const rawAddress = (prop.address || '').trim();
+  const bedsVal = prop.bedrooms !== undefined && prop.bedrooms !== null ? Number(prop.bedrooms) : 1;
+  const isStudioOrOneBed = bedsVal <= 1 || /\b(studio|bachelor|0\.5\s*bed)\b/i.test(fullText);
+  const hasStreetNumberAddress = /^\d{1,4}\s+[a-z]/i.test(rawAddress);
+  const hasApartmentBlockSignal =
+    /\b(unit\s*\d+|apt\s*\d+|apartment\s*building|apartment\s*block|sectional\s*title|heights|towers|court|manor|mews|villas|terraces|residences|block\s+[a-z0-9])\b/i.test(fullText);
+  const hasSharedUtilityTell =
+    /\b(wi-?fi\s+included|wifi\s+incl|internet\s+included)\b/i.test(fullText) ||
+    (/\b(security\s+estate|gated\s+estate)\b/i.test(fullText) && isStudioOrOneBed);
+
+  if (isStudioOrOneBed && hasStreetNumberAddress && !hasApartmentBlockSignal && hasSharedUtilityTell) {
+    return {
+      isLandlordOnSite: false,
+      isExplicitLandlord: false,
+      isSecondaryDwelling: false,
+      isPossibleSharedProperty: true,
+      dwellingType: 'possible_shared',
+      badgeLabel: '🔍 Verify Shared Erf / Driveway',
+      shortFlag: 'Verify Privacy',
+      aiInsightNote: '🔍 Possible attached unit / shared driveway (single-erf address — verify main house split)',
     };
   }
 

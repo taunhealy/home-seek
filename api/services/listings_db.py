@@ -107,6 +107,17 @@ def upsert_listings(items: List[Dict[str, Any]], suburb_name: str, is_full_subur
             fibre_ready = 1 if it.get("fibre_ready") else 0
             price_value_pct = float(it.get("price_value_pct")) if it.get("price_value_pct") is not None else None
 
+            ex_ts_row = conn.execute(
+                "SELECT created_at FROM listings WHERE id = ?",
+                (lid,),
+            ).fetchone()
+            if ex_ts_row and ex_ts_row["created_at"]:
+                orig_ts = float(ex_ts_row["created_at"])
+                cur_ts = it.get("first_seen_at")
+                it = {**it, "first_seen_at": min(orig_ts, float(cur_ts)) if cur_ts else orig_ts}
+            elif not it.get("first_seen_at"):
+                it = {**it, "first_seen_at": int(now)}
+
             if is_withheld:
                 existing = conn.execute(
                     "SELECT address, lat, lng, is_address_withheld, raw_json FROM listings WHERE id = ?",
@@ -267,8 +278,9 @@ def query_listings(
         for row in cursor.fetchall():
             try:
                 item = json.loads(row["raw_json"])
-                if row["created_at"] and not item.get("first_seen_at"):
-                    item["first_seen_at"] = row["created_at"]
+                if row["created_at"]:
+                    cur_fs = item.get("first_seen_at")
+                    item["first_seen_at"] = min(float(row["created_at"]), float(cur_fs)) if cur_fs else row["created_at"]
                 results.append(item)
             except Exception:
                 pass

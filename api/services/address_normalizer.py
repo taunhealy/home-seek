@@ -43,6 +43,14 @@ def _init_db():
             updated_at REAL
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS estate_cache (
+            coord_key TEXT PRIMARY KEY,
+            is_security_estate INTEGER,
+            estate_name TEXT,
+            updated_at REAL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -443,6 +451,111 @@ def _geocode_with_mapbox(query: str, default_suburb: str = "") -> Optional[Dict[
     return None
 
 
+def _lookup_google_estate_cached(lat: float, lng: float) -> Dict[str, Any]:
+    """Queries SQLite estate_cache first, then Google Maps Reverse Geocode & Places Nearby (cached permanently)."""
+    coord_key = f"{round(float(lat), 4)},{round(float(lng), 4)}"
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+        row = conn.execute(
+            "SELECT is_security_estate, estate_name FROM estate_cache WHERE coord_key = ?",
+            (coord_key,),
+        ).fetchone()
+        conn.close()
+        if row is not None:
+            return {"is_security_estate": bool(row[0]), "estate_name": row[1]}
+    except Exception:
+        pass
+
+    api_key = os.getenv("GOOGLE_MAPS_API_KEY") or os.getenv("GOOGLE_PLACES_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key or not api_key.strip():
+        return {"is_security_estate": False, "estate_name": None}
+
+    is_est = False
+    est_name: Optional[str] = None
+    est_re = re.compile(r"\b(?:security\s+estate|eco\s+estate|golf\s+estate|country\s+estate|gated\s+estate|estate|village)\b", re.I)
+
+    # 1. Google Maps Reverse Geocode address_components
+    try:
+        rev_url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lng}&key={api_key.strip()}"
+        req = urllib.request.Request(rev_url, headers={"User-Agent": "HomeSeek-AiGeocodingEngine/2.0"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get("status") == "OK":
+                for res in data.get("results", [])[:3]:
+                    for comp in res.get("address_components", []):
+                        types = comp.get("types", [])
+                        long_name = (comp.get("long_name") or "").strip()
+                        if any(t in types for t in ("neighborhood", "sublocality", "premise", "establishment", "subpremise", "route")):
+                            if est_re.search(long_name):
+                                is_est = True
+                                est_name = long_name
+                                break
+                    if is_est:
+                        break
+    except Exception:
+        pass
+
+    # 2. Google Places Nearby Search within 250m for security/gated estate
+    if not is_est:
+        try:
+            places_url = (
+                f"https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+                f"?location={lat},{lng}&radius=250&keyword=security+estate&key={api_key.strip()}"
+            )
+            req = urllib.request.Request(places_url, headers={"User-Agent": "HomeSeek-AiGeocodingEngine/2.0"})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                pdata = json.loads(resp.read().decode())
+                for pl in pdata.get("results", [])[:3]:
+                    pname = (pl.get("name") or "").strip()
+                    if est_re.search(pname) or "gated" in pname.lower() or "security" in pname.lower():
+                        is_est = True
+                        est_name = pname
+                        break
+        except Exception:
+            pass
+
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+        conn.execute(
+            "INSERT OR REPLACE INTO estate_cache (coord_key, is_security_estate, estate_name, updated_at) VALUES (?, ?, ?, ?)",
+            (coord_key, 1 if is_est else 0, est_name, time.time()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+    return {"is_security_estate": is_est, "estate_name": est_name}
+
+
+def detect_security_estate(
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    text: str = "",
+    google_components: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Detects whether a listing sits inside a gated/security estate via Google Maps API (cached) or listing text."""
+    if google_components:
+        for comp in google_components:
+            types = comp.get("types", [])
+            long_name = (comp.get("long_name") or "").strip()
+            if any(t in types for t in ("neighborhood", "sublocality", "premise", "establishment", "subpremise", "route")):
+                if re.search(r"\b(?:security\s+estate|eco\s+estate|golf\s+estate|country\s+estate|estate|village)\b", long_name, re.I):
+                    return {"is_security_estate": True, "estate_name": long_name}
+
+    if text and re.search(
+        r"\b(security\s+estate|gated\s+estate|gated\s+community|eco\s+estate|golf\s+estate|24.?h(?:our)?\s+security|manned\s+gate|boom\s+gate|biometric)\b",
+        text,
+        re.I,
+    ):
+        return {"is_security_estate": True, "estate_name": None}
+
+    if lat is not None and lng is not None:
+        return _lookup_google_estate_cached(float(lat), float(lng))
+
+    return {"is_security_estate": False, "estate_name": None}
+
+
 def _geocode_with_google(query: str, default_suburb: str = "") -> Optional[Dict[str, Any]]:
     """
     Tier 3 Secondary Geocoder: Google Maps Geocoding API.
@@ -466,17 +579,21 @@ def _geocode_with_google(query: str, default_suburb: str = "") -> Optional[Dict[
                 loc = res["geometry"]["location"]
                 formatted = res.get("formatted_address", query)
                 suburb = default_suburb
-                for comp in res.get("address_components", []):
+                components = res.get("address_components", [])
+                for comp in components:
                     types = comp.get("types", [])
                     if any(t in types for t in ["sublocality", "neighborhood", "locality"]):
                         suburb = comp.get("long_name", "")
                         break
+                est_info = detect_security_estate(float(loc["lat"]), float(loc["lng"]), formatted, components)
                 return {
                     "clean_query": formatted,
                     "suburb": suburb or default_suburb,
                     "is_withheld": False,
                     "lat": float(loc["lat"]),
                     "lng": float(loc["lng"]),
+                    "is_security_estate": est_info["is_security_estate"],
+                    "estate_name": est_info["estate_name"],
                     "confidence": "google_maps"
                 }
     except Exception as e:
@@ -697,6 +814,9 @@ def geocode_address_precision(raw_address: str, default_suburb: str = "") -> Dic
     # Tier 1: Cache
     cached = get_cached_coordinates(raw_address)
     if cached:
+        if "is_security_estate" not in cached:
+            est = detect_security_estate(cached.get("lat"), cached.get("lng"), f"{raw_address} {cached.get('clean_query', '')}")
+            cached = {**cached, **est}
         return cached
 
     # Address Normalization

@@ -64,6 +64,35 @@ import {
   type PlanSummary,
 } from '@/lib/pro-plan';
 
+import {
+  PRESET_TRAILHEADS_AND_HUBS,
+  DEFAULT_AI_CRITERIA_PRESETS,
+  DEFAULT_SAVED_SEARCHES,
+  INITIAL_SHOWCASE_PROPERTIES,
+  type CommuteAnchor,
+  type SavedSearch,
+  type AiCriteriaPreset,
+} from '@/constants/locations';
+import { CommentsModal, type ListingComment } from '@/components/search/CommentsModal';
+import { FavouritesImportModal } from '@/components/search/FavouritesImportModal';
+import { TopTenRankerModal, type WalkableTarget } from '@/components/search/TopTenRankerModal';
+import { AiPropertyReportModal } from '@/components/search/AiPropertyReportModal';
+import {
+  isPropertyInHighRiskCrimeZone,
+  getCrimePerimeterInfo,
+  getRiskAdjustedValuation,
+  isMainRoadProperty,
+  formatPrice,
+  formatPriceAbbr,
+  type CrimePerimeterInfo,
+} from '@/lib/forensicAudit';
+export {
+  isPropertyInHighRiskCrimeZone,
+  getCrimePerimeterInfo,
+  getRiskAdjustedValuation,
+  isMainRoadProperty,
+  type CrimePerimeterInfo,
+};
 const PropertyMap = dynamic<PropertyMapProps>(
   () => import('@/components/PropertyMap'),
   {
@@ -78,1399 +107,6 @@ const PropertyMap = dynamic<PropertyMapProps>(
     ),
   }
 );
-
-// Helper to determine if a property coordinate falls within any High Risk crime hotspot radius
-export function isPropertyInHighRiskCrimeZone(lat: number, lng: number): boolean {
-  if (!lat || !lng) return false;
-  for (const spot of CAPE_TOWN_CRIME_HOTSPOTS) {
-    const tier = getCrimeDepthTier(spot);
-    const isHigh = tier === 'high' || spot.risk_level.toLowerCase().includes('high');
-    if (isHigh) {
-      const distKm = getDistanceKm(lat, lng, spot.lat, spot.lng);
-      if (distKm * 1000 <= spot.radius_m) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-export interface CrimePerimeterInfo {
-  isNearHighRisk: boolean;
-  isInsideCore: boolean;
-  distanceKm: number;
-  hotspotName: string;
-  hasEstateSecurity: boolean;
-  shortFlag: string | null;
-  tooltipReason: string;
-}
-
-// Security-aware proximity check for High-Risk hotspots & townships (including 1.45x outer perimeter buffer)
-export function getCrimePerimeterInfo(prop: {
-  lat?: number;
-  lng?: number;
-  title?: string;
-  address?: string;
-  description?: string;
-  ai_insight?: string;
-}): CrimePerimeterInfo {
-  const empty: CrimePerimeterInfo = {
-    isNearHighRisk: false,
-    isInsideCore: false,
-    distanceKm: 99,
-    hotspotName: '',
-    hasEstateSecurity: false,
-    shortFlag: null,
-    tooltipReason: '',
-  };
-  if (!prop.lat || !prop.lng) return empty;
-
-  const rawText = `${prop.title || ''} ${prop.address || ''} ${prop.description || ''} ${prop.ai_insight || ''}`.toLowerCase();
-  const hasEstateSecurity = /\b(security\s+estate|gated\s+estate|gated\s+community|24.?h(our)?\s+security|24hr\s+security|manned\s+gate|boom\s+gate|biometric|electric\s+fenc|armed\s+response|access\s+control)\b/i.test(rawText);
-
-  let closest: { spot: typeof CAPE_TOWN_CRIME_HOTSPOTS[number]; distM: number } | null = null;
-  for (const spot of CAPE_TOWN_CRIME_HOTSPOTS) {
-    const tier = getCrimeDepthTier(spot);
-    const isHigh = tier === 'high' || spot.risk_level.toLowerCase().includes('high');
-    if (!isHigh) continue;
-    const distM = getDistanceKm(prop.lat, prop.lng, spot.lat, spot.lng) * 1000;
-    const bufferM = spot.radius_m * 1.45;
-    if (distM <= bufferM && (!closest || distM < closest.distM)) {
-      closest = { spot, distM };
-    }
-  }
-
-  if (!closest) return empty;
-
-  const distKm = Math.round((closest.distM / 1000) * 10) / 10;
-  const shortArea = closest.spot.name.split('(')[0].replace(/\s+Township.*$/i, '').trim();
-  const isInsideCore = closest.distM <= closest.spot.radius_m;
-
-  return {
-    isNearHighRisk: true,
-    isInsideCore,
-    distanceKm: distKm,
-    hotspotName: shortArea,
-    hasEstateSecurity,
-    shortFlag: hasEstateSecurity
-      ? `Secured Estate · ${distKm}km from ${shortArea}`
-      : `Perimeter Risk · ${distKm}km from ${shortArea} (No Estate Security)`,
-    tooltipReason: hasEstateSecurity
-      ? `Within ${distKm} km of ${closest.spot.name}, mitigated by estate/complex access control.`
-      : `Within ${distKm} km of ${closest.spot.name} without confirmed 24h estate/complex security — inspect burglar bars, perimeter walls & nighttime street lighting.`,
-  };
-}
-
-// Comprehensive real-world market valuation factoring crime/township proximity, estate security, main road noise, landlord on-site, parking, and m²
-export function getRiskAdjustedValuation(
-  prop: PropertyMapItem,
-  sampleContext?: PropertyMapItem[]
-) {
-  const crime = getCrimePerimeterInfo(prop);
-  const privacy = getDwellingPrivacyInfo(prop);
-  const busy = getPropertyBusyRoadExposure(prop);
-  const ctx: PropertyValuationContext = {
-    isInsideCrimeCore: crime.isNearHighRisk && crime.isInsideCore,
-    isInCrimeBuffer: crime.isNearHighRisk && !crime.isInsideCore,
-    hasEstateSecurity: crime.hasEstateSecurity,
-    isMainRoad: Boolean(prop.is_main_road) || isMainRoadProperty(prop.address, prop.title) || busy.isDirectlyOnRoad,
-    isLandlordOnSite: privacy.isLandlordOnSite,
-    hasParking: Boolean(prop.has_garage || prop.has_secure_bay),
-  };
-  return getPropertyMarketValuation(prop, sampleContext, ctx);
-}
-
-// Helper to identify properties located on busy arterial traffic corridors (Main Road, M4, Victoria Rd, New Church St, etc.)
-export function isMainRoadProperty(address?: string, title?: string): boolean {
-  const text = `${address || ''} ${title || ''}`.toLowerCase();
-  return /\b(main\s+r(oa)?d|victoria\s+r(oa)?d|somerset\s+r(oa)?d|regent\s+r(oa)?d|kloof\s+st(reet)?|kloof\s+nek|buitengracht|new\s+church(\s+st(reet)?)?|orange\s+st(reet)?|roeland\s+st(reet)?|buitenkant(\s+st(reet)?)?|strand\s+st(reet)?|helen\s+suzman|mill\s+st(reet)?|voortrekker\s+r(oa)?d|ou\s+kaapse\s+weg|kommetjie\s+r(oa)?d|baden\s+powell|highway|freeway|motorway|m3|m4|m5|m6|m62)\b/i.test(text);
-}
-
-// Deterministic number formatting to avoid SSR/client locale hydration mismatch
-function formatPrice(val: number | string | undefined | null): string {
-  if (val === undefined || val === null || val === '') return '0';
-  const num = typeof val === 'string' ? parseFloat(val) : val;
-  if (isNaN(num)) return '0';
-  return Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-// Compact price abbreviation for buttons & chips (e.g. 11000 -> "11k")
-function formatPriceAbbr(val: number | string | undefined | null): string {
-  if (val === undefined || val === null || val === '') return '0';
-  const num = typeof val === 'string' ? parseFloat(val) : val;
-  if (isNaN(num) || num <= 0) return '0';
-  if (num >= 1000) {
-    const k = num / 1000;
-    return `${k % 1 === 0 ? k : k.toFixed(1)}k`;
-  }
-  return num.toString();
-}
-
-interface CommuteAnchor extends ProximityAnchor {
-  iconType?: 'trail' | 'surf' | 'beach' | 'attraction' | 'cafe' | 'gym' | 'shop' | 'work' | 'general' | 'hub';
-  category?: 'attraction' | 'gym' | 'hub' | 'trail' | 'cafe' | 'shop';
-  templateId?: string;
-}
-
-const PRESET_TRAILHEADS_AND_HUBS: CommuteAnchor[] = [
-  // ==========================================
-  // 1. Deep South & False Bay
-  // Main Location Attractions & Gyms
-  // ==========================================
-  {
-    id: 'attraction-long-beach',
-    label: 'Long Beach (Kommetjie)',
-    target_place: 'Long Beach, Kommetjie, Cape Town',
-    lat: -34.1370,
-    lng: 18.3270,
-    max_commute_mins: 15,
-    max_distance_km: 10,
-    commute_mode: 'driving',
-    iconType: 'beach',
-    category: 'attraction',
-    templateId: 'preset-deepsouth-surf',
-  },
-  {
-    id: 'attraction-noordhoek-village',
-    label: 'Noordhoek Farm Village',
-    target_place: 'Noordhoek Farm Village, Village Lane, Noordhoek',
-    lat: -34.1020,
-    lng: 18.3680,
-    max_commute_mins: 15,
-    max_distance_km: 10,
-    commute_mode: 'driving',
-    iconType: 'attraction',
-    category: 'attraction',
-    templateId: 'preset-deepsouth-surf',
-  },
-  {
-    id: 'surf-muizenberg',
-    label: 'Muizenberg Beach (Surfers Corner)',
-    target_place: 'Surfers Corner, Beach Road, Muizenberg',
-    lat: -34.1080,
-    lng: 18.4720,
-    max_commute_mins: 25,
-    max_distance_km: 15,
-    commute_mode: 'driving',
-    iconType: 'surf',
-    category: 'attraction',
-    templateId: 'preset-falsebay-coast',
-  },
-  {
-    id: 'attraction-seaforth-beach',
-    label: 'Seaforth Beach & Boulders',
-    target_place: "Seaforth Beach, Seaforth Road, Simon's Town",
-    lat: -34.1970,
-    lng: 18.4520,
-    max_commute_mins: 20,
-    max_distance_km: 15,
-    commute_mode: 'driving',
-    iconType: 'beach',
-    category: 'attraction',
-    templateId: 'preset-falsebay-coast',
-  },
-  {
-    id: 'gym-va-sun-valley',
-    label: 'Virgin Active Sun Valley',
-    target_place: 'Sun Valley Mall, Ou Kaapse Weg, Sun Valley',
-    lat: -34.1352,
-    lng: 18.3912,
-    max_commute_mins: 15,
-    max_distance_km: 10,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-deepsouth-surf',
-  },
-  {
-    id: 'gym-zone-fish-hoek',
-    label: 'Zone Fitness Fish Hoek',
-    target_place: 'Town Square, Main Rd, Fish Hoek, Cape Town',
-    lat: -34.138294,
-    lng: 18.431441,
-    max_commute_mins: 15,
-    max_distance_km: 10,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-falsebay-coast',
-  },
-  {
-    id: 'gym-planet-fitness-longbeach',
-    label: 'Planet Fitness JustGym (Longbeach)',
-    target_place: 'Longbeach Mall, Sunnydale, Noordhoek',
-    lat: -34.1322,
-    lng: 18.3932,
-    max_commute_mins: 15,
-    max_distance_km: 10,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-deepsouth-surf',
-  },
-
-  // ==========================================
-  // 2. Southern Suburbs Trailside
-  // Main Location Attractions & Gyms
-  // ==========================================
-  {
-    id: 'trail-newlands',
-    label: 'Newlands Forest Trailhead',
-    target_place: 'Newlands Forest, Table Mountain National Park',
-    lat: -33.9740,
-    lng: 18.4550,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'trail',
-    category: 'attraction',
-    templateId: 'preset-cape-trailside',
-  },
-  {
-    id: 'trail-tokai',
-    label: 'Tokai Forest MTB Trails',
-    target_place: 'Tokai MTB Trail Centre, Tokai Road, Tokai',
-    lat: -34.0598,
-    lng: 18.4148,
-    max_commute_mins: 20,
-    max_distance_km: 12,
-    commute_mode: 'driving',
-    iconType: 'trail',
-    category: 'attraction',
-    templateId: 'preset-cape-trailside',
-  },
-  {
-    id: 'attraction-kirstenbosch',
-    label: 'Kirstenbosch Botanical Gardens',
-    target_place: 'Rhodes Drive, Newlands, Cape Town',
-    lat: -33.9875,
-    lng: 18.4325,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'attraction',
-    category: 'attraction',
-    templateId: 'preset-cape-trailside',
-  },
-  {
-    id: 'trail-constantia-nek',
-    label: 'Constantia Nek Trailhead',
-    target_place: 'Constantia Nek, Hout Bay Main Rd',
-    lat: -34.0118,
-    lng: 18.4052,
-    max_commute_mins: 15,
-    max_distance_km: 10,
-    commute_mode: 'driving',
-    iconType: 'trail',
-    category: 'attraction',
-    templateId: 'preset-cape-trailside',
-  },
-  {
-    id: 'gym-va-claremont',
-    label: 'Virgin Active Claremont',
-    target_place: 'Stadium on Main, Main Rd, Claremont',
-    lat: -33.9825,
-    lng: 18.4660,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-cape-trailside',
-  },
-  {
-    id: 'gym-va-constantia',
-    label: 'Virgin Active Constantia',
-    target_place: 'Constantia Sports Complex, Main Rd, Constantia',
-    lat: -34.0205,
-    lng: 18.4412,
-    max_commute_mins: 15,
-    max_distance_km: 10,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-cape-trailside',
-  },
-  {
-    id: 'gym-zone-rondebosch',
-    label: 'Zone Fitness Rondebosch',
-    target_place: 'Rondebosch Main, Main Rd, Rondebosch',
-    lat: -33.960462,
-    lng: 18.470390,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-cape-trailside',
-  },
-
-  // ==========================================
-  // 3. City Bowl Enclaves
-  // Attractions, Gyms, Cafes & Shops
-  // ==========================================
-  // Outdoors & Attractions
-  {
-    id: 'hub-kloof',
-    label: 'Kloof Street Dining Hub',
-    target_place: '145 Kloof St (Dark Horse), Gardens, Cape Town',
-    lat: -33.934368,
-    lng: 18.407377,
-    max_commute_mins: 15,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'attraction',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'trail-lions-head',
-    label: "Lion's Head Spiral Trailhead",
-    target_place: 'Signal Hill Road, Cape Town',
-    lat: -33.9398,
-    lng: 18.4010,
-    max_commute_mins: 15,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'trail',
-    category: 'attraction',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'attraction-table-mountain',
-    label: 'Table Mountain Aerial Cableway',
-    target_place: 'Tafelberg Road, Gardens, Cape Town',
-    lat: -33.9538,
-    lng: 18.4038,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'attraction',
-    category: 'attraction',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'attraction-company-gardens',
-    label: "Company's Garden Precinct",
-    target_place: 'Queen Victoria St, Cape Town City Centre',
-    lat: -33.9275,
-    lng: 18.4170,
-    max_commute_mins: 15,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'attraction',
-    category: 'attraction',
-    templateId: 'preset-citybowl-remote',
-  },
-
-  // City Bowl Gyms & Fitness
-  {
-    id: 'gym-va-wembley',
-    label: 'Virgin Active Wembley Square',
-    target_place: 'Wembley Square, McKenzie St, Gardens, Cape Town',
-    lat: -33.932292,
-    lng: 18.424188,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'gym-roark-cbd',
-    label: 'Roark Gyms Cape Town',
-    target_place: '47 De Villiers St, District Six, Cape Town',
-    lat: -33.932222,
-    lng: 18.425763,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'gym-zone-kloof',
-    label: 'Zone Fitness Kloof Street',
-    target_place: 'Lifestyle on Kloof, 50 Kloof St, Gardens',
-    lat: -33.9295,
-    lng: 18.4105,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'gym-sweat1000-kloof',
-    label: 'The Yard Athletic (Gardens)',
-    target_place: '17 Jamieson St, Gardens, Cape Town',
-    lat: -33.927266,
-    lng: 18.412386,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'gym-va-silo',
-    label: 'Virgin Active Silo District',
-    target_place: 'Silo District, V&A Waterfront, Cape Town',
-    lat: -33.9090,
-    lng: 18.4230,
-    max_commute_mins: 15,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-citybowl-remote',
-  },
-
-  // City Bowl Cafes & Bakeries
-  {
-    id: 'cafe-truth-buitenkant',
-    label: 'Truth Coffee Roasting',
-    target_place: '36 Buitenkant St, Cape Town City Centre',
-    lat: -33.9282,
-    lng: 18.4225,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'cafe-our-local-kloof',
-    label: 'Our Local (Kloof Street)',
-    target_place: '117 Kloof St, Gardens, Cape Town',
-    lat: -33.9348,
-    lng: 18.4082,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'cafe-molten-toffee',
-    label: 'Molten Toffee (Kloof Street)',
-    target_place: '161 Kloof St, Gardens, Cape Town',
-    lat: -33.9378,
-    lng: 18.4060,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'cafe-manna-epicure',
-    label: 'Manna Epicure (Kloof Street)',
-    target_place: '151 Kloof St, Gardens, Cape Town',
-    lat: -33.9362,
-    lng: 18.4070,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'cafe-honest-chocolate',
-    label: 'Honest Chocolate & Gin Bar',
-    target_place: '64A Wale St, Cape Town City Centre',
-    lat: -33.9228,
-    lng: 18.4172,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'cafe-red-sofa-vredehoek',
-    label: 'Red Sofa Cafe (Vredehoek)',
-    target_place: '21 Derry St, Vredehoek, Cape Town',
-    lat: -33.9388,
-    lng: 18.4282,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'cafe-clarks-bree',
-    label: "Clark's Dining Room & Cafe",
-    target_place: '109 Bree St, Cape Town City Centre',
-    lat: -33.9238,
-    lng: 18.4168,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-citybowl-remote',
-  },
-
-  // City Bowl Shops & Retail Centres
-  {
-    id: 'shop-gardens-centre',
-    label: 'Gardens Shopping Centre',
-    target_place: 'Mill St & Buitenkant St, Gardens, Cape Town',
-    lat: -33.934893,
-    lng: 18.418143,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'shop-lifestyle-on-kloof',
-    label: 'Lifestyle on Kloof',
-    target_place: '50 Kloof St, Gardens, Cape Town',
-    lat: -33.929323,
-    lng: 18.410750,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'shop-spar-derry-vredehoek',
-    label: 'Spar Derry Street (Vredehoek)',
-    target_place: '37 Derry St, Vredehoek, Cape Town',
-    lat: -33.939201,
-    lng: 18.428006,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'shop-oranjezicht-market',
-    label: 'Oranjezicht City Farm Market',
-    target_place: 'Parking Deck, Breakwater Blvd, V&A Waterfront, Cape Town',
-    lat: -33.903108,
-    lng: 18.417245,
-    max_commute_mins: 15,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-citybowl-remote',
-  },
-  {
-    id: 'shop-bree-street-strip',
-    label: 'Bree Street Boutique Strip',
-    target_place: 'Bree St & Hout St, Cape Town CBD',
-    lat: -33.9235,
-    lng: 18.4165,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-citybowl-remote',
-  },
-
-  // ==========================================
-  // 4. Atlantic Seaboard / Promenade & Seaboard
-  // Attractions, Gyms, Cafes & Shops
-  // ==========================================
-  // Outdoors & Attractions
-  {
-    id: 'attraction-seapoint-promenade',
-    label: 'Sea Point Promenade & Pavilion',
-    target_place: 'Beach Road, Sea Point, Cape Town',
-    lat: -33.9180,
-    lng: 18.3850,
-    max_commute_mins: 15,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'beach',
-    category: 'attraction',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'attraction-camps-bay',
-    label: 'Camps Bay Beach Strip',
-    target_place: 'Victoria Road, Camps Bay, Cape Town',
-    lat: -33.9510,
-    lng: 18.3780,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'beach',
-    category: 'attraction',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'attraction-clifton-4th',
-    label: 'Clifton 4th Beach',
-    target_place: 'Victoria Road, Clifton, Cape Town',
-    lat: -33.9385,
-    lng: 18.3755,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'beach',
-    category: 'attraction',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'attraction-va-waterfront',
-    label: 'V&A Waterfront Hub',
-    target_place: 'Breakwater Blvd, Victoria & Alfred Waterfront',
-    lat: -33.9040,
-    lng: 18.4190,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'attraction',
-    category: 'attraction',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'attraction-greenpoint-park',
-    label: 'Green Point Urban Park',
-    target_place: '1 Fritz Sonnenberg Rd, Green Point, Cape Town',
-    lat: -33.9045,
-    lng: 18.4095,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'trail',
-    category: 'attraction',
-    templateId: 'preset-atlantic-budget',
-  },
-
-  // Promenade & Seaboard Gyms & Fitness
-  {
-    id: 'gym-va-green-point',
-    label: 'Virgin Active Green Point (Collection Club)',
-    target_place: 'Bill Peters Dr, Green Point, Cape Town',
-    lat: -33.906296,
-    lng: 18.402848,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'gym-va-the-point',
-    label: 'Virgin Active The Point (Sea Point)',
-    target_place: 'The Point Mall, 76 Regent Rd, Sea Point',
-    lat: -33.920726,
-    lng: 18.383306,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'gym-anytime-fitness-seapoint',
-    label: 'Anytime Fitness Sea Point',
-    target_place: '142 Main Rd, Sea Point, Cape Town',
-    lat: -33.913819,
-    lng: 18.391226,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'gym-ignite-green-point',
-    label: 'Ignite Fitness Green Point',
-    target_place: '122 Somerset Road, Green Point, Cape Town',
-    lat: -33.9090,
-    lng: 18.4120,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'gym-f45-seapoint',
-    label: 'F45 Training Sea Point',
-    target_place: '55 Regent Rd, Sea Point, Cape Town',
-    lat: -33.9203,
-    lng: 18.3842,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'gym-bua-camps-bay',
-    label: 'BUA Fitness Camps Bay',
-    target_place: 'The Promenade, Victoria Rd, Camps Bay',
-    lat: -33.9515,
-    lng: 18.3780,
-    max_commute_mins: 15,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'gym-sweat1000-seapoint',
-    label: 'SWEAT 1000 The Point',
-    target_place: 'The Point Mall, 76 Regent Rd, Sea Point',
-    lat: -33.9206,
-    lng: 18.3835,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-atlantic-budget',
-  },
-
-  // Promenade & Seaboard Cafes & Bakeries
-  {
-    id: 'cafe-jarryds-seapoint',
-    label: 'Jarryds Eatery & Bakery',
-    target_place: '90 Regent Rd, Sea Point, Cape Town',
-    lat: -33.9213,
-    lng: 18.3828,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'cafe-naked-seapoint',
-    label: 'Naked Coffee Sea Point',
-    target_place: 'Wisbeach Rd & Regent Rd, Sea Point',
-    lat: -33.9200,
-    lng: 18.3848,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'cafe-jason-bakery-gp',
-    label: 'Jason Bakery Green Point',
-    target_place: '83 Main Rd, Green Point, Cape Town',
-    lat: -33.9085,
-    lng: 18.4132,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'cafe-strangers-club',
-    label: 'The Strangers Club',
-    target_place: '1 Braemar Rd, Green Point, Cape Town',
-    lat: -33.9098,
-    lng: 18.4075,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'cafe-paulines-seapoint',
-    label: "Pauline's Coffee & Wine Bar",
-    target_place: '297 Main Rd, Sea Point, Cape Town',
-    lat: -33.9182,
-    lng: 18.3882,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'cafe-mojo-market',
-    label: 'Mojo Market Food & Coffee Hall',
-    target_place: '30 Regent Rd, Sea Point, Cape Town',
-    lat: -33.919297,
-    lng: 18.385825,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'cafe-dewaterkant',
-    label: 'De Waterkant Village & Cafes',
-    target_place: 'Cape Quarter, Waterkant St, De Waterkant',
-    lat: -33.9160,
-    lng: 18.4180,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-atlantic-budget',
-  },
-
-  // Promenade & Seaboard Shops & Retail Centres
-  {
-    id: 'shop-the-point-mall',
-    label: 'The Point Mall (Sea Point)',
-    target_place: '76 Regent Rd, Sea Point, Cape Town',
-    lat: -33.9207,
-    lng: 18.3833,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'shop-cape-quarter',
-    label: 'Cape Quarter Lifestyle Village',
-    target_place: '27 Somerset Rd, Green Point, Cape Town',
-    lat: -33.9165,
-    lng: 18.4178,
-    max_commute_mins: 12,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'shop-va-waterfront',
-    label: 'V&A Waterfront Shopping Centre',
-    target_place: 'Breakwater Blvd, Victoria & Alfred Waterfront',
-    lat: -33.9040,
-    lng: 18.4190,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'shop-regent-rd-strip',
-    label: 'Regent Road Retail Strip & SPAR',
-    target_place: '94 Regent Rd, Sea Point, Cape Town',
-    lat: -33.921945,
-    lng: 18.381409,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-atlantic-budget',
-  },
-  {
-    id: 'shop-piazza-da-luz',
-    label: 'Piazza Da Luz & Woolworths',
-    target_place: '94 Regent Rd, Sea Point, Cape Town',
-    lat: -33.921815,
-    lng: 18.381309,
-    max_commute_mins: 10,
-    max_distance_km: 4,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-atlantic-budget',
-  },
-
-  // ==========================================
-  // 5. George & Wilderness
-  // Main Location Attractions & Gyms
-  // ==========================================
-  {
-    id: 'trail-george-witfontein',
-    label: 'Witfontein Forest (George)',
-    target_place: 'Witfontein Forest Station, Outeniqua Nature Reserve, George',
-    lat: -33.9350,
-    lng: 22.4430,
-    max_commute_mins: 10,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'trail',
-    category: 'attraction',
-    templateId: 'preset-george',
-  },
-  {
-    id: 'surf-vicbay',
-    label: 'Victoria Bay Point Break',
-    target_place: 'Victoria Bay Beach, George',
-    lat: -34.0040,
-    lng: 22.5480,
-    max_commute_mins: 15,
-    max_distance_km: 10,
-    commute_mode: 'driving',
-    iconType: 'surf',
-    category: 'attraction',
-    templateId: 'preset-george',
-  },
-  {
-    id: 'attraction-wilderness-beach',
-    label: 'Wilderness Beach & Lagoon',
-    target_place: 'Sands Road, Wilderness Beach, Wilderness',
-    lat: -33.9920,
-    lng: 22.5850,
-    max_commute_mins: 15,
-    max_distance_km: 12,
-    commute_mode: 'driving',
-    iconType: 'beach',
-    category: 'attraction',
-    templateId: 'preset-george',
-  },
-  {
-    id: 'trail-saasveld',
-    label: 'Saasveld Nature Trails',
-    target_place: 'Saasveld Road, George, Western Cape',
-    lat: -33.9620,
-    lng: 22.5350,
-    max_commute_mins: 15,
-    max_distance_km: 10,
-    commute_mode: 'driving',
-    iconType: 'trail',
-    category: 'attraction',
-    templateId: 'preset-george',
-  },
-  {
-    id: 'gym-va-george',
-    label: 'Virgin Active George',
-    target_place: "Preller Walk, St George's Square, George",
-    lat: -33.9570,
-    lng: 22.4640,
-    max_commute_mins: 12,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-george',
-  },
-  {
-    id: 'gym-planet-fitness-george',
-    label: 'Planet Fitness JustGym George',
-    target_place: 'Knysna Road, George East, George',
-    lat: -33.9680,
-    lng: 22.4550,
-    max_commute_mins: 15,
-    max_distance_km: 10,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-george',
-  },
-
-  // ==========================================
-  // 6. Hout Bay & Coastal Valley
-  // Attractions, Gyms, Cafes & Shops (Verified via Google Maps Places API)
-  // ==========================================
-  // Outdoors & Attractions
-  {
-    id: 'attraction-houtbay-harbour',
-    label: 'Hout Bay Harbour',
-    target_place: 'Hout Bay Harbour, Cape Town, 7806',
-    lat: -34.055091,
-    lng: 18.3438309,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'attraction',
-    category: 'attraction',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'attraction-houtbay-beach',
-    label: 'Hout Bay Beach',
-    target_place: 'Hout Bay Beach, Hout Bay, Cape Town, 7806',
-    lat: -34.0456962,
-    lng: 18.3512056,
-    max_commute_mins: 12,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'beach',
-    category: 'attraction',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'attraction-chapmans-peak',
-    label: "Chapman's Peak Drive Lookout Point",
-    target_place: "Chapman's Peak Drive Lookout Point, Hout Bay, 7806",
-    lat: -34.0775458,
-    lng: 18.3565356,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'attraction',
-    category: 'attraction',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'attraction-llandudno-beach',
-    label: 'Llandudno Beach',
-    target_place: 'Llandudno Beach, Llandudno, Cape Town, 7806',
-    lat: -34.0081097,
-    lng: 18.3412094,
-    max_commute_mins: 15,
-    max_distance_km: 8,
-    commute_mode: 'driving',
-    iconType: 'beach',
-    category: 'attraction',
-    templateId: 'preset-houtbay-coastal',
-  },
-
-  // Hout Bay Gyms & Fitness
-  {
-    id: 'gym-velocity-houtbay',
-    label: 'Velocity Gym Hout Bay',
-    target_place: 'Chapmans Peak Dr, Scott Estate, Hout Bay, 7806',
-    lat: -34.0467348,
-    lng: 18.3609973,
-    max_commute_mins: 10,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'gym-the-gym-houtbay',
-    label: 'The Gym Hout Bay',
-    target_place: '3M Hout Bay Main Rd, Hout Bay, 7806',
-    lat: -34.0137923,
-    lng: 18.3877286,
-    max_commute_mins: 12,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'gym-crossfit-houtbay',
-    label: 'CrossFit Hout Bay',
-    target_place: '217 Hout Bay Main Rd, Hout Bay, 7806',
-    lat: -34.0136179,
-    lng: 18.3880364,
-    max_commute_mins: 12,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'gym',
-    category: 'gym',
-    templateId: 'preset-houtbay-coastal',
-  },
-
-  // Hout Bay Cafes & Hotspots
-  {
-    id: 'cafe-seattle-houtbay',
-    label: 'Seattle Coffee Company (Hout Bay)',
-    target_place: 'Main Rd, Hout Bay, Cape Town, 7806',
-    lat: -34.045755,
-    lng: 18.361913,
-    max_commute_mins: 8,
-    max_distance_km: 5,
-    commute_mode: 'walking',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'cafe-darios-houtbay',
-    label: "Dario's Cafe",
-    target_place: '30 Main Rd, Hout Bay, Cape Town, 7806',
-    lat: -34.0449233,
-    lng: 18.3610045,
-    max_commute_mins: 10,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'cafe-collective-houtbay',
-    label: 'The Collective Hout Bay',
-    target_place: '37 Main Rd, Scott Estate, Hout Bay, 7806',
-    lat: -34.0432014,
-    lng: 18.3590625,
-    max_commute_mins: 10,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'cafe-houtbay-coffee',
-    label: 'Houtbay Coffee',
-    target_place: 'Mainstream Shopping Centre, Cnr Main & Princess St, Hout Bay, 7806',
-    lat: -34.0429661,
-    lng: 18.3588658,
-    max_commute_mins: 10,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'cafe-bootlegger-houtbay',
-    label: 'Bootlegger Hout Bay',
-    target_place: 'Shop 13, Oakhurst Farm Stall, Hout Bay Main Rd, Hout Bay, 7806',
-    lat: -34.0194246,
-    lng: 18.3750530,
-    max_commute_mins: 12,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'cafe-mariners-wharf',
-    label: "Mariner's Wharf Harbour Front Emporium",
-    target_place: 'Harbour Rd, Hout Bay Harbour, Hout Bay, 7806',
-    lat: -34.0474798,
-    lng: 18.3484260,
-    max_commute_mins: 12,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'cafe',
-    category: 'cafe',
-    templateId: 'preset-houtbay-coastal',
-  },
-
-  // Hout Bay Shops & Retail
-  {
-    id: 'shop-mainstream-mall',
-    label: 'Mainstream Mall',
-    target_place: 'Princess St, Hout Bay, Cape Town, 7806',
-    lat: -34.0426408,
-    lng: 18.3586106,
-    max_commute_mins: 10,
-    max_distance_km: 5,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-houtbay-coastal',
-  },
-  {
-    id: 'shop-bay-harbour-market',
-    label: 'Bay Harbour Market',
-    target_place: '31 Harbour Rd, Hout Bay, Cape Town, 7872',
-    lat: -34.0550097,
-    lng: 18.3472642,
-    max_commute_mins: 12,
-    max_distance_km: 6,
-    commute_mode: 'driving',
-    iconType: 'shop',
-    category: 'shop',
-    templateId: 'preset-houtbay-coastal',
-  },
-];
-
-const INITIAL_SHOWCASE_PROPERTIES: PropertyMapItem[] = [];
-
-const QUICK_SUBURBS = [
-  'Rondebosch',
-  'George',
-  'Tamboerskloof',
-  'Hout Bay',
-  'Wilderness',
-  'Newlands',
-  'Tokai',
-  'Gardens',
-  'Woodstock'
-];
-
-export interface SavedSearch {
-  id: string;
-  name: string;
-  suburbs: string[];
-  minPrice?: string;
-  maxPrice?: string;
-  bedrooms?: string;
-  anchorId: string;
-  attractionIds?: string[];
-  gymIds?: string[];
-  cafeIds?: string[];
-  shopIds?: string[];
-  enableAiAnalysis?: boolean;
-  sortBy?: 'fit' | 'price-asc' | 'price-desc' | 'distance';
-  isCustom?: boolean;
-}
-
-export interface AiCriteriaPreset {
-  id: string;
-  name: string;
-  lifestyleFocus: string;
-  mustHaves: string[];
-  dealbreakers: string[];
-  acousticPriority: 'strict-sanctuary' | 'moderate' | 'flexible';
-  personalPrompt: string;
-  isCustom?: boolean;
-}
-
-const DEFAULT_AI_CRITERIA_PRESETS: AiCriteriaPreset[] = [
-  {
-    id: 'ai-quiet-trail-wfh',
-    name: '🌲 Quiet Trailside & Deep Work',
-    lifestyleFocus: 'Pin-drop quiet WFH study + <10m to mountain trails',
-    mustHaves: ['Dedicated study / 2nd bed', 'Off-street parking / bay', 'Fibre ready', 'North-facing natural light'],
-    dealbreakers: ['Main road traffic noise', 'Nightclub / bar bass corridor', 'Damp ground-floor dark unit'],
-    acousticPriority: 'strict-sanctuary',
-    personalPrompt: 'Prioritize top-floor or garden-shielded homes in acoustic shadow (<40 dBA) with fast trail access.',
-  },
-  {
-    id: 'ai-coastal-surf-lockup',
-    name: '🏄 Coastal Surf & Board Storage',
-    lifestyleFocus: 'Walk/quick drive to surf breaks + secure gear storage',
-    mustHaves: ['Garage or ground board storage', 'Outdoor shower / courtyard', 'Safe off-street parking'],
-    dealbreakers: ['High wind tunnel exposure', 'No board/bike storage', 'High crime foot-corridor'],
-    acousticPriority: 'moderate',
-    personalPrompt: 'Rank listings by proximity to surf breaks, secure garage/storage for boards, and safe street access.',
-  },
-  {
-    id: 'ai-walkable-cafe-creative',
-    name: '☕ Walkable Cafe & Heritage Loft',
-    lifestyleFocus: 'Walkable to specialty coffee & workspaces, quiet bedroom',
-    mustHaves: ['Balcony or mountain view', 'High ceilings / character', 'Courtyard-facing bedroom'],
-    dealbreakers: ['Direct street-front bar noise', 'No secure parking option'],
-    acousticPriority: 'moderate',
-    personalPrompt: 'Balance walkability to Kloof/Bree cafes with buildings that buffer late-night street noise.',
-  },
-  {
-    id: 'ai-security-lockup-go',
-    name: '🛡️ High-Security Lock-Up & Go',
-    lifestyleFocus: '24hr manned security estate or elevated apartment',
-    mustHaves: ['24hr security / access control', 'Inverter / solar backup', 'Secure basement parking'],
-    dealbreakers: ['Ground floor street-facing windows', 'Unsecured street parking'],
-    acousticPriority: 'moderate',
-    personalPrompt: 'Prioritize elevated apartments or gated enclaves away from mugging hotspots with backup power.',
-  }
-];
-
-const DEFAULT_SAVED_SEARCHES: SavedSearch[] = [
-  {
-    id: 'preset-cape-trailside',
-    name: '⛰️ Southern Suburbs Trailside',
-    suburbs: ['Rondebosch', 'Newlands', 'Tokai', 'Claremont', 'Constantia'],
-    minPrice: '11000',
-    maxPrice: '18000',
-    bedrooms: '1+',
-    anchorId: 'trail-newlands',
-    attractionIds: ['trail-newlands', 'trail-tokai', 'attraction-kirstenbosch', 'trail-constantia-nek'],
-    gymIds: ['gym-va-claremont', 'gym-va-constantia', 'gym-zone-rondebosch'],
-  },
-  {
-    id: 'preset-citybowl-remote',
-    name: '☕ City Bowl Enclaves',
-    suburbs: ['Gardens', 'Tamboerskloof', 'Oranjezicht', 'Higgovale', 'Vredehoek'],
-    minPrice: '13000',
-    maxPrice: '19000',
-    bedrooms: '1+',
-    anchorId: 'hub-kloof',
-    attractionIds: ['hub-kloof', 'trail-lions-head', 'attraction-table-mountain', 'attraction-company-gardens'],
-    gymIds: ['gym-va-kloof', 'gym-va-wembley', 'gym-roark-cbd', 'gym-zone-kloof', 'gym-sweat1000-kloof', 'gym-va-silo'],
-    cafeIds: ['cafe-truth-buitenkant', 'cafe-our-local-kloof', 'cafe-molten-toffee', 'cafe-manna-epicure', 'cafe-honest-chocolate', 'cafe-red-sofa-vredehoek', 'cafe-clarks-bree'],
-    shopIds: ['shop-gardens-centre', 'shop-lifestyle-on-kloof', 'shop-spar-derry-vredehoek', 'shop-oranjezicht-market', 'shop-bree-street-strip'],
-  },
-  {
-    id: 'preset-deepsouth-surf',
-    name: '🏄 Deep South',
-    suburbs: ['Noordhoek', 'Sunnydale', 'Capri', 'Kommetjie', 'Scarborough'],
-    minPrice: '10000',
-    maxPrice: '16000',
-    bedrooms: '1+',
-    anchorId: 'attraction-noordhoek-village',
-    attractionIds: ['attraction-long-beach', 'attraction-noordhoek-village'],
-    gymIds: ['gym-va-sun-valley', 'gym-planet-fitness-longbeach'],
-  },
-  {
-    id: 'preset-falsebay-coast',
-    name: '🏖️ False Bay',
-    suburbs: ['Muizenberg', 'Kalk Bay', 'Fish Hoek', "Simon's Town"],
-    minPrice: '10000',
-    maxPrice: '16000',
-    bedrooms: '1+',
-    anchorId: 'surf-muizenberg',
-    attractionIds: ['surf-muizenberg', 'attraction-seaforth-beach'],
-    gymIds: ['gym-zone-fish-hoek', 'gym-va-sun-valley'],
-  },
-  {
-    id: 'preset-atlantic-budget',
-    name: '🌊 Promenade & Seaboard',
-    suburbs: ['Green Point', 'Mouille Point', 'Sea Point', 'De Waterkant'],
-    minPrice: '13000',
-    maxPrice: '22000',
-    bedrooms: '1+',
-    anchorId: 'attraction-seapoint-promenade',
-    attractionIds: ['attraction-seapoint-promenade', 'attraction-greenpoint-park', 'attraction-camps-bay', 'attraction-clifton-4th', 'attraction-va-waterfront'],
-    gymIds: ['gym-va-green-point', 'gym-va-the-point', 'gym-anytime-fitness-seapoint', 'gym-ignite-green-point', 'gym-f45-seapoint', 'gym-bua-camps-bay', 'gym-sweat1000-seapoint'],
-    cafeIds: ['cafe-jarryds-seapoint', 'cafe-naked-seapoint', 'cafe-jason-bakery-gp', 'cafe-strangers-club', 'cafe-paulines-seapoint', 'cafe-mojo-market', 'cafe-dewaterkant'],
-    shopIds: ['shop-the-point-mall', 'shop-cape-quarter', 'shop-va-waterfront', 'shop-regent-rd-strip', 'shop-piazza-da-luz'],
-  },
-  {
-    id: 'preset-houtbay-coastal',
-    name: '⛵ Hout Bay & Valley',
-    suburbs: ['Hout Bay', 'Llandudno'],
-    minPrice: '12000',
-    maxPrice: '22000',
-    bedrooms: '1+',
-    anchorId: 'attraction-houtbay-harbour',
-    attractionIds: ['attraction-houtbay-harbour', 'attraction-houtbay-beach', 'attraction-chapmans-peak', 'attraction-llandudno-beach'],
-    gymIds: ['gym-velocity-houtbay', 'gym-the-gym-houtbay', 'gym-crossfit-houtbay'],
-    cafeIds: ['cafe-seattle-houtbay', 'cafe-darios-houtbay', 'cafe-collective-houtbay', 'cafe-houtbay-coffee', 'cafe-bootlegger-houtbay', 'cafe-mariners-wharf'],
-    shopIds: ['shop-mainstream-mall', 'shop-bay-harbour-market'],
-  },
-  {
-    id: 'preset-george',
-    name: '🌲 George & Wilderness',
-    suburbs: ['Heatherlands', 'George', 'Wilderness'],
-    minPrice: '11000',
-    maxPrice: '16000',
-    bedrooms: '1+',
-    anchorId: 'trail-george-witfontein',
-    attractionIds: ['trail-george-witfontein', 'surf-vicbay', 'attraction-wilderness-beach', 'trail-saasveld'],
-    gymIds: ['gym-va-george', 'gym-planet-fitness-george'],
-  }
-];
 
 export default function SearchMapPage() {
   const { user, profile, logout } = useAuth();
@@ -1544,15 +180,15 @@ export default function SearchMapPage() {
         prev.map((p) =>
           p.id === prop.id
             ? {
-                ...p,
-                address: data.address || clean,
-                is_address_withheld: false,
-                lat: typeof data.lat === 'number' ? data.lat : p.lat,
-                lng: typeof data.lng === 'number' ? data.lng : p.lng,
-                ...(data.noise_risk ? { noise_risk: data.noise_risk } : {}),
-                ...(typeof data.is_main_road === 'boolean' ? { is_main_road: data.is_main_road } : {}),
-                ...(data.acoustic_audit ? { acoustic_audit: data.acoustic_audit } : {}),
-              }
+              ...p,
+              address: data.address || clean,
+              is_address_withheld: false,
+              lat: typeof data.lat === 'number' ? data.lat : p.lat,
+              lng: typeof data.lng === 'number' ? data.lng : p.lng,
+              ...(data.noise_risk ? { noise_risk: data.noise_risk } : {}),
+              ...(typeof data.is_main_road === 'boolean' ? { is_main_road: data.is_main_road } : {}),
+              ...(data.acoustic_audit ? { acoustic_audit: data.acoustic_audit } : {}),
+            }
             : p
         )
       );
@@ -1626,7 +262,7 @@ export default function SearchMapPage() {
           setRecentComments(mapped);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -1637,7 +273,7 @@ export default function SearchMapPage() {
       .then((d) => {
         if (d?.nickname) setGuestNickname(d.nickname);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [activeCommentUid, profile?.nickname]);
 
   const openCommentsModal = async (prop: PropertyMapItem) => {
@@ -2159,17 +795,21 @@ export default function SearchMapPage() {
     const parkingLabel = prop.has_garage ? 'Private lock-up automated garage' : (prop.parking_type === 'secure_bay' ? 'Allocated secure off-street parking bay' : 'Dedicated off-street parking');
     const facingLabel = isNorth ? 'North-facing orientation: maximum sun exposure throughout living room and workspace' : `${prop.acoustic_audit?.facing_direction || 'Standard aspect'} with balanced natural lighting`;
 
-    // Detect landlord on-site / cottage on shared property
-    const isLandlordOnSite = isLandlordOnSiteProperty(prop);
+    // Detect landlord on-site / cottage / possible shared erf on property
+    const privacyInfo = getDwellingPrivacyInfo(prop);
+    const isLandlordOnSite = privacyInfo.isLandlordOnSite;
+    const isPossibleShared = Boolean(privacyInfo.isPossibleSharedProperty);
 
     // Detect if property sits directly on noisy main road arterial corridor
     const isMainRoad = Boolean(prop.is_main_road) || isMainRoadProperty(prop.address, prop.title);
 
     const tenancyType = isLandlordOnSite
       ? '⚠️ Shared Property / Landlord On-Site: Listing text confirms a cottage, flatlet, or secondary dwelling on a shared landlord property.'
-      : isMainRoad
-        ? '⚠️ Arterial Road Lease: Standalone tenancy but situated directly on a high-traffic Main Road arterial.'
-        : '✅ 100% Autonomous Private Tenancy: Standalone property with complete perimeter independence (zero shared grounds or landlord residing on-site).';
+      : isPossibleShared
+        ? '🔍 Verify Privacy / Possible Shared Erf: Single-house street address with a studio/1-bed layout (no unit/block number; often attached to a main house with a shared driveway or shared Wi-Fi).'
+        : isMainRoad
+          ? '⚠️ Arterial Road Lease: Standalone tenancy but situated directly on a high-traffic Main Road arterial.'
+          : '✅ 100% Autonomous Private Tenancy: Standalone property with complete perimeter independence (zero shared grounds or landlord residing on-site).';
 
     const photoAudit = isSanctuary
       ? `📸 AI Vision: ${stoveLabel}, ${isNorth ? 'north-facing floor-to-ceiling glazing' : 'large windows with natural daylight'}, scenic mountain/coastal backdrop, zero fish-eye lens distortion.`
@@ -2179,11 +819,17 @@ export default function SearchMapPage() {
       ? `🧠 AI Copy Audit #${rank}: ⚠️ Main Road Arterial Traffic Corridor. High ambient traffic rumble (M4), delivery scooter buzzing & elevated street-level exposure.`
       : isLandlordOnSite
         ? `🧠 AI Copy Audit #${rank}: Secondary dwelling / cottage on private landlord property detected. Potential shared entrance or grounds.`
-        : `🧠 AI Copy Audit #${rank}: Explicit self-contained private lease (zero student digs or shared commune clauses), rules confirm quiet residential tenancy.`;
+        : isPossibleShared
+          ? `🧠 AI Copy Audit #${rank}: Possible attached dwelling or shared driveway — single-erf street address with studio/1-bed layout and no apartment block/unit number; verify at viewing.`
+          : `🧠 AI Copy Audit #${rank}: Explicit self-contained private lease (zero student digs or shared commune clauses), rules confirm quiet residential tenancy.`;
 
     const prefs = userPreferences && userPreferences.trim().length > 0 ? userPreferences.trim() : '';
     const privacyMatchPhrase = prefs.toLowerCase().includes('private') || prefs.toLowerCase().includes('landlord')
-      ? (isLandlordOnSite ? '⚠️ Flagged: Not fully private (landlord on-site / shared grounds)' : '🛡️ 100% Private Standalone confirmed')
+      ? (isLandlordOnSite
+        ? '⚠️ Flagged: Not fully private (landlord on-site / shared grounds)'
+        : isPossibleShared
+          ? '🔍 Verify privacy: possible attached unit / shared driveway'
+          : '🛡️ 100% Private Standalone confirmed')
       : null;
 
     const mainRoadWarning = isMainRoad ? '⚠️ Main Road traffic trap' : null;
@@ -2225,6 +871,10 @@ export default function SearchMapPage() {
         } else {
           pros.push(`Fairly priced relative to comparable ${prop.bedrooms}-bed listings in the area`);
         }
+      }
+
+      if (isPossibleShared) {
+        cons.push('Possible attached unit / shared driveway: single-erf street address with studio/1-bed layout (and/or included Wi-Fi) — verify whether entrance, driveway, and yard are shared with a main house.');
       }
 
       // Photo / visual inspection: only flag when coverage is suspiciously sparse (having photos is baseline)
@@ -2271,7 +921,7 @@ export default function SearchMapPage() {
       }
 
       if (wantsCafes) {
-        const cafeAnchors = DESIRABLE_LOCATIONS.filter(
+        const cafeAnchors = PRESET_TRAILHEADS_AND_HUBS.filter(
           (loc) => loc.iconType === 'cafe' || loc.category === 'cafe'
         );
         let nearestCafe: { name: string; distance_km: number } | null = null;
@@ -2692,15 +1342,15 @@ export default function SearchMapPage() {
             prev.map((p) =>
               p.id === propToInspect.id
                 ? {
-                    ...p,
-                    stove_type: resolvedStove || p.stove_type,
-                    images: fullGallery.length > 0 ? fullGallery : p.images,
-                    has_garage: updatedProp.has_garage,
-                    has_secure_bay: updatedProp.has_secure_bay,
-                    parking_type: updatedProp.parking_type,
-                    has_inverter: updatedProp.has_inverter,
-                    pet_friendly: updatedProp.pet_friendly,
-                  }
+                  ...p,
+                  stove_type: resolvedStove || p.stove_type,
+                  images: fullGallery.length > 0 ? fullGallery : p.images,
+                  has_garage: updatedProp.has_garage,
+                  has_secure_bay: updatedProp.has_secure_bay,
+                  parking_type: updatedProp.parking_type,
+                  has_inverter: updatedProp.has_inverter,
+                  pet_friendly: updatedProp.pet_friendly,
+                }
                 : p
             )
           );
@@ -2962,6 +1612,8 @@ export default function SearchMapPage() {
     price_value_pct: typeof item.price_value_pct === 'number' ? item.price_value_pct : null,
     first_seen_at: item.first_seen_at ?? null,
     available_from: item.available_from ?? null,
+    is_security_estate: Boolean(item.is_security_estate),
+    estate_name: item.estate_name || null,
     url: item.url,
     acoustic_audit: {
       estimated_db: item.noise_risk === 'sanctuary' ? 34 : item.is_main_road ? 68 : 42,
@@ -3011,6 +1663,20 @@ export default function SearchMapPage() {
           );
         } else if (!isCancelled && data.rate_guard && !data.rate_guard.circuit_open) {
           setRateGuardUntil(0);
+        }
+        if (!isCancelled && data.batch_meta) {
+          const meta = data.batch_meta;
+          const staleSubs: string[] = Array.isArray(meta.stale_suburbs) ? meta.stale_suburbs : [];
+          const ageSecs = typeof meta.oldest_age_seconds === 'number' ? meta.oldest_age_seconds : 0;
+          if (meta.is_stale || staleSubs.length > 0 || ageSecs >= 86400) {
+            setStaleDataInfo({
+              isStale: true,
+              oldestAgeSeconds: ageSecs,
+              staleSuburbs: staleSubs,
+            });
+          } else {
+            setStaleDataInfo(null);
+          }
         }
         if (Array.isArray(data.listings) && data.listings.length > 0 && !isCancelled) {
           const mapped: PropertyMapItem[] = data.listings.map(mapLiveScrapeItem);
@@ -3066,27 +1732,24 @@ export default function SearchMapPage() {
     } catch (e) { }
   };
 
-  // Trigger Deep AI Analysis across Top 10 with active filters and personal preferences
+  // Trigger Top 10 Data-Driven Ranker ($0) across matching properties with active filters, walkable targets & preferences
   const handleRunDeepAiAnalysis = () => {
     setIsRunningDeepAi(true);
     setEnableFitScore(true);
     setSortBy('fit');
-    setScrapeStatusText('Running AI multimodal inspection on photos, natural light, layout & agent copy for Top 10...');
+    setScrapeStatusText('Ranking Top 10 matches using walkable places, acoustics, privacy & market value...');
     setTimeout(() => {
       setIsRunningDeepAi(false);
       setDeepAiRunCount((c) => c + 1);
       setIsAiModalOpen(false);
 
       if (displayProperties.length > 0) {
-        const topListing = displayProperties[0];
-        const audit = generatePropertyAiAudit(topListing, 1, personalPreferences);
-        setViewingAiReportProp({ ...topListing, deep_ai_audit: audit });
-        setSelectedPropertyId(topListing.id);
+        setSelectedPropertyId(displayProperties[0].id);
       }
 
-      setScrapeStatusText('✨ AI Deep Analysis complete! Forensic report opened for #1 Top Fit.');
-      setTimeout(() => setScrapeStatusText(''), 4500);
-    }, 800);
+      setScrapeStatusText('✨ Top 10 ranked locally ($0) using your criteria & walkable spots.');
+      setTimeout(() => setScrapeStatusText(''), 4000);
+    }, 300);
   };
 
   // Desirable Locations & Trailheads State
@@ -3110,6 +1773,43 @@ export default function SearchMapPage() {
   const [isScraping, setIsScraping] = useState(false);
   const [scrapeStatusText, setScrapeStatusText] = useState('');
   const [rateGuardUntil, setRateGuardUntil] = useState<number>(0);
+  const [staleDataInfo, setStaleDataInfo] = useState<{
+    isStale: boolean;
+    oldestAgeSeconds: number;
+    staleSuburbs: string[];
+  } | null>(null);
+  const [walkablePlaces, setWalkablePlaces] = useState<WalkableTarget[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('homeseek_walkable_places');
+        return saved ? JSON.parse(saved) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+  const handleAddWalkablePlace = (place: WalkableTarget) => {
+    setWalkablePlaces((prev) => {
+      if (prev.some((p) => p.id === place.id || p.label.toLowerCase() === place.label.toLowerCase())) {
+        return prev;
+      }
+      const next = [...prev, place];
+      try {
+        localStorage.setItem('homeseek_walkable_places', JSON.stringify(next));
+      } catch { }
+      return next;
+    });
+  };
+  const handleRemoveWalkablePlace = (id: string) => {
+    setWalkablePlaces((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      try {
+        localStorage.setItem('homeseek_walkable_places', JSON.stringify(next));
+      } catch { }
+      return next;
+    });
+  };
   const [isListCollapsed, setIsListCollapsed] = useState(false);
   const [feedViewMode, setFeedViewMode] = useState<'cards' | 'list'>('cards');
   const [sortBy, setSortBy] = useState<'price-asc' | 'price-desc' | 'distance' | 'fit'>('fit');
@@ -3290,7 +1990,9 @@ export default function SearchMapPage() {
       ...(activeTemplate?.shopIds || []),
       activeAnchorId
     ]);
-    const matched = anchors.filter((a) => idSet.has(a.id));
+    const matched = anchors.filter(
+      (a) => idSet.has(a.id) || a.iconType === 'trail' || (activeTemplate?.id && a.templateId === activeTemplate.id)
+    );
     return matched.length > 0 ? [...matched, ...customAnchors] : anchors;
   }, [anchors, activeTemplate, activeAnchorId]);
 
@@ -3457,6 +2159,15 @@ export default function SearchMapPage() {
                 ? selectedSuburbs
                 : [];
           let removedStaleCount = mergeBatchProperties(batch1Mapped, initialReplace, properties);
+          setStaleDataInfo(
+            remainingStale.length > 0
+              ? {
+                isStale: true,
+                oldestAgeSeconds: typeof data.batch_meta?.oldest_age_seconds === 'number' ? data.batch_meta.oldest_age_seconds : 86400,
+                staleSuburbs: remainingStale,
+              }
+              : null
+          );
 
           // Automatically continue through remaining stale suburbs (<= 3 per batch) after polite delay
           const triedRemaining = new Set<string>();
@@ -3903,6 +2614,22 @@ export default function SearchMapPage() {
           baseScore -= 3;
         }
       }
+      const walkableNotes: string[] = [];
+      let walkableHits = 0;
+      if (walkablePlaces.length > 0 && prop.lat && prop.lng) {
+        for (const wp of walkablePlaces) {
+          const walkKm = getDistanceKm(prop.lat, prop.lng, wp.lat, wp.lng);
+          if (walkKm <= 0.6) {
+            baseScore += 8;
+            walkableHits += 1;
+            walkableNotes.push(`🚶 ${Math.round(walkKm * 1000)}m to ${wp.label}`);
+          } else if (walkKm <= 1.2) {
+            baseScore += 4;
+            walkableHits += 1;
+            walkableNotes.push(`🚶 ${walkKm.toFixed(1)} km to ${wp.label}`);
+          }
+        }
+      }
       // If outside the chosen location radius, cap fit score at 55% max (never ranked as Top Fit)
       const finalFit = isOutsideRadius
         ? Math.min(55, Math.max(15, baseScore))
@@ -3931,7 +2658,8 @@ export default function SearchMapPage() {
         is_main_road: isMainRoad,
         is_outside_radius: isOutsideRadius,
         distance_to_anchor_km: distToAnchor,
-        ai_insight: `${radiusNote}${agencyNote}${privacyNote} · ${acousticNote} · ${specNote}`,
+        walkable_hits: walkableHits,
+        ai_insight: `${radiusNote}${agencyNote}${walkableNotes.length ? `${walkableNotes.join(' · ')} · ` : ''}${privacyNote} · ${acousticNote} · ${specNote}`,
       };
     });
 
@@ -3945,7 +2673,9 @@ export default function SearchMapPage() {
           const bWithin = bDist <= locationRadiusKm;
           if (aWithin !== bWithin) return aWithin ? -1 : 1;
         }
-        return (b.fit_score || 0) - (a.fit_score || 0);
+        const fitDiff = (b.fit_score || 0) - (a.fit_score || 0);
+        if (fitDiff !== 0) return fitDiff;
+        return ((b as any).walkable_hits || 0) - ((a as any).walkable_hits || 0);
       }
       if (sortBy === 'price-asc') return a.price - b.price;
       if (sortBy === 'price-desc') return b.price - a.price;
@@ -3970,7 +2700,7 @@ export default function SearchMapPage() {
       }),
       radiusExcludedCount: excludedByRadius,
     };
-  }, [allCandidateProperties, selectedSuburbs, minPrice, maxPrice, bedrooms, minSqm, safeishFilter, offMainRoadFilter, offBarsFilter, withinRadiusFilter, locationRadiusKm, fibreFilter, parkingFilter, petFriendlyFilter, privateOnlyFilter, personalPreferences, sortBy, activeAnchor, deepAiRunCount, hiddenPropertyIds, empiricalMediansLoaded, showOnlyFavourites, favouritePropertyIds, importedFavourites]);
+  }, [allCandidateProperties, selectedSuburbs, minPrice, maxPrice, bedrooms, minSqm, safeishFilter, offMainRoadFilter, offBarsFilter, withinRadiusFilter, locationRadiusKm, fibreFilter, parkingFilter, petFriendlyFilter, privateOnlyFilter, personalPreferences, walkablePlaces, sortBy, activeAnchor, deepAiRunCount, hiddenPropertyIds, empiricalMediansLoaded, showOnlyFavourites, favouritePropertyIds, importedFavourites]);
 
   // Derived visible properties based on whether user toggled "Show Hidden" and "Show Favourites"
   const displayProperties = useMemo(() => {
@@ -4142,10 +2872,10 @@ export default function SearchMapPage() {
 
       {/* TOP COMPACT CRITERIA BAR (Sticky below Navbar) */}
       <header className="sticky top-0 w-full bg-white/98 backdrop-blur-md border-b border-zinc-200 z-[100] px-3 py-2 shadow-xs shrink-0">
-        <div className="w-full flex items-center justify-between gap-2">
+        <div className="w-full flex items-center justify-between flex-wrap gap-2">
 
-          {/* Left Group: Areas & Core Property Selectors (Shrink-0) */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* Left Group: Areas & Core Property Selectors */}
+          <div className="flex items-center flex-wrap gap-1.5 min-w-0">
             {/* 0. Areas (Area Group Templates Selector) */}
             <div className="relative shrink-0 flex items-center" ref={savedSearchMenuRef}>
               <button
@@ -5142,48 +3872,9 @@ export default function SearchMapPage() {
               </div>
             )}
           </div>
-
-          {/* Right Group: Primary Actions (Always Pinned & Fully Visible) */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* AI Deep Analysis Button with Top 10 Pill */}
-            <button
-              type="button"
-              onClick={() => setIsAiModalOpen(true)}
-              className="h-7 flex items-center gap-1.5 px-3 rounded-xl text-[11px] font-black border transition-all cursor-pointer leading-none shadow-xs bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-700 text-white border-indigo-500 ring-2 ring-purple-400/20 active:scale-[0.98] shrink-0 whitespace-nowrap"
-              title="Configure personal preferences and run AI Deep Analysis on Top 10"
-            >
-              <Sparkle size={13} weight="fill" className="text-amber-300 shrink-0" />
-              <span>AI Deep Analysis</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-white text-[9px] font-black uppercase tracking-wider">
-                Top 10
-              </span>
-            </button>
-
-            {/* 4. SCRAPE P24 ACTION BUTTON */}
-            <button
-              type="button"
-              onClick={handleScrapeP24}
-              disabled={isScraping || Date.now() < rateGuardUntil}
-              className={`h-7 flex items-center gap-1.5 px-3 rounded-xl text-[11px] font-extrabold shadow-md transition-all leading-none shrink-0 whitespace-nowrap ${isScraping
-                ? 'bg-indigo-850 text-indigo-200 cursor-wait ring-2 ring-indigo-400'
-                : Date.now() < rateGuardUntil
-                  ? 'bg-amber-600/90 text-white cursor-not-allowed opacity-90'
-                  : 'bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white shadow-indigo-600/20 cursor-pointer'
-                }`}
-              title={Date.now() < rateGuardUntil ? 'Rate-Limit Shield active — cooling down to prevent Property24 IP blocks' : 'Scrape Property24 live listings for selected suburbs'}
-            >
-              {isScraping ? (
-                <CircleNotch size={13} className="animate-spin text-white shrink-0" />
-              ) : (
-                <Sparkle size={13} weight="fill" className="text-amber-300 shrink-0" />
-              )}
-              <span>{isScraping ? 'Scraping P24...' : Date.now() < rateGuardUntil ? 'Shield Cooldown' : 'Scrape P24'}</span>
-            </button>
-          </div>
-
         </div>
 
-        {/* ROW 2: Left = Selected Area Pills & "+ Add area..." | Right = Feature Filter Buttons (under AI Deep Analysis) */}
+        {/* ROW 2: Left = Selected Area Pills & "+ Add area..." | Right = Top 10 Rank & Scrape P24 */}
         <div className="w-full flex items-center justify-between flex-wrap gap-2 pt-1.5 mt-1.5 border-t border-zinc-100">
           {/* Left: Suburb Pills + Autocomplete */}
           <div className="flex items-center flex-wrap gap-1.5 min-w-0">
@@ -5299,195 +3990,230 @@ export default function SearchMapPage() {
             </div>
           </div>
 
-          {/* Right: Feature Filter Buttons positioned directly on the row under AI Deep Analysis */}
-          <div className="flex items-center flex-wrap gap-1.5 ml-auto">
+          {/* Right: Primary Actions (Top 10 Rank & Scrape P24) */}
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            {/* Top 10 Data-Driven Match Ranker Button */}
             <button
               type="button"
-              onClick={() => setFibreFilter(!fibreFilter)}
-              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${fibreFilter
-                ? 'bg-zinc-900 text-white border-zinc-900 shadow-2xs ring-1 ring-zinc-700'
-                : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
-                }`}
-              title="Filter listings: Fibre ready internet only"
+              onClick={() => setIsAiModalOpen(true)}
+              className="h-7 flex items-center gap-1.5 px-3 rounded-xl text-[11px] font-black border transition-all cursor-pointer leading-none shadow-xs bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-700 text-white border-indigo-500 ring-2 ring-purple-400/20 active:scale-[0.98] shrink-0 whitespace-nowrap"
+              title="Configure walkable places & criteria to rank Top 10 matches locally ($0)"
             >
-              <span className={fibreFilter ? "text-cyan-300" : "text-zinc-500"}>🌐</span>
-              <span>Fibre ready</span>
+              <Sparkle size={13} weight="fill" className="text-amber-300 shrink-0" />
+              <span>Rank Top 10</span>
             </button>
 
-            {/* Safe-ish Crime Hotspot Filter Button (ON by default) */}
+            {/* 4. SCRAPE P24 ACTION BUTTON */}
             <button
               type="button"
-              onClick={() => setSafeishFilter(!safeishFilter)}
-              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${safeishFilter
-                ? 'bg-emerald-950 text-emerald-300 border-emerald-800 shadow-2xs ring-1 ring-emerald-500/30'
-                : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200/70'
+              onClick={handleScrapeP24}
+              disabled={isScraping || Date.now() < rateGuardUntil}
+              className={`h-7 flex items-center gap-1.5 px-3 rounded-xl text-[11px] font-extrabold shadow-md transition-all leading-none shrink-0 whitespace-nowrap ${isScraping
+                ? 'bg-indigo-850 text-indigo-200 cursor-wait ring-2 ring-indigo-400'
+                : Date.now() < rateGuardUntil
+                  ? 'bg-amber-600/90 text-white cursor-not-allowed opacity-90'
+                  : 'bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white shadow-indigo-600/20 cursor-pointer'
                 }`}
-              title={
-                safeishFilter
-                  ? "Safe-ish: ON (Default: hiding properties within High-Risk crime radii). Click to show all properties."
-                  : "Safe-ish: OFF (Showing all properties including those near High-Risk crime zones). Click to filter."
-              }
+              title={Date.now() < rateGuardUntil ? 'Rate-Limit Shield active — cooling down to prevent Property24 IP blocks' : 'Scrape Property24 live listings for selected suburbs'}
             >
-              <span className={safeishFilter ? "text-emerald-400" : "text-zinc-400"}>🛡️</span>
-              <span>Safe-ish</span>
-              {safeishFilter && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+              {isScraping ? (
+                <CircleNotch size={13} className="animate-spin text-white shrink-0" />
+              ) : (
+                <Sparkle size={13} weight="fill" className="text-amber-300 shrink-0" />
               )}
+              <span>{isScraping ? 'Scraping P24...' : Date.now() < rateGuardUntil ? 'Shield Cooldown' : 'Scrape P24'}</span>
             </button>
-
-            {/* Off-Main Rd Traffic & Noise Filter Button (ON by default) */}
-            <button
-              type="button"
-              onClick={() => setOffMainRoadFilter(!offMainRoadFilter)}
-              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${offMainRoadFilter
-                ? 'bg-amber-950 text-amber-300 border-amber-800 shadow-2xs ring-1 ring-amber-500/30'
-                : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200/70'
-                }`}
-              title={
-                offMainRoadFilter
-                  ? "Off-Main Rd: ON (Default: hiding noisy arterial road properties like Main Rd/M4). Click to show all properties."
-                  : "Off-Main Rd: OFF (Showing all properties including noisy arterial road corridors). Click to filter."
-              }
-            >
-              <span className={offMainRoadFilter ? "text-amber-400" : "text-zinc-400"}>🔇</span>
-              <span>Off-Main Rd</span>
-              {offMainRoadFilter && (
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse ml-0.5" />
-              )}
-            </button>
-
-            {/* Off-Bars & Clubs Filter Button */}
-            <button
-              type="button"
-              onClick={() => setOffBarsFilter(!offBarsFilter)}
-              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${offBarsFilter
-                ? 'bg-rose-950 text-rose-200 border-rose-800 shadow-2xs ring-1 ring-rose-500/30'
-                : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200/70'
-                }`}
-              title={
-                offBarsFilter
-                  ? "Off-Bars & Clubs: ON (hiding properties within close bar & nightlife noise radii). Click to show all."
-                  : "Off-Bars & Clubs: OFF (showing properties near bars & clubs). Click to filter out."
-              }
-            >
-              <span className={offBarsFilter ? "text-rose-300" : "text-zinc-400"}>🍸</span>
-              <span>Off-Bars/Clubs</span>
-              {offBarsFilter && (
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse ml-0.5" />
-              )}
-            </button>
-
-            {/* Within Radius Filter Button (ON by default when activeAnchor is present) */}
-            {activeAnchor && (
-              <button
-                type="button"
-                onClick={() => setWithinRadiusFilter(!withinRadiusFilter)}
-                className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${withinRadiusFilter
-                  ? 'bg-indigo-950 text-indigo-300 border-indigo-800 shadow-2xs ring-1 ring-indigo-500/30'
-                  : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200/70'
-                  }`}
-                title={
-                  withinRadiusFilter
-                    ? `Within ${activeAnchor.label} radius: ON (Only showing properties within ${locationRadiusKm.toFixed(1)} km). Click to show all properties.`
-                    : `Within ${activeAnchor.label} radius: OFF (Showing all properties; listings inside ${locationRadiusKm.toFixed(1)} km rank higher). Click to exclude outside listings.`
-                }
-              >
-                <span className={withinRadiusFilter ? "text-indigo-400" : "text-zinc-400"}>🎯</span>
-                <span>In Radius (≤{locationRadiusKm.toFixed(1)} km)</span>
-                {withinRadiusFilter && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 ml-0.5" />
-                )}
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setParkingFilter(!parkingFilter)}
-              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${parkingFilter
-                ? 'bg-zinc-900 text-white border-zinc-900 shadow-2xs ring-1 ring-zinc-700'
-                : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
-                }`}
-              title="Filter listings: Off-street parking bay, carport, or lock-up garage (excludes street parking)"
-            >
-              <span className={parkingFilter ? "text-emerald-300" : "text-zinc-500"}>🅿️</span>
-              <span>Off-street pkg</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPetFriendlyFilter(!petFriendlyFilter)}
-              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${petFriendlyFilter
-                ? 'bg-zinc-900 text-white border-zinc-900 shadow-2xs ring-1 ring-zinc-700'
-                : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
-                }`}
-              title="Filter listings: Verified pet-friendly leases only"
-            >
-              <span className={petFriendlyFilter ? "text-pink-300" : "text-zinc-500"}>🐾</span>
-              <span>Pet-friendly</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPrivateOnlyFilter(!privateOnlyFilter)}
-              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${privateOnlyFilter
-                ? 'bg-purple-950 text-purple-100 border-purple-800 shadow-2xs ring-1 ring-purple-600 font-extrabold'
-                : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
-                }`}
-              title="Filter listings: 100% private standalone homes only (excludes cottages on landlord grounds)"
-            >
-              <span className={privateOnlyFilter ? "text-purple-300" : "text-zinc-500"}>🔒</span>
-              <span>Private</span>
-            </button>
-
-            {/* Hidden Posts Visibility Toggle Pill */}
-            {hiddenCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowHidden(!showHidden)}
-                className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${showHidden
-                  ? 'bg-amber-500 text-zinc-950 border-amber-600 shadow-xs ring-1 ring-amber-400 font-extrabold'
-                  : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
-                  }`}
-                title={showHidden ? "Hide dismissed listings again" : `Show ${hiddenCount} hidden / dismissed listing${hiddenCount > 1 ? 's' : ''}`}
-              >
-                {showHidden ? <Eye size={12} weight="bold" /> : <EyeSlash size={12} weight="bold" />}
-                <span>{showHidden ? 'Showing Hidden' : 'Hidden'}</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${showHidden ? 'bg-black/15 text-zinc-950' : 'bg-zinc-200 text-zinc-800'}`}>
-                  {hiddenCount}
-                </span>
-              </button>
-            )}
-
-            {/* Import Property24 Favourites Button */}
-            <button
-              type="button"
-              onClick={() => setIsImportModalOpen(true)}
-              className="h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 transition-all cursor-pointer leading-none shrink-0"
-              title="Import your favourited properties from Property24"
-            >
-              <Heart size={12} weight="fill" className="text-rose-600" />
-              <span>Import P24 Favs</span>
-            </button>
-
-            {/* Favourites Only Filter Toggle Pill */}
-            {totalFavouritesCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowOnlyFavourites(!showOnlyFavourites)}
-                className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${showOnlyFavourites
-                  ? 'bg-rose-500 text-white border-rose-600 shadow-xs ring-1 ring-rose-400 font-extrabold'
-                  : 'bg-rose-50/80 border-rose-200 text-rose-700 hover:bg-rose-100'
-                  }`}
-                title={showOnlyFavourites ? "Show all properties" : `Show only ${favouriteCount} favourite${favouriteCount > 1 ? 's' : ''}`}
-              >
-                <Heart size={12} weight="fill" className={showOnlyFavourites ? "text-white" : "text-rose-500"} />
-                <span>{showOnlyFavourites ? 'Showing Favs' : 'Favs'}</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${showOnlyFavourites ? 'bg-white/20 text-white' : 'bg-rose-200/80 text-rose-800'}`}>
-                  {favouriteCount}
-                </span>
-              </button>
-            )}
           </div>
+        </div>
+
+        {/* ROW 3: Feature Filter Buttons */}
+        <div className="w-full flex items-center flex-wrap gap-1.5 pt-1.5 mt-1.5 border-t border-zinc-100/80">
+          <button
+            type="button"
+            onClick={() => setFibreFilter(!fibreFilter)}
+            className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${fibreFilter
+              ? 'bg-zinc-900 text-white border-zinc-900 shadow-2xs ring-1 ring-zinc-700'
+              : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
+              }`}
+            title="Filter listings: Fibre ready internet only"
+          >
+            <span className={fibreFilter ? "text-cyan-300" : "text-zinc-500"}>🌐</span>
+            <span>Fibre ready</span>
+          </button>
+
+          {/* Safe-ish Crime Hotspot Filter Button (ON by default) */}
+          <button
+            type="button"
+            onClick={() => setSafeishFilter(!safeishFilter)}
+            className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${safeishFilter
+              ? 'bg-emerald-950 text-emerald-300 border-emerald-800 shadow-2xs ring-1 ring-emerald-500/30'
+              : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200/70'
+              }`}
+            title={
+              safeishFilter
+                ? "Safe-ish: ON (Default: hiding properties within High-Risk crime radii). Click to show all properties."
+                : "Safe-ish: OFF (Showing all properties including those near High-Risk crime zones). Click to filter."
+            }
+          >
+            <span className={safeishFilter ? "text-emerald-400" : "text-zinc-400"}>🛡️</span>
+            <span>Safe-ish</span>
+            {safeishFilter && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+            )}
+          </button>
+
+          {/* Off-Main Rd Traffic & Noise Filter Button (ON by default) */}
+          <button
+            type="button"
+            onClick={() => setOffMainRoadFilter(!offMainRoadFilter)}
+            className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${offMainRoadFilter
+              ? 'bg-amber-950 text-amber-300 border-amber-800 shadow-2xs ring-1 ring-amber-500/30'
+              : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200/70'
+              }`}
+            title={
+              offMainRoadFilter
+                ? "Off-Main Rd: ON (Default: hiding noisy arterial road properties like Main Rd/M4). Click to show all properties."
+                : "Off-Main Rd: OFF (Showing all properties including noisy arterial road corridors). Click to filter."
+            }
+          >
+            <span className={offMainRoadFilter ? "text-amber-400" : "text-zinc-400"}>🔇</span>
+            <span>Off-Main Rd</span>
+            {offMainRoadFilter && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse ml-0.5" />
+            )}
+          </button>
+
+          {/* Off-Bars & Clubs Filter Button */}
+          <button
+            type="button"
+            onClick={() => setOffBarsFilter(!offBarsFilter)}
+            className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${offBarsFilter
+              ? 'bg-rose-950 text-rose-200 border-rose-800 shadow-2xs ring-1 ring-rose-500/30'
+              : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200/70'
+              }`}
+            title={
+              offBarsFilter
+                ? "Off-Bars & Clubs: ON (hiding properties within close bar & nightlife noise radii). Click to show all."
+                : "Off-Bars & Clubs: OFF (showing properties near bars & clubs). Click to filter out."
+            }
+          >
+            <span className={offBarsFilter ? "text-rose-300" : "text-zinc-400"}>🍸</span>
+            <span>Off-Bars/Clubs</span>
+            {offBarsFilter && (
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse ml-0.5" />
+            )}
+          </button>
+
+          {/* Within Radius Filter Button (ON by default when activeAnchor is present) */}
+          {activeAnchor && (
+            <button
+              type="button"
+              onClick={() => setWithinRadiusFilter(!withinRadiusFilter)}
+              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${withinRadiusFilter
+                ? 'bg-indigo-950 text-indigo-300 border-indigo-800 shadow-2xs ring-1 ring-indigo-500/30'
+                : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200/70'
+                }`}
+              title={
+                withinRadiusFilter
+                  ? `Within ${activeAnchor.label} radius: ON (Only showing properties within ${locationRadiusKm.toFixed(1)} km). Click to show all properties.`
+                  : `Within ${activeAnchor.label} radius: OFF (Showing all properties; listings inside ${locationRadiusKm.toFixed(1)} km rank higher). Click to exclude outside listings.`
+              }
+            >
+              <span className={withinRadiusFilter ? "text-indigo-400" : "text-zinc-400"}>🎯</span>
+              <span>In Radius (≤{locationRadiusKm.toFixed(1)} km)</span>
+              {withinRadiusFilter && (
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 ml-0.5" />
+              )}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setParkingFilter(!parkingFilter)}
+            className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${parkingFilter
+              ? 'bg-zinc-900 text-white border-zinc-900 shadow-2xs ring-1 ring-zinc-700'
+              : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
+              }`}
+            title="Filter listings: Off-street parking bay, carport, or lock-up garage (excludes street parking)"
+          >
+            <span className={parkingFilter ? "text-emerald-300" : "text-zinc-500"}>🅿️</span>
+            <span>Off-street pkg</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPetFriendlyFilter(!petFriendlyFilter)}
+            className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${petFriendlyFilter
+              ? 'bg-zinc-900 text-white border-zinc-900 shadow-2xs ring-1 ring-zinc-700'
+              : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
+              }`}
+            title="Filter listings: Verified pet-friendly leases only"
+          >
+            <span className={petFriendlyFilter ? "text-pink-300" : "text-zinc-500"}>🐾</span>
+            <span>Pet-friendly</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPrivateOnlyFilter(!privateOnlyFilter)}
+            className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${privateOnlyFilter
+              ? 'bg-purple-950 text-purple-100 border-purple-800 shadow-2xs ring-1 ring-purple-600 font-extrabold'
+              : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
+              }`}
+            title="Filter listings: 100% private standalone homes only (excludes cottages on landlord grounds)"
+          >
+            <span className={privateOnlyFilter ? "text-purple-300" : "text-zinc-500"}>🔒</span>
+            <span>Private</span>
+          </button>
+
+          {/* Hidden Posts Visibility Toggle Pill */}
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHidden(!showHidden)}
+              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${showHidden
+                ? 'bg-amber-500 text-zinc-950 border-amber-600 shadow-xs ring-1 ring-amber-400 font-extrabold'
+                : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200/70'
+                }`}
+              title={showHidden ? "Hide dismissed listings again" : `Show ${hiddenCount} hidden / dismissed listing${hiddenCount > 1 ? 's' : ''}`}
+            >
+              {showHidden ? <Eye size={12} weight="bold" /> : <EyeSlash size={12} weight="bold" />}
+              <span>{showHidden ? 'Showing Hidden' : 'Hidden'}</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${showHidden ? 'bg-black/15 text-zinc-950' : 'bg-zinc-200 text-zinc-800'}`}>
+                {hiddenCount}
+              </span>
+            </button>
+          )}
+
+          {/* Import Property24 Favourites Button */}
+          <button
+            type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            className="h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 transition-all cursor-pointer leading-none shrink-0"
+            title="Import your favourited properties from Property24"
+          >
+            <Heart size={12} weight="fill" className="text-rose-600" />
+            <span>Import P24 Favs</span>
+          </button>
+
+          {/* Favourites Only Filter Toggle Pill */}
+          {totalFavouritesCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowOnlyFavourites(!showOnlyFavourites)}
+              className={`h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer leading-none shrink-0 ${showOnlyFavourites
+                ? 'bg-rose-500 text-white border-rose-600 shadow-xs ring-1 ring-rose-400 font-extrabold'
+                : 'bg-rose-50/80 border-rose-200 text-rose-700 hover:bg-rose-100'
+                }`}
+              title={showOnlyFavourites ? "Show all properties" : `Show only ${favouriteCount} favourite${favouriteCount > 1 ? 's' : ''}`}
+            >
+              <Heart size={12} weight="fill" className={showOnlyFavourites ? "text-white" : "text-rose-500"} />
+              <span>{showOnlyFavourites ? 'Showing Favs' : 'Favs'}</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${showOnlyFavourites ? 'bg-white/20 text-white' : 'bg-rose-200/80 text-rose-800'}`}>
+                {favouriteCount}
+              </span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -5511,6 +4237,10 @@ export default function SearchMapPage() {
                     <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
                       <CircleNotch size={11} className="animate-spin text-indigo-600" />
                       <span>Loading</span>
+                    </span>
+                  ) : staleDataInfo?.isStale ? (
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-50 text-amber-800 border border-amber-300 shrink-0">
+                      Stale
                     </span>
                   ) : (
                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
@@ -5561,6 +4291,23 @@ export default function SearchMapPage() {
                     </button>
                   </div>
                 )}
+                {staleDataInfo?.isStale && !isScraping && (
+                  <div className="mt-1.5 px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-300/90 flex items-center justify-between gap-2 text-[11px]">
+                    <span className="font-semibold text-amber-950 leading-snug">
+                      ⏳ {staleDataInfo.oldestAgeSeconds >= 86400
+                        ? `Cached data is ${Math.floor(staleDataInfo.oldestAgeSeconds / 86400)}d+ old`
+                        : 'Some suburb data is stale'} — scrape to refresh.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleScrapeP24}
+                      disabled={isScraping || Date.now() < rateGuardUntil}
+                      className="px-2 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-extrabold text-[10.5px] shrink-0 cursor-pointer shadow-2xs transition-colors"
+                    >
+                      {Date.now() < rateGuardUntil ? 'Cooldown' : 'Scrape Now'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* View Mode Toggle, Sorting Dropdown & Collapse Toggle */}
@@ -5570,8 +4317,8 @@ export default function SearchMapPage() {
                     type="button"
                     onClick={() => setFeedViewMode('cards')}
                     className={`p-1 rounded-lg transition-colors cursor-pointer ${feedViewMode === 'cards'
-                        ? 'bg-white text-zinc-950 shadow-2xs'
-                        : 'text-zinc-500 hover:text-zinc-800'
+                      ? 'bg-white text-zinc-950 shadow-2xs'
+                      : 'text-zinc-500 hover:text-zinc-800'
                       }`}
                     title="Cards View"
                     aria-label="Cards View"
@@ -5582,8 +4329,8 @@ export default function SearchMapPage() {
                     type="button"
                     onClick={() => setFeedViewMode('list')}
                     className={`p-1 rounded-lg transition-colors cursor-pointer ${feedViewMode === 'list'
-                        ? 'bg-white text-zinc-950 shadow-2xs'
-                        : 'text-zinc-500 hover:text-zinc-800'
+                      ? 'bg-white text-zinc-950 shadow-2xs'
+                      : 'text-zinc-500 hover:text-zinc-800'
                       }`}
                     title="Compact List View"
                     aria-label="Compact List View"
@@ -5648,32 +4395,140 @@ export default function SearchMapPage() {
           <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-3.5">
             {(() => {
               const renderPropertyCard = (prop: PropertyMapItem) => {
-              const isSelected = selectedPropertyId === prop.id;
-              const isHoveredOnMap = hoveredPropertyId === prop.id;
-              const isHidden = hiddenPropertyIds.includes(prop.id);
-              const privacyInfo = getDwellingPrivacyInfo(prop);
-              const agencyRep = getAgencyReputationInfo(prop);
-              const barNoiseInfo = getPropertyBarNoiseExposure(prop);
-              const busyRoadInfo = getPropertyBusyRoadExposure(prop);
-              const crimePerimeter = getCrimePerimeterInfo(prop);
-              const marketVal = getRiskAdjustedValuation(prop, allCandidateProperties);
-              const isLandlordOnSite = privacyInfo.isLandlordOnSite;
-              const distToAnchor = activeAnchor ? getDistanceKm(prop.lat, prop.lng, activeAnchor.lat, activeAnchor.lng) : null;
-              const isWalkingAnchor = distToAnchor !== null && (activeAnchor?.commute_mode === 'walking' || (activeAnchor?.commute_mode !== 'driving' && distToAnchor <= 1.2));
-              const isBikingAnchor = activeAnchor?.commute_mode === 'bicycling';
-              const commuteDurMins = distToAnchor !== null
-                ? (isWalkingAnchor
-                  ? Math.max(1, Math.round((distToAnchor / 4.8) * 60))
-                  : isBikingAnchor
-                    ? Math.max(1, Math.round((distToAnchor / 15.0) * 60))
-                    : Math.max(2, Math.round((distToAnchor / 35.0) * 60)))
-                : null;
-              const commuteModeLabel = isWalkingAnchor ? 'walk' : isBikingAnchor ? 'bike' : 'drive';
+                const isSelected = selectedPropertyId === prop.id;
+                const isHoveredOnMap = hoveredPropertyId === prop.id;
+                const isHidden = hiddenPropertyIds.includes(prop.id);
+                const privacyInfo = getDwellingPrivacyInfo(prop);
+                const agencyRep = getAgencyReputationInfo(prop);
+                const barNoiseInfo = getPropertyBarNoiseExposure(prop);
+                const busyRoadInfo = getPropertyBusyRoadExposure(prop);
+                const crimePerimeter = getCrimePerimeterInfo(prop);
+                const marketVal = getRiskAdjustedValuation(prop, allCandidateProperties);
+                const isLandlordOnSite = privacyInfo.isLandlordOnSite;
+                const distToAnchor = activeAnchor ? getDistanceKm(prop.lat, prop.lng, activeAnchor.lat, activeAnchor.lng) : null;
+                const isWalkingAnchor = distToAnchor !== null && (activeAnchor?.commute_mode === 'walking' || (activeAnchor?.commute_mode !== 'driving' && distToAnchor <= 1.2));
+                const isBikingAnchor = activeAnchor?.commute_mode === 'bicycling';
+                const commuteDurMins = distToAnchor !== null
+                  ? (isWalkingAnchor
+                    ? Math.max(1, Math.round((distToAnchor / 4.8) * 60))
+                    : isBikingAnchor
+                      ? Math.max(1, Math.round((distToAnchor / 15.0) * 60))
+                      : Math.max(2, Math.round((distToAnchor / 35.0) * 60)))
+                  : null;
+                const commuteModeLabel = isWalkingAnchor ? 'walk' : isBikingAnchor ? 'bike' : 'drive';
 
-              if (feedViewMode === 'list') {
-                const shortAddr = (prop.address || prop.suburb || 'Address withheld')
-                  .replace(/\s*\(Street Address Withheld\)/i, '')
-                  .trim();
+                if (feedViewMode === 'list') {
+                  const shortAddr = (prop.address || prop.suburb || 'Address withheld')
+                    .replace(/\s*\(Street Address Withheld\)/i, '')
+                    .trim();
+                  return (
+                    <div
+                      key={prop.id}
+                      id={`property-card-${prop.id}`}
+                      onClick={() => {
+                        setSelectedPropertyId(prop.id);
+                        setFocusTarget({ lat: prop.lat, lng: prop.lng, zoom: 16.8, timestamp: Date.now() });
+                      }}
+                      className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-2.5 ${isSelected
+                        ? 'bg-purple-50/70 border-purple-400 ring-1 ring-purple-300'
+                        : isHoveredOnMap
+                          ? 'bg-indigo-50/40 border-indigo-200'
+                          : 'bg-white border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50/60'
+                        } ${isHidden ? 'opacity-50' : ''}`}
+                      title="Click to focus on map"
+                    >
+                      <img
+                        src={prop.image || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=160&q=70'}
+                        alt={prop.title}
+                        className="w-12 h-12 rounded-lg object-cover shrink-0 border border-zinc-200/80 bg-zinc-100"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1 min-w-0">
+                            {prop.rank && (
+                              <span className="px-1.5 py-0.5 rounded bg-zinc-900 text-white text-[9.5px] font-black shrink-0">
+                                #{prop.rank}
+                              </span>
+                            )}
+                            <span className="text-xs font-extrabold text-zinc-950 truncate">
+                              R {formatPrice(prop.price)}
+                            </span>
+                            {prop.fit_score && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9.5px] font-black shrink-0">
+                                {prop.fit_score}%
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCompareProperty(prop);
+                              }}
+                              className={`px-1.5 py-1 rounded-md text-[10px] font-bold border cursor-pointer ${compareIds.includes(prop.id)
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                : 'bg-white border-zinc-200 text-zinc-600 hover:bg-purple-50'
+                                }`}
+                              title={compareIds.includes(prop.id) ? 'In Compare' : 'Add to Compare'}
+                            >
+                              <Scales size={11} weight="bold" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTogglePropertyAiReport(prop);
+                              }}
+                              className="px-2 py-1 rounded-md bg-purple-700 hover:bg-purple-800 text-white text-[10px] font-black flex items-center gap-0.5 cursor-pointer"
+                              title="AI Forensic Analysis"
+                            >
+                              <Sparkle size={10} weight="fill" className="text-amber-300" />
+                              <span>AI</span>
+                            </button>
+                            <a
+                              href={resolveProperty24Url(prop)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => openProperty24Url(e, resolveProperty24Url(prop))}
+                              className="px-1.5 py-1 rounded-md bg-zinc-900 hover:bg-indigo-600 text-white text-[10px] font-black cursor-pointer"
+                              title="Open on Property24"
+                            >
+                              P24
+                            </a>
+                          </div>
+                        </div>
+
+                        <p className="text-[11px] font-bold text-zinc-800 truncate mt-0.5">
+                          {prop.title}
+                        </p>
+                        <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 mt-0.5 truncate">
+                          <span className="truncate">{shortAddr}</span>
+                          <span>·</span>
+                          <span className="shrink-0">{prop.bedrooms}bd{prop.sqm ? ` · ${prop.sqm}m²` : ''}</span>
+                          {marketVal && (
+                            <span
+                              className={`shrink-0 font-bold ${marketVal.isUnderpriced
+                                ? 'text-emerald-700'
+                                : marketVal.isOverpriced
+                                  ? 'text-rose-700'
+                                  : 'text-zinc-500'
+                                }`}
+                            >
+                              · {marketVal.isUnderpriced ? `-${Math.abs(marketVal.pctDiff)}%` : marketVal.isOverpriced ? `+${Math.abs(marketVal.pctDiff)}%` : 'Fair'}
+                            </span>
+                          )}
+                          {crimePerimeter.isNearHighRisk && !crimePerimeter.hasEstateSecurity && (
+                            <span className="shrink-0 font-bold text-amber-700" title={crimePerimeter.tooltipReason}>
+                              · ⚠️ {crimePerimeter.distanceKm}km
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={prop.id}
@@ -5682,855 +4537,761 @@ export default function SearchMapPage() {
                       setSelectedPropertyId(prop.id);
                       setFocusTarget({ lat: prop.lat, lng: prop.lng, zoom: 16.8, timestamp: Date.now() });
                     }}
-                    className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-2.5 ${isSelected
-                        ? 'bg-purple-50/70 border-purple-400 ring-1 ring-purple-300'
+                    title="Click to focus and zoom in on this property on the map"
+                    className={`pt-3.5 first:pt-0 rounded-2xl p-2.5 transition-all cursor-pointer border ${isSelected
+                      ? 'bg-purple-50/85 border-purple-500 ring-2 ring-purple-500/40 shadow-xl'
+                      : isHidden
+                        ? 'bg-amber-50/30 border-dashed border-amber-300 opacity-75 hover:opacity-100'
                         : isHoveredOnMap
-                          ? 'bg-indigo-50/40 border-indigo-200'
-                          : 'bg-white border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50/60'
-                      } ${isHidden ? 'opacity-50' : ''}`}
-                    title="Click to focus on map"
+                          ? 'bg-purple-50/40 border-purple-300 ring-1 ring-purple-400/30 shadow-md'
+                          : 'hover:bg-zinc-50/80 border-transparent hover:border-zinc-200'
+                      }`}
                   >
-                    <img
-                      src={prop.image || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=160&q=70'}
-                      alt={prop.title}
-                      className="w-12 h-12 rounded-lg object-cover shrink-0 border border-zinc-200/80 bg-zinc-100"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <div className="flex items-center gap-1 min-w-0">
-                          {prop.rank && (
-                            <span className="px-1.5 py-0.5 rounded bg-zinc-900 text-white text-[9.5px] font-black shrink-0">
-                              #{prop.rank}
-                            </span>
-                          )}
-                          <span className="text-xs font-extrabold text-zinc-950 truncate">
-                            R {formatPrice(prop.price)}
-                          </span>
-                          {prop.fit_score && (
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9.5px] font-black shrink-0">
-                              {prop.fit_score}%
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
+                    {/* Highlighted on Map Banner */}
+                    {isSelected && (
+                      <div className="mb-2.5 flex items-center justify-between px-3 py-1.5 rounded-xl bg-purple-700 text-white text-[11px] font-extrabold shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                        <span className="flex items-center gap-1.5">
+                          <MapPin size={13} weight="fill" className="text-amber-300" />
+                          <span>Selected on Map</span>
+                        </span>
+                        <span className="text-[10px] text-purple-200 font-semibold">
+                          Top Fit #{prop.rank || ''}
+                        </span>
+                      </div>
+                    )}
+                    {/* Photo Gallery & RealView™ Rectifier (Wide-Angle to Normal Eye Perspective Converter) */}
+                    {(() => {
+                      const photosList: string[] = (prop.images && prop.images.length > 0)
+                        ? prop.images
+                        : (cardGalleries[prop.id] && cardGalleries[prop.id].length > 0)
+                          ? cardGalleries[prop.id]
+                          : [prop.image].filter(Boolean);
+
+                      const activePhotoIdx = cardImageIndices[prop.id] || 0;
+                      const activeRawPhoto = photosList[activePhotoIdx] || prop.image;
+                      const convertedPhotoUrl = getRectifiedUrl(activeRawPhoto);
+
+                      const handlePrevPhoto = (e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        if (photosList.length <= 1 && prop.url && !cardGalleries[prop.id]) {
+                          fetchCardGallery(prop.id, prop.url);
+                        }
+                        setCardImageIndices((prev) => {
+                          const cur = prev[prop.id] || 0;
+                          return { ...prev, [prop.id]: cur > 0 ? cur - 1 : Math.max(0, photosList.length - 1) };
+                        });
+                      };
+
+                      const handleNextPhoto = (e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        if (photosList.length <= 1 && prop.url && !cardGalleries[prop.id]) {
+                          fetchCardGallery(prop.id, prop.url);
+                        }
+                        setCardImageIndices((prev) => {
+                          const cur = prev[prop.id] || 0;
+                          return { ...prev, [prop.id]: cur < photosList.length - 1 ? cur + 1 : 0 };
+                        });
+                      };
+
+                      const p24Href = resolveProperty24Url(prop);
+
+                      return (
+                        <div className="relative w-full h-44 rounded-xl overflow-hidden bg-zinc-950 shadow-xs mb-2.5 group/slider select-none">
+                          {/* Main Converted Photo (Wide Angle -> Human Eye Normal Perspective via RealView™) */}
+                          <a
+                            href={p24Href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => openProperty24Url(e, p24Href)}
+                            title="Open original listing on Property24 (new tab)"
+                            className="block w-full h-full cursor-pointer"
+                          >
+                            <img
+                              src={convertedPhotoUrl}
+                              alt={`${prop.title} - Photo ${activePhotoIdx + 1}`}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover group-hover/slider:scale-102 transition-transform duration-300"
+                              loading="lazy"
+                              onError={(e) => {
+                                // If rectifier fails, fall back gracefully to original raw photo
+                                if (e.currentTarget.src !== activeRawPhoto) {
+                                  e.currentTarget.src = activeRawPhoto;
+                                }
+                              }}
+                            />
+                          </a>
+
+                          {/* Image Slider: Previous Photo Button */}
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleCompareProperty(prop);
-                            }}
-                            className={`px-1.5 py-1 rounded-md text-[10px] font-bold border cursor-pointer ${compareIds.includes(prop.id)
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                                : 'bg-white border-zinc-200 text-zinc-600 hover:bg-purple-50'
-                              }`}
-                            title={compareIds.includes(prop.id) ? 'In Compare' : 'Add to Compare'}
+                            onClick={handlePrevPhoto}
+                            className="absolute left-1.5 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-zinc-950/75 hover:bg-zinc-950 text-white flex items-center justify-center backdrop-blur-xs transition-all shadow-md cursor-pointer hover:scale-110 active:scale-95 opacity-80 group-hover/slider:opacity-100"
+                            title="Previous photo"
+                            aria-label="Previous photo"
                           >
-                            <Scales size={11} weight="bold" />
+                            <CaretLeft size={16} weight="bold" />
                           </button>
+
+                          {/* Image Slider: Next Photo Button */}
+                          <button
+                            type="button"
+                            onClick={handleNextPhoto}
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-zinc-950/75 hover:bg-zinc-950 text-white flex items-center justify-center backdrop-blur-xs transition-all shadow-md cursor-pointer hover:scale-110 active:scale-95 opacity-80 group-hover/slider:opacity-100"
+                            title="Next photo"
+                            aria-label="Next photo"
+                          >
+                            <CaretRight size={16} weight="bold" />
+                          </button>
+
+                          {/* Top Bar Overlay: Full-width responsive flex container preventing badge collision */}
+                          <div className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
+                            <div className="flex items-center gap-1.5 min-w-0 shrink">
+                              {isHidden && (
+                                <span className="px-2 py-0.5 rounded-lg bg-amber-500 text-zinc-950 font-black text-[10px] shadow-md flex items-center gap-1 shrink-0">
+                                  <EyeSlash size={10} weight="bold" />
+                                  <span>Hidden</span>
+                                </span>
+                              )}
+                              <span className="px-2.5 py-1 rounded-lg bg-zinc-950/85 text-white font-extrabold text-xs shadow-md backdrop-blur-xs shrink-0 whitespace-nowrap">
+                                R {formatPrice(prop.price)} <span className="text-[10px] text-zinc-400 font-normal">/mo</span>
+                              </span>
+                              {marketVal && (
+                                <span
+                                  className={`px-2 py-0.5 rounded-lg text-[10px] font-black shadow-sm backdrop-blur-xs flex items-center gap-0.5 shrink-0 whitespace-nowrap ${marketVal.isUnderpriced
+                                    ? 'bg-emerald-950/90 text-emerald-400 border border-emerald-500/40'
+                                    : marketVal.isOverpriced
+                                      ? 'bg-rose-950/90 text-rose-400 border border-rose-500/40'
+                                      : 'bg-zinc-900/90 text-zinc-300 border border-zinc-700/50'
+                                    }`}
+                                  title={marketVal.badgeTooltip}
+                                >
+                                  <span>{marketVal.badgeText}</span>
+                                </span>
+                              )}
+                              {enableFitScore && prop.fit_score && (
+                                <span className={`px-2 py-0.5 rounded-lg bg-zinc-950/85 font-black text-[10px] shadow-sm backdrop-blur-xs flex items-center gap-1 shrink-0 whitespace-nowrap ${prop.is_outside_radius
+                                  ? 'text-amber-400 border border-amber-500/30'
+                                  : 'text-emerald-400'
+                                  }`}>
+                                  <span>{prop.fit_score}% Fit</span>
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
+                              {/* Heart Toggle Button */}
+                              <button
+                                type="button"
+                                onClick={(e) => toggleFavouriteProperty(prop, e)}
+                                className={`p-1.5 rounded-lg backdrop-blur-md border shadow-md transition-all cursor-pointer hover:scale-105 active:scale-95 ${prop.is_favorite
+                                  ? 'bg-rose-500 text-white border-rose-400 hover:bg-rose-600 font-black'
+                                  : 'bg-zinc-950/80 hover:bg-zinc-950 text-zinc-300 hover:text-rose-400 border-white/20 hover:border-rose-400/40'
+                                  }`}
+                                title={prop.is_favorite ? "Remove from favourites" : "Add to favourites (or import from P24)"}
+                                aria-label={prop.is_favorite ? "Remove from favourites" : "Add to favourites"}
+                              >
+                                <Heart size={13} weight={prop.is_favorite ? "fill" : "bold"} className={prop.is_favorite ? "text-white" : "text-zinc-200"} />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => toggleHideProperty(prop.id, e)}
+                                className={`p-1.5 rounded-lg backdrop-blur-md border shadow-md transition-all cursor-pointer hover:scale-105 active:scale-95 ${isHidden
+                                  ? 'bg-amber-500 text-zinc-950 border-amber-400 hover:bg-amber-400 font-black'
+                                  : 'bg-zinc-950/80 hover:bg-zinc-950 text-zinc-300 hover:text-white border-white/20 hover:border-white/40'
+                                  }`}
+                                title={isHidden ? "Unhide this listing (restore to active feed)" : "Hide listing (dismiss from feed & map)"}
+                                aria-label={isHidden ? "Unhide listing" : "Hide listing"}
+                              >
+                                {isHidden ? <Eye size={13} weight="bold" /> : <EyeSlash size={13} weight="bold" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Bottom-Center: Photo Counter Pill */}
+                          {photosList.length > 1 && (
+                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 px-2 py-0.5 rounded-full bg-zinc-950/80 backdrop-blur-xs text-[10px] font-bold text-white tracking-wider flex items-center gap-1 shadow-xs pointer-events-none">
+                              <span>{activePhotoIdx + 1}</span>
+                              <span className="text-zinc-400">/</span>
+                              <span>{photosList.length}</span>
+                            </div>
+                          )}
+
+                          {/* Bottom-Left: Critical Agency Warning only (keeps photo clean; feature chips below display full acoustic/privacy status) */}
+                          {agencyRep.isPoorAgency && agencyRep.shortFlag && (
+                            <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
+                              <div
+                                className="px-2 py-0.5 rounded-md text-[9.5px] font-black flex items-center gap-1 backdrop-blur-xs shadow-md bg-rose-950/95 text-rose-200 border border-rose-500/70"
+                                title={agencyRep.tooltipReason}
+                              >
+                                <WarningCircle size={11} weight="fill" className="text-rose-400 shrink-0" />
+                                <span>{agencyRep.shortFlag}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          <a
+                            href={p24Href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => openProperty24Url(e, p24Href)}
+                            title="Open original listing on Property24"
+                            className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-zinc-950/90 hover:bg-indigo-600 text-white text-[10px] font-extrabold flex items-center gap-1 backdrop-blur-xs shadow-sm transition-colors z-20 cursor-pointer"
+                          >
+                            <span>Property24</span>
+                            <ArrowSquareOut size={11} weight="bold" />
+                          </a>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Title & Address */}
+                    <h3 className="font-extrabold text-xs text-zinc-950 line-clamp-1 mb-0.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setSelectedPropertyId(prop.id);
+                          setFocusTarget({ lat: prop.lat, lng: prop.lng, zoom: 16.8, timestamp: Date.now() });
+                        }}
+                        className="text-left hover:text-indigo-600 hover:underline transition-colors cursor-pointer"
+                        title="Show and center this listing on the map"
+                      >
+                        {prop.title}
+                      </button>
+                    </h3>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <p className="text-[11px] text-zinc-500 font-medium truncate">
+                        {prop.address}
+                      </p>
+                      {isMissingAddressListing(prop) && editingAddressPropId !== prop.id && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingAddressPropId(prop.id);
+                            setManualAddressInput('');
+                            setManualAddressError(null);
+                          }}
+                          className="shrink-0 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold transition-colors cursor-pointer"
+                          title="Know the street address? Submit it to save for everyone"
+                        >
+                          + Add Address
+                        </button>
+                      )}
+                    </div>
+                    {isMissingAddressListing(prop) && editingAddressPropId === prop.id && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="mb-2.5 p-2 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-1.5"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={manualAddressInput}
+                            onChange={(e) => setManualAddressInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSubmitManualAddress(prop);
+                              if (e.key === 'Escape') setEditingAddressPropId(null);
+                            }}
+                            placeholder={`e.g. 14 Derwent Rd, ${(prop as any).suburb || 'Gardens'}`}
+                            className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-white border border-indigo-200 text-[11px] text-zinc-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            disabled={isSubmittingAddress}
+                            onClick={() => handleSubmitManualAddress(prop)}
+                            className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[10px] font-bold cursor-pointer"
+                          >
+                            {isSubmittingAddress ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAddressPropId(null);
+                              setManualAddressError(null);
+                            }}
+                            className="px-2 py-1 rounded-lg bg-white hover:bg-zinc-100 text-zinc-600 border border-zinc-200 text-[10px] font-bold cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {manualAddressError && (
+                          <p className="text-[10px] text-rose-600 font-semibold">{manualAddressError}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Primary Spec Chips: Beds, Baths, Sqm */}
+                    <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-600 mb-1.5">
+                      <span className="bg-zinc-100 px-2 py-0.5 rounded-md">
+                        🛏️ {prop.bedrooms} Bed{prop.bedrooms > 1 ? 's' : ''}
+                      </span>
+                      <span className="bg-zinc-100 px-2 py-0.5 rounded-md">
+                        🚿 {prop.bathrooms} Bath
+                      </span>
+                      {prop.sqm && (
+                        <span className="bg-zinc-100 px-2 py-0.5 rounded-md">
+                          📐 {prop.sqm} m²
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Visual Feature Gauges: Poor Agency Flag, Dwelling Privacy Badge, Stove, Garage, Pets, Inverter, Fibre */}
+                    <div className="flex items-center flex-wrap gap-1 mb-2.5">
+                      {marketVal && (
+                        <span
+                          className={`border px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs ${marketVal.isUnderpriced
+                            ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                            : marketVal.isOverpriced
+                              ? 'bg-rose-50 text-rose-950 border-rose-300'
+                              : 'bg-zinc-100 text-zinc-800 border-zinc-300'
+                            }`}
+                          title={marketVal.badgeTooltip}
+                        >
+                          <span>{marketVal.isUnderpriced ? '📉' : marketVal.isOverpriced ? '📈' : '⚖️'}</span>
+                          <span>{marketVal.badgeText}</span>
+                        </span>
+                      )}
+                      {prop.is_favorite && (
+                        <span
+                          className="bg-rose-50 text-rose-700 border border-rose-200/90 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs"
+                          title="Saved in your Property24 favourites"
+                        >
+                          <Heart size={11} weight="fill" className="text-rose-600 shrink-0" />
+                          <span>P24 Favourite</span>
+                        </span>
+                      )}
+                      {agencyRep.isPoorAgency && agencyRep.badgeLabel && (
+                        <span
+                          className="bg-rose-600 text-white border border-rose-700 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-xs"
+                          title={agencyRep.tooltipReason}
+                        >
+                          <WarningCircle size={11} weight="fill" className="text-white shrink-0" />
+                          <span>{agencyRep.badgeLabel}</span>
+                        </span>
+                      )}
+                      {barNoiseInfo.isExposed && barNoiseInfo.shortFlag && (
+                        <span
+                          className="bg-rose-50 text-rose-950 border border-rose-300 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs"
+                          title={barNoiseInfo.tooltipReason}
+                        >
+                          <SpeakerHigh size={11} weight="fill" className="text-rose-600 shrink-0" />
+                          <span>{barNoiseInfo.shortFlag}</span>
+                        </span>
+                      )}
+                      {busyRoadInfo.isNearBusyRoad && busyRoadInfo.shortFlag && (
+                        <span
+                          className="bg-amber-50 text-amber-950 border border-amber-300 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs"
+                          title={busyRoadInfo.tooltipReason}
+                        >
+                          <Car size={11} weight="fill" className="text-amber-700 shrink-0" />
+                          <span>{busyRoadInfo.shortFlag}</span>
+                        </span>
+                      )}
+                      {crimePerimeter.isNearHighRisk && crimePerimeter.shortFlag && (
+                        <span
+                          className={`border px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs ${crimePerimeter.hasEstateSecurity
+                            ? 'bg-slate-50 text-slate-800 border-slate-300'
+                            : 'bg-amber-50 text-amber-950 border-amber-300'
+                            }`}
+                          title={crimePerimeter.tooltipReason}
+                        >
+                          <ShieldWarning
+                            size={11}
+                            weight="fill"
+                            className={crimePerimeter.hasEstateSecurity ? 'text-emerald-600 shrink-0' : 'text-amber-600 shrink-0'}
+                          />
+                          <span>{crimePerimeter.shortFlag}</span>
+                        </span>
+                      )}
+                      {privacyInfo.badgeLabel && (
+                        <span
+                          className={`border px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs ${privacyInfo.isExplicitLandlord
+                            ? 'bg-rose-50 text-rose-950 border-rose-300'
+                            : 'bg-amber-50 text-amber-950 border-amber-300'
+                            }`}
+                          title={privacyInfo.isExplicitLandlord ? "Landlord / Owner lives on property" : "Garden cottage / flatlet on shared property"}
+                        >
+                          {privacyInfo.isExplicitLandlord ? (
+                            <>
+                              <WarningCircle size={11} weight="fill" className="text-rose-600 shrink-0" />
+                              <span>{privacyInfo.badgeLabel.replace(/^⚠️\s*/, '')}</span>
+                            </>
+                          ) : (
+                            <span>{privacyInfo.badgeLabel}</span>
+                          )}
+                        </span>
+                      )}
+                      {/* Listing Date / Stale Listing Badge */}
+                      {(() => {
+                        const firstSeen = (prop as any).first_seen_at;
+                        const availFrom = (prop as any).available_from;
+                        const nodes: React.ReactNode[] = [];
+                        if (firstSeen && typeof firstSeen === 'number') {
+                          const days = Math.max(0, Math.floor((Date.now() / 1000 - firstSeen) / 86400));
+                          const dateStr = new Date(firstSeen * 1000).toLocaleDateString('en-ZA', {
+                            day: 'numeric',
+                            month: 'short',
+                          });
+                          if (days >= 21) {
+                            nodes.push(
+                              <span
+                                key="listed-stale"
+                                className="border border-amber-300 bg-amber-50 text-amber-950 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs"
+                                title={`First seen ${dateStr} (${days} days ago) — still unrented`}
+                              >
+                                <span>⏳</span>
+                                <span>Listed {dateStr} ({days}d+ Stale)</span>
+                              </span>
+                            );
+                          } else {
+                            nodes.push(
+                              <span
+                                key="listed-date"
+                                className="bg-zinc-100 text-zinc-700 border border-zinc-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
+                                title={`First seen on HomeSeek: ${dateStr}${days > 0 ? ` (${days}d ago)` : ' (today)'} — Property24 does not publish upload dates`}
+                              >
+                                <span>📅</span>
+                                <span>Seen {dateStr}{days > 0 ? ` · ${days}d` : ''}</span>
+                              </span>
+                            );
+                          }
+                        }
+                        if (availFrom) {
+                          nodes.push(
+                            <span
+                              key="avail-from"
+                              className="bg-sky-50 text-sky-900 border border-sky-200/80 px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1"
+                              title={`Available from ${availFrom}`}
+                            >
+                              <span>🗓️</span>
+                              <span>Avail {availFrom}</span>
+                            </span>
+                          );
+                        }
+                        return nodes.length > 0 ? <>{nodes}</> : null;
+                      })()}
+                      {/* Stove Badge */}
+                      {prop.stove_type === 'gas' ? (
+                        <span
+                          className="bg-amber-50 text-amber-900 border border-amber-300/80 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 shadow-2xs"
+                          title="Gas Hob / Cooker (No load-shedding disruption)"
+                        >
+                          <span>🔥 Gas Hob</span>
+                        </span>
+                      ) : prop.stove_type === 'induction' ? (
+                        <span
+                          className="bg-cyan-50 text-cyan-900 border border-cyan-300/80 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 shadow-2xs"
+                          title="Modern induction cooktop"
+                        >
+                          <span>🌀 Induction</span>
+                        </span>
+                      ) : (
+                        <span
+                          className="bg-zinc-100 text-zinc-700 border border-zinc-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
+                          title="Electric stove / hob"
+                        >
+                          <span>⚡ Electric</span>
+                        </span>
+                      )}
+
+                      {/* Parking Badges (Garage and/or Off-Street Bay) */}
+                      {prop.has_garage && (
+                        <span
+                          className="bg-emerald-50 text-emerald-900 border border-emerald-300/80 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 shadow-2xs"
+                          title="Lock-up / automated private garage"
+                        >
+                          <span>🚗 Garage</span>
+                        </span>
+                      )}
+                      {(prop.has_secure_bay || (!prop.has_garage && prop.parking_type === 'secure_bay')) && (
+                        <span
+                          className="bg-zinc-100 text-zinc-700 border border-zinc-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
+                          title="Allocated secure parking bay / off-street parking"
+                        >
+                          <span>🅿️ Off-Street Bay</span>
+                        </span>
+                      )}
+                      {!prop.has_garage && !prop.has_secure_bay && prop.parking_type !== 'secure_bay' && prop.parking_type !== 'garage' && (
+                        <span
+                          className="bg-zinc-100 text-zinc-500 border border-zinc-200/80 px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1"
+                          title="Street parking / unassigned"
+                        >
+                          <span>🚗 Street Pkg</span>
+                        </span>
+                      )}
+
+                      {/* Pet Friendly Badge */}
+                      {prop.pet_friendly && (
+                        <span
+                          className="bg-indigo-50 text-indigo-900 border border-indigo-300/80 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 shadow-2xs"
+                          title="Verified pet-friendly lease"
+                        >
+                          <span>🐾 Pet Friendly</span>
+                        </span>
+                      )}
+
+                      {/* Inverter / Solar Badge */}
+                      {prop.has_inverter && (
+                        <span
+                          className="bg-teal-50 text-teal-900 border border-teal-300/80 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 shadow-2xs"
+                          title="Inverter / solar battery backup power"
+                        >
+                          <span>🔋 Inverter</span>
+                        </span>
+                      )}
+
+                      {/* Fibre Internet Badge */}
+                      {prop.fibre_ready && (
+                        <span
+                          className="bg-purple-50 text-purple-900 border border-purple-300/80 px-2 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
+                          title="High-speed fibre ready connection"
+                        >
+                          <span>🌐 Fibre</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Deterministic Match Deduction */}
+                    {enableFitScore && prop.ai_insight && (
+                      <div className={`mb-2 px-2.5 py-1.5 rounded-xl border flex items-start gap-1.5 text-[10.5px] font-semibold leading-snug ${agencyRep.isPoorAgency
+                        ? 'bg-rose-50/95 border-rose-300 text-rose-950'
+                        : barNoiseInfo.isExposed
+                          ? 'bg-rose-50/85 border-rose-200 text-rose-950'
+                          : busyRoadInfo.isNearBusyRoad
+                            ? 'bg-amber-50/90 border-amber-300 text-amber-950'
+                            : (isLandlordOnSite || privacyInfo.isPossibleSharedProperty)
+                              ? 'bg-amber-50/90 border-amber-300/80 text-amber-950'
+                              : 'bg-zinc-50 border-zinc-200/90 text-zinc-700'
+                        }`}
+                        title={
+                          agencyRep.isPoorAgency
+                            ? agencyRep.tooltipReason
+                            : barNoiseInfo.isExposed
+                              ? barNoiseInfo.tooltipReason
+                              : busyRoadInfo.isNearBusyRoad
+                                ? busyRoadInfo.tooltipReason
+                                : undefined
+                        }
+                      >
+                        {agencyRep.isPoorAgency ? (
+                          <WarningCircle size={13} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
+                        ) : barNoiseInfo.isExposed ? (
+                          <SpeakerHigh size={13} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
+                        ) : busyRoadInfo.isNearBusyRoad ? (
+                          <Car size={13} weight="fill" className="text-amber-600 shrink-0 mt-0.5" />
+                        ) : (isLandlordOnSite || privacyInfo.isPossibleSharedProperty) ? (
+                          <WarningCircle size={13} weight="fill" className="text-amber-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <ShieldCheck size={12} weight="bold" className="text-zinc-600 shrink-0 mt-0.5" />
+                        )}
+                        <span className="line-clamp-3 leading-snug break-words flex-1 min-w-0">{prop.ai_insight}</span>
+                        {privacyInfo.isPossibleSharedProperty && (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleTogglePropertyAiReport(prop);
                             }}
-                            className="px-2 py-1 rounded-md bg-purple-700 hover:bg-purple-800 text-white text-[10px] font-black flex items-center gap-0.5 cursor-pointer"
-                            title="AI Forensic Analysis"
+                            className="ml-1 shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/90 hover:bg-purple-50 border border-amber-300/90 hover:border-purple-300 text-[9.5px] font-bold text-purple-800 transition-colors cursor-pointer whitespace-nowrap"
+                            title="Run AI photo & copy inspection to check for shared driveway or attached main house"
                           >
-                            <Sparkle size={10} weight="fill" className="text-amber-300" />
-                            <span>AI</span>
+                            <Sparkle size={10} weight="fill" className="text-purple-600 shrink-0" />
+                            <span>Analyze with AI</span>
                           </button>
-                          <a
-                            href={resolveProperty24Url(prop)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => openProperty24Url(e, resolveProperty24Url(prop))}
-                            className="px-1.5 py-1 rounded-md bg-zinc-900 hover:bg-indigo-600 text-white text-[10px] font-black cursor-pointer"
-                            title="Open on Property24"
-                          >
-                            P24
-                          </a>
-                        </div>
-                      </div>
-
-                      <p className="text-[11px] font-bold text-zinc-800 truncate mt-0.5">
-                        {prop.title}
-                      </p>
-                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 mt-0.5 truncate">
-                        <span className="truncate">{shortAddr}</span>
-                        <span>·</span>
-                        <span className="shrink-0">{prop.bedrooms}bd{prop.sqm ? ` · ${prop.sqm}m²` : ''}</span>
-                        {marketVal && (
-                          <span
-                            className={`shrink-0 font-bold ${marketVal.isUnderpriced
-                                ? 'text-emerald-700'
-                                : marketVal.isOverpriced
-                                  ? 'text-rose-700'
-                                  : 'text-zinc-500'
-                              }`}
-                          >
-                            · {marketVal.isUnderpriced ? `-${Math.abs(marketVal.pctDiff)}%` : marketVal.isOverpriced ? `+${Math.abs(marketVal.pctDiff)}%` : 'Fair'}
-                          </span>
-                        )}
-                        {crimePerimeter.isNearHighRisk && !crimePerimeter.hasEstateSecurity && (
-                          <span className="shrink-0 font-bold text-amber-700" title={crimePerimeter.tooltipReason}>
-                            · ⚠️ {crimePerimeter.distanceKm}km
-                          </span>
                         )}
                       </div>
-                    </div>
-                  </div>
-                );
-              }
+                    )}
 
-              return (
-                <div
-                  key={prop.id}
-                  id={`property-card-${prop.id}`}
-                  onClick={() => {
-                    setSelectedPropertyId(prop.id);
-                    setFocusTarget({ lat: prop.lat, lng: prop.lng, zoom: 16.8, timestamp: Date.now() });
-                  }}
-                  title="Click to focus and zoom in on this property on the map"
-                  className={`pt-3.5 first:pt-0 rounded-2xl p-2.5 transition-all cursor-pointer border ${isSelected
-                    ? 'bg-purple-50/85 border-purple-500 ring-2 ring-purple-500/40 shadow-xl'
-                    : isHidden
-                      ? 'bg-amber-50/30 border-dashed border-amber-300 opacity-75 hover:opacity-100'
-                      : isHoveredOnMap
-                        ? 'bg-purple-50/40 border-purple-300 ring-1 ring-purple-400/30 shadow-md'
-                        : 'hover:bg-zinc-50/80 border-transparent hover:border-zinc-200'
-                    }`}
-                >
-                  {/* Highlighted on Map Banner */}
-                  {isSelected && (
-                    <div className="mb-2.5 flex items-center justify-between px-3 py-1.5 rounded-xl bg-purple-700 text-white text-[11px] font-extrabold shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
-                      <span className="flex items-center gap-1.5">
-                        <MapPin size={13} weight="fill" className="text-amber-300" />
-                        <span>Selected on Map</span>
-                      </span>
-                      <span className="text-[10px] text-purple-200 font-semibold">
-                        Top Fit #{prop.rank || ''}
-                      </span>
-                    </div>
-                  )}
-                  {/* Photo Gallery & RealView™ Rectifier (Wide-Angle to Normal Eye Perspective Converter) */}
-                  {(() => {
-                    const photosList: string[] = (prop.images && prop.images.length > 0)
-                      ? prop.images
-                      : (cardGalleries[prop.id] && cardGalleries[prop.id].length > 0)
-                        ? cardGalleries[prop.id]
-                        : [prop.image].filter(Boolean);
-
-                    const activePhotoIdx = cardImageIndices[prop.id] || 0;
-                    const activeRawPhoto = photosList[activePhotoIdx] || prop.image;
-                    const convertedPhotoUrl = getRectifiedUrl(activeRawPhoto);
-
-                    const handlePrevPhoto = (e: React.MouseEvent) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      if (photosList.length <= 1 && prop.url && !cardGalleries[prop.id]) {
-                        fetchCardGallery(prop.id, prop.url);
-                      }
-                      setCardImageIndices((prev) => {
-                        const cur = prev[prop.id] || 0;
-                        return { ...prev, [prop.id]: cur > 0 ? cur - 1 : Math.max(0, photosList.length - 1) };
-                      });
-                    };
-
-                    const handleNextPhoto = (e: React.MouseEvent) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      if (photosList.length <= 1 && prop.url && !cardGalleries[prop.id]) {
-                        fetchCardGallery(prop.id, prop.url);
-                      }
-                      setCardImageIndices((prev) => {
-                        const cur = prev[prop.id] || 0;
-                        return { ...prev, [prop.id]: cur < photosList.length - 1 ? cur + 1 : 0 };
-                      });
-                    };
-
-                    const p24Href = resolveProperty24Url(prop);
-
-                    return (
-                      <div className="relative w-full h-44 rounded-xl overflow-hidden bg-zinc-950 shadow-xs mb-2.5 group/slider select-none">
-                        {/* Main Converted Photo (Wide Angle -> Human Eye Normal Perspective via RealView™) */}
-                        <a
-                          href={p24Href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => openProperty24Url(e, p24Href)}
-                          title="Open original listing on Property24 (new tab)"
-                          className="block w-full h-full cursor-pointer"
-                        >
-                          <img
-                            src={convertedPhotoUrl}
-                            alt={`${prop.title} - Photo ${activePhotoIdx + 1}`}
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover group-hover/slider:scale-102 transition-transform duration-300"
-                            loading="lazy"
-                            onError={(e) => {
-                              // If rectifier fails, fall back gracefully to original raw photo
-                              if (e.currentTarget.src !== activeRawPhoto) {
-                                e.currentTarget.src = activeRawPhoto;
-                              }
-                            }}
-                          />
-                        </a>
-
-                        {/* Image Slider: Previous Photo Button */}
-                        <button
-                          type="button"
-                          onClick={handlePrevPhoto}
-                          className="absolute left-1.5 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-zinc-950/75 hover:bg-zinc-950 text-white flex items-center justify-center backdrop-blur-xs transition-all shadow-md cursor-pointer hover:scale-110 active:scale-95 opacity-80 group-hover/slider:opacity-100"
-                          title="Previous photo"
-                          aria-label="Previous photo"
-                        >
-                          <CaretLeft size={16} weight="bold" />
-                        </button>
-
-                        {/* Image Slider: Next Photo Button */}
-                        <button
-                          type="button"
-                          onClick={handleNextPhoto}
-                          className="absolute right-1.5 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-zinc-950/75 hover:bg-zinc-950 text-white flex items-center justify-center backdrop-blur-xs transition-all shadow-md cursor-pointer hover:scale-110 active:scale-95 opacity-80 group-hover/slider:opacity-100"
-                          title="Next photo"
-                          aria-label="Next photo"
-                        >
-                          <CaretRight size={16} weight="bold" />
-                        </button>
-
-                        {/* Top Bar Overlay: Full-width responsive flex container preventing badge collision */}
-                        <div className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
-                          <div className="flex items-center gap-1.5 min-w-0 shrink">
-                            {isHidden && (
-                              <span className="px-2 py-0.5 rounded-lg bg-amber-500 text-zinc-950 font-black text-[10px] shadow-md flex items-center gap-1 shrink-0">
-                                <EyeSlash size={10} weight="bold" />
-                                <span>Hidden</span>
-                              </span>
-                            )}
-                            <span className="px-2.5 py-1 rounded-lg bg-zinc-950/85 text-white font-extrabold text-xs shadow-md backdrop-blur-xs shrink-0 whitespace-nowrap">
-                              R {formatPrice(prop.price)} <span className="text-[10px] text-zinc-400 font-normal">/mo</span>
-                            </span>
-                            {marketVal && (
-                              <span
-                                className={`px-2 py-0.5 rounded-lg text-[10px] font-black shadow-sm backdrop-blur-xs flex items-center gap-0.5 shrink-0 whitespace-nowrap ${marketVal.isUnderpriced
-                                  ? 'bg-emerald-950/90 text-emerald-400 border border-emerald-500/40'
-                                  : marketVal.isOverpriced
-                                    ? 'bg-rose-950/90 text-rose-400 border border-rose-500/40'
-                                    : 'bg-zinc-900/90 text-zinc-300 border border-zinc-700/50'
-                                  }`}
-                                title={marketVal.badgeTooltip}
-                              >
-                                <span>{marketVal.badgeText}</span>
-                              </span>
-                            )}
-                            {enableFitScore && prop.fit_score && (
-                              <span className={`px-2 py-0.5 rounded-lg bg-zinc-950/85 font-black text-[10px] shadow-sm backdrop-blur-xs flex items-center gap-1 shrink-0 whitespace-nowrap ${prop.is_outside_radius
-                                ? 'text-amber-400 border border-amber-500/30'
-                                : 'text-emerald-400'
-                                }`}>
-                                <span>{prop.fit_score}% Fit</span>
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
-                            {/* Heart Toggle Button */}
-                            <button
-                              type="button"
-                              onClick={(e) => toggleFavouriteProperty(prop, e)}
-                              className={`p-1.5 rounded-lg backdrop-blur-md border shadow-md transition-all cursor-pointer hover:scale-105 active:scale-95 ${prop.is_favorite
-                                ? 'bg-rose-500 text-white border-rose-400 hover:bg-rose-600 font-black'
-                                : 'bg-zinc-950/80 hover:bg-zinc-950 text-zinc-300 hover:text-rose-400 border-white/20 hover:border-rose-400/40'
-                                }`}
-                              title={prop.is_favorite ? "Remove from favourites" : "Add to favourites (or import from P24)"}
-                              aria-label={prop.is_favorite ? "Remove from favourites" : "Add to favourites"}
-                            >
-                              <Heart size={13} weight={prop.is_favorite ? "fill" : "bold"} className={prop.is_favorite ? "text-white" : "text-zinc-200"} />
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={(e) => toggleHideProperty(prop.id, e)}
-                              className={`p-1.5 rounded-lg backdrop-blur-md border shadow-md transition-all cursor-pointer hover:scale-105 active:scale-95 ${isHidden
-                                ? 'bg-amber-500 text-zinc-950 border-amber-400 hover:bg-amber-400 font-black'
-                                : 'bg-zinc-950/80 hover:bg-zinc-950 text-zinc-300 hover:text-white border-white/20 hover:border-white/40'
-                                }`}
-                              title={isHidden ? "Unhide this listing (restore to active feed)" : "Hide listing (dismiss from feed & map)"}
-                              aria-label={isHidden ? "Unhide listing" : "Hide listing"}
-                            >
-                              {isHidden ? <Eye size={13} weight="bold" /> : <EyeSlash size={13} weight="bold" />}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Bottom-Center: Photo Counter Pill */}
-                        {photosList.length > 1 && (
-                          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 px-2 py-0.5 rounded-full bg-zinc-950/80 backdrop-blur-xs text-[10px] font-bold text-white tracking-wider flex items-center gap-1 shadow-xs pointer-events-none">
-                            <span>{activePhotoIdx + 1}</span>
-                            <span className="text-zinc-400">/</span>
-                            <span>{photosList.length}</span>
-                          </div>
-                        )}
-
-                        {/* Bottom-Left: Critical Agency Warning only (keeps photo clean; feature chips below display full acoustic/privacy status) */}
-                        {agencyRep.isPoorAgency && agencyRep.shortFlag && (
-                          <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
-                            <div
-                              className="px-2 py-0.5 rounded-md text-[9.5px] font-black flex items-center gap-1 backdrop-blur-xs shadow-md bg-rose-950/95 text-rose-200 border border-rose-500/70"
-                              title={agencyRep.tooltipReason}
-                            >
-                              <WarningCircle size={11} weight="fill" className="text-rose-400 shrink-0" />
-                              <span>{agencyRep.shortFlag}</span>
-                            </div>
-                          </div>
-                        )}
-
-                        <a
-                          href={p24Href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => openProperty24Url(e, p24Href)}
-                          title="Open original listing on Property24"
-                          className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-zinc-950/90 hover:bg-indigo-600 text-white text-[10px] font-extrabold flex items-center gap-1 backdrop-blur-xs shadow-sm transition-colors z-20 cursor-pointer"
-                        >
-                          <span>Property24</span>
-                          <ArrowSquareOut size={11} weight="bold" />
-                        </a>
+                    {/* Trailhead / Desirable Location Proximity Pill */}
+                    {activeAnchor && distToAnchor !== null && (
+                      <div className="flex items-center justify-between text-[11px] p-2 rounded-xl bg-zinc-100/90 border border-zinc-200/80 mb-1.5">
+                        <span className="font-semibold text-zinc-700 flex items-center gap-1.5 truncate max-w-[210px]">
+                          {activeAnchor.iconType === 'gym' ? (
+                            <Dumbbell size={13} className="text-amber-600 shrink-0" />
+                          ) : activeAnchor.iconType === 'trail' ? (
+                            <Tree size={13} weight="fill" className="text-emerald-600 shrink-0" />
+                          ) : activeAnchor.iconType === 'surf' || activeAnchor.iconType === 'beach' ? (
+                            <Waves size={13} weight="fill" className="text-cyan-600 shrink-0" />
+                          ) : activeAnchor.iconType === 'cafe' ? (
+                            <Coffee size={13} weight="fill" className="text-amber-600 shrink-0" />
+                          ) : (
+                            <Compass size={13} weight="bold" className="text-indigo-600 shrink-0" />
+                          )}
+                          <span className="truncate">{activeAnchor.label}</span>
+                        </span>
+                        <span className="font-black text-indigo-700 shrink-0">
+                          {distToAnchor} km · ~{commuteDurMins}m {commuteModeLabel}
+                        </span>
                       </div>
-                    );
-                  })()}
+                    )}
 
-                  {/* Title & Address */}
-                  <h3 className="font-extrabold text-xs text-zinc-950 line-clamp-1 mb-0.5">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        setSelectedPropertyId(prop.id);
-                        setFocusTarget({ lat: prop.lat, lng: prop.lng, zoom: 16.8, timestamp: Date.now() });
-                      }}
-                      className="text-left hover:text-indigo-600 hover:underline transition-colors cursor-pointer"
-                      title="Show and center this listing on the map"
-                    >
-                      {prop.title}
-                    </button>
-                  </h3>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <p className="text-[11px] text-zinc-500 font-medium truncate">
-                      {prop.address}
-                    </p>
-                    {isMissingAddressListing(prop) && editingAddressPropId !== prop.id && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingAddressPropId(prop.id);
-                          setManualAddressInput('');
-                          setManualAddressError(null);
-                        }}
-                        className="shrink-0 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold transition-colors cursor-pointer"
-                        title="Know the street address? Submit it to save for everyone"
-                      >
-                        + Add Address
-                      </button>
-                    )}
-                  </div>
-                  {isMissingAddressListing(prop) && editingAddressPropId === prop.id && (
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      className="mb-2.5 p-2 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-1.5"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="text"
-                          value={manualAddressInput}
-                          onChange={(e) => setManualAddressInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSubmitManualAddress(prop);
-                            if (e.key === 'Escape') setEditingAddressPropId(null);
-                          }}
-                          placeholder={`e.g. 14 Derwent Rd, ${(prop as any).suburb || 'Gardens'}`}
-                          className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-white border border-indigo-200 text-[11px] text-zinc-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          autoFocus
-                        />
-                        <button
-                          type="button"
-                          disabled={isSubmittingAddress}
-                          onClick={() => handleSubmitManualAddress(prop)}
-                          className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[10px] font-bold cursor-pointer"
-                        >
-                          {isSubmittingAddress ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingAddressPropId(null);
-                            setManualAddressError(null);
-                          }}
-                          className="px-2 py-1 rounded-lg bg-white hover:bg-zinc-100 text-zinc-600 border border-zinc-200 text-[10px] font-bold cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                      {manualAddressError && (
-                        <p className="text-[10px] text-rose-600 font-semibold">{manualAddressError}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Primary Spec Chips: Beds, Baths, Sqm */}
-                  <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-600 mb-1.5">
-                    <span className="bg-zinc-100 px-2 py-0.5 rounded-md">
-                      🛏️ {prop.bedrooms} Bed{prop.bedrooms > 1 ? 's' : ''}
-                    </span>
-                    <span className="bg-zinc-100 px-2 py-0.5 rounded-md">
-                      🚿 {prop.bathrooms} Bath
-                    </span>
-                    {prop.sqm && (
-                      <span className="bg-zinc-100 px-2 py-0.5 rounded-md">
-                        📐 {prop.sqm} m²
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Visual Feature Gauges: Poor Agency Flag, Dwelling Privacy Badge, Stove, Garage, Pets, Inverter, Fibre */}
-                  <div className="flex items-center flex-wrap gap-1 mb-2.5">
-                    {marketVal && (
-                      <span
-                        className={`border px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs ${marketVal.isUnderpriced
-                          ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                          : marketVal.isOverpriced
-                            ? 'bg-rose-50 text-rose-950 border-rose-300'
-                            : 'bg-zinc-100 text-zinc-800 border-zinc-300'
-                          }`}
-                        title={marketVal.badgeTooltip}
-                      >
-                        <span>{marketVal.isUnderpriced ? '📉' : marketVal.isOverpriced ? '📈' : '⚖️'}</span>
-                        <span>{marketVal.badgeText}</span>
-                      </span>
-                    )}
-                    {prop.is_favorite && (
-                      <span
-                        className="bg-rose-50 text-rose-700 border border-rose-200/90 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs"
-                        title="Saved in your Property24 favourites"
-                      >
-                        <Heart size={11} weight="fill" className="text-rose-600 shrink-0" />
-                        <span>P24 Favourite</span>
-                      </span>
-                    )}
-                    {agencyRep.isPoorAgency && agencyRep.badgeLabel && (
-                      <span
-                        className="bg-rose-600 text-white border border-rose-700 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-xs"
-                        title={agencyRep.tooltipReason}
-                      >
-                        <WarningCircle size={11} weight="fill" className="text-white shrink-0" />
-                        <span>{agencyRep.badgeLabel}</span>
-                      </span>
-                    )}
-                    {barNoiseInfo.isExposed && barNoiseInfo.shortFlag && (
-                      <span
-                        className="bg-rose-50 text-rose-950 border border-rose-300 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs"
-                        title={barNoiseInfo.tooltipReason}
-                      >
-                        <SpeakerHigh size={11} weight="fill" className="text-rose-600 shrink-0" />
-                        <span>{barNoiseInfo.shortFlag}</span>
-                      </span>
-                    )}
-                    {busyRoadInfo.isNearBusyRoad && busyRoadInfo.shortFlag && (
-                      <span
-                        className="bg-amber-50 text-amber-950 border border-amber-300 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs"
-                        title={busyRoadInfo.tooltipReason}
-                      >
-                        <Car size={11} weight="fill" className="text-amber-700 shrink-0" />
-                        <span>{busyRoadInfo.shortFlag}</span>
-                      </span>
-                    )}
-                    {crimePerimeter.isNearHighRisk && crimePerimeter.shortFlag && (
-                      <span
-                        className={`border px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs ${crimePerimeter.hasEstateSecurity
-                            ? 'bg-slate-50 text-slate-800 border-slate-300'
-                            : 'bg-amber-50 text-amber-950 border-amber-300'
-                          }`}
-                        title={crimePerimeter.tooltipReason}
-                      >
-                        <ShieldWarning
-                          size={11}
-                          weight="fill"
-                          className={crimePerimeter.hasEstateSecurity ? 'text-emerald-600 shrink-0' : 'text-amber-600 shrink-0'}
-                        />
-                        <span>{crimePerimeter.shortFlag}</span>
-                      </span>
-                    )}
-                    {privacyInfo.badgeLabel && (
-                      <span
-                        className={`border px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs ${privacyInfo.isExplicitLandlord
-                          ? 'bg-rose-50 text-rose-950 border-rose-300'
-                          : 'bg-amber-50 text-amber-950 border-amber-300'
-                          }`}
-                        title={privacyInfo.isExplicitLandlord ? "Landlord / Owner lives on property" : "Garden cottage / flatlet on shared property"}
-                      >
-                        {privacyInfo.isExplicitLandlord ? (
-                          <>
-                            <WarningCircle size={11} weight="fill" className="text-rose-600 shrink-0" />
-                            <span>{privacyInfo.badgeLabel.replace(/^⚠️\s*/, '')}</span>
-                          </>
-                        ) : (
-                          <span>{privacyInfo.badgeLabel}</span>
-                        )}
-                      </span>
-                    )}
-                    {/* Listing Date / Stale Listing Badge */}
+                    {/* Gym Proximity Row in Area */}
                     {(() => {
-                      const firstSeen = (prop as any).first_seen_at;
-                      const availFrom = (prop as any).available_from;
-                      const nodes: React.ReactNode[] = [];
-                      if (firstSeen && typeof firstSeen === 'number') {
-                        const days = Math.max(0, Math.floor((Date.now() / 1000 - firstSeen) / 86400));
-                        const dateStr = new Date(firstSeen * 1000).toLocaleDateString('en-ZA', {
-                          day: 'numeric',
-                          month: 'short',
-                        });
-                        if (days >= 21) {
-                          nodes.push(
-                            <span
-                              key="listed-stale"
-                              className="border border-amber-300 bg-amber-50 text-amber-950 px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow-2xs"
-                              title={`First seen ${dateStr} (${days} days ago) — still unrented`}
-                            >
-                              <span>⏳</span>
-                              <span>Listed {dateStr} ({days}d+ Stale)</span>
-                            </span>
-                          );
-                        } else {
-                          nodes.push(
-                            <span
-                              key="listed-date"
-                              className="bg-zinc-100 text-zinc-700 border border-zinc-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
-                              title={`First seen on HomeSeek: ${dateStr}${days > 0 ? ` (${days}d ago)` : ' (today)'}`}
-                            >
-                              <span>📅</span>
-                              <span>Listed {dateStr}{days > 0 ? ` · ${days}d` : ''}</span>
-                            </span>
-                          );
+                      const gymsList = templateGyms.length > 0 ? templateGyms : anchors.filter((a) => a.category === 'gym' || a.iconType === 'gym');
+                      if (gymsList.length === 0) return null;
+                      let closestGym = gymsList[0];
+                      let minD = getDistanceKm(prop.lat, prop.lng, closestGym.lat, closestGym.lng);
+                      for (let i = 1; i < gymsList.length; i++) {
+                        const d = getDistanceKm(prop.lat, prop.lng, gymsList[i].lat, gymsList[i].lng);
+                        if (d < minD) {
+                          minD = d;
+                          closestGym = gymsList[i];
                         }
                       }
-                      if (availFrom) {
-                        nodes.push(
-                          <span
-                            key="avail-from"
-                            className="bg-sky-50 text-sky-900 border border-sky-200/80 px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1"
-                            title={`Available from ${availFrom}`}
-                          >
-                            <span>🗓️</span>
-                            <span>Avail {availFrom}</span>
+                      if (activeAnchor?.id === closestGym.id) return null;
+                      const gymMins = Math.max(2, Math.round((minD / 35.0) * 60));
+                      return (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveAnchorId(closestGym.id);
+                            setFocusTarget({
+                              lat: closestGym.lat,
+                              lng: closestGym.lng,
+                              zoom: 15.2,
+                              timestamp: Date.now()
+                            });
+                          }}
+                          className="flex items-center justify-between text-[11px] p-2 rounded-xl bg-amber-50/80 hover:bg-amber-100/80 border border-amber-200/80 mb-2 transition-colors cursor-pointer group/gym"
+                          title={`Click to set ${closestGym.label} as active focal anchor`}
+                        >
+                          <span className="font-semibold text-zinc-800 flex items-center gap-1.5 truncate max-w-[210px]">
+                            <Dumbbell size={13} className="text-amber-600 shrink-0 group-hover/gym:scale-110 transition-transform" />
+                            <span className="truncate">{closestGym.label}</span>
                           </span>
-                        );
-                      }
-                      return nodes.length > 0 ? <>{nodes}</> : null;
+                          <span className="font-black text-amber-900 shrink-0">
+                            {minD} km · ~{gymMins}m
+                          </span>
+                        </div>
+                      );
                     })()}
-                    {/* Stove Badge */}
-                    {prop.stove_type === 'gas' ? (
-                      <span
-                        className="bg-amber-50 text-amber-900 border border-amber-300/80 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 shadow-2xs"
-                        title="Gas Hob / Cooker (No load-shedding disruption)"
-                      >
-                        <span>🔥 Gas Hob</span>
-                      </span>
-                    ) : prop.stove_type === 'induction' ? (
-                      <span
-                        className="bg-cyan-50 text-cyan-900 border border-cyan-300/80 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 shadow-2xs"
-                        title="Modern induction cooktop"
-                      >
-                        <span>🌀 Induction</span>
-                      </span>
-                    ) : (
-                      <span
-                        className="bg-zinc-100 text-zinc-700 border border-zinc-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
-                        title="Electric stove / hob"
-                      >
-                        <span>⚡ Electric</span>
-                      </span>
-                    )}
 
-                    {/* Parking Badges (Garage and/or Off-Street Bay) */}
-                    {prop.has_garage && (
-                      <span
-                        className="bg-emerald-50 text-emerald-900 border border-emerald-300/80 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 shadow-2xs"
-                        title="Lock-up / automated private garage"
-                      >
-                        <span>🚗 Garage</span>
-                      </span>
-                    )}
-                    {(prop.has_secure_bay || (!prop.has_garage && prop.parking_type === 'secure_bay')) && (
-                      <span
-                        className="bg-zinc-100 text-zinc-700 border border-zinc-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
-                        title="Allocated secure parking bay / off-street parking"
-                      >
-                        <span>🅿️ Off-Street Bay</span>
-                      </span>
-                    )}
-                    {!prop.has_garage && !prop.has_secure_bay && prop.parking_type !== 'secure_bay' && prop.parking_type !== 'garage' && (
-                      <span
-                        className="bg-zinc-100 text-zinc-500 border border-zinc-200/80 px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1"
-                        title="Street parking / unassigned"
-                      >
-                        <span>🚗 Street Pkg</span>
-                      </span>
-                    )}
-
-                    {/* Pet Friendly Badge */}
-                    {prop.pet_friendly && (
-                      <span
-                        className="bg-indigo-50 text-indigo-900 border border-indigo-300/80 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 shadow-2xs"
-                        title="Verified pet-friendly lease"
-                      >
-                        <span>🐾 Pet Friendly</span>
-                      </span>
-                    )}
-
-                    {/* Inverter / Solar Badge */}
-                    {prop.has_inverter && (
-                      <span
-                        className="bg-teal-50 text-teal-900 border border-teal-300/80 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 shadow-2xs"
-                        title="Inverter / solar battery backup power"
-                      >
-                        <span>🔋 Inverter</span>
-                      </span>
-                    )}
-
-                    {/* Fibre Internet Badge */}
-                    {prop.fibre_ready && (
-                      <span
-                        className="bg-purple-50 text-purple-900 border border-purple-300/80 px-2 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
-                        title="High-speed fibre ready connection"
-                      >
-                        <span>🌐 Fibre</span>
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Deterministic Match Deduction */}
-                  {enableFitScore && prop.ai_insight && (
-                    <div className={`mb-2 px-2.5 py-1.5 rounded-xl border flex items-start gap-1.5 text-[10.5px] font-semibold leading-snug ${agencyRep.isPoorAgency
-                      ? 'bg-rose-50/95 border-rose-300 text-rose-950'
-                      : barNoiseInfo.isExposed
-                        ? 'bg-rose-50/85 border-rose-200 text-rose-950'
-                        : busyRoadInfo.isNearBusyRoad
-                          ? 'bg-amber-50/90 border-amber-300 text-amber-950'
-                          : isLandlordOnSite
-                            ? 'bg-amber-50/90 border-amber-300/80 text-amber-950'
-                            : 'bg-zinc-50 border-zinc-200/90 text-zinc-700'
-                      }`}
-                      title={
-                        agencyRep.isPoorAgency
-                          ? agencyRep.tooltipReason
-                          : barNoiseInfo.isExposed
-                            ? barNoiseInfo.tooltipReason
-                            : busyRoadInfo.isNearBusyRoad
-                              ? busyRoadInfo.tooltipReason
-                              : undefined
-                      }
-                    >
-                      {agencyRep.isPoorAgency ? (
-                        <WarningCircle size={13} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
-                      ) : barNoiseInfo.isExposed ? (
-                        <SpeakerHigh size={13} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
-                      ) : busyRoadInfo.isNearBusyRoad ? (
-                        <Car size={13} weight="fill" className="text-amber-600 shrink-0 mt-0.5" />
-                      ) : isLandlordOnSite ? (
-                        <WarningCircle size={13} weight="fill" className="text-amber-600 shrink-0 mt-0.5" />
-                      ) : (
-                        <ShieldCheck size={12} weight="bold" className="text-zinc-600 shrink-0 mt-0.5" />
-                      )}
-                      <span className="line-clamp-3 leading-snug break-words">{prop.ai_insight}</span>
-                    </div>
-                  )}
-
-                  {/* Trailhead / Desirable Location Proximity Pill */}
-                  {activeAnchor && distToAnchor !== null && (
-                    <div className="flex items-center justify-between text-[11px] p-2 rounded-xl bg-zinc-100/90 border border-zinc-200/80 mb-1.5">
-                      <span className="font-semibold text-zinc-700 flex items-center gap-1.5 truncate max-w-[210px]">
-                        {activeAnchor.iconType === 'gym' ? (
-                          <Dumbbell size={13} className="text-amber-600 shrink-0" />
-                        ) : activeAnchor.iconType === 'trail' ? (
-                          <Tree size={13} weight="fill" className="text-emerald-600 shrink-0" />
-                        ) : activeAnchor.iconType === 'surf' || activeAnchor.iconType === 'beach' ? (
-                          <Waves size={13} weight="fill" className="text-cyan-600 shrink-0" />
-                        ) : activeAnchor.iconType === 'cafe' ? (
-                          <Coffee size={13} weight="fill" className="text-amber-600 shrink-0" />
-                        ) : (
-                          <Compass size={13} weight="bold" className="text-indigo-600 shrink-0" />
-                        )}
-                        <span className="truncate">{activeAnchor.label}</span>
-                      </span>
-                      <span className="font-black text-indigo-700 shrink-0">
-                        {distToAnchor} km · ~{commuteDurMins}m {commuteModeLabel}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Gym Proximity Row in Area */}
-                  {(() => {
-                    const gymsList = templateGyms.length > 0 ? templateGyms : anchors.filter((a) => a.category === 'gym' || a.iconType === 'gym');
-                    if (gymsList.length === 0) return null;
-                    let closestGym = gymsList[0];
-                    let minD = getDistanceKm(prop.lat, prop.lng, closestGym.lat, closestGym.lng);
-                    for (let i = 1; i < gymsList.length; i++) {
-                      const d = getDistanceKm(prop.lat, prop.lng, gymsList[i].lat, gymsList[i].lng);
-                      if (d < minD) {
-                        minD = d;
-                        closestGym = gymsList[i];
-                      }
-                    }
-                    if (activeAnchor?.id === closestGym.id) return null;
-                    const gymMins = Math.max(2, Math.round((minD / 35.0) * 60));
-                    return (
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveAnchorId(closestGym.id);
-                          setFocusTarget({
-                            lat: closestGym.lat,
-                            lng: closestGym.lng,
-                            zoom: 15.2,
-                            timestamp: Date.now()
-                          });
-                        }}
-                        className="flex items-center justify-between text-[11px] p-2 rounded-xl bg-amber-50/80 hover:bg-amber-100/80 border border-amber-200/80 mb-2 transition-colors cursor-pointer group/gym"
-                        title={`Click to set ${closestGym.label} as active focal anchor`}
-                      >
-                        <span className="font-semibold text-zinc-800 flex items-center gap-1.5 truncate max-w-[210px]">
-                          <Dumbbell size={13} className="text-amber-600 shrink-0 group-hover/gym:scale-110 transition-transform" />
-                          <span className="truncate">{closestGym.label}</span>
-                        </span>
-                        <span className="font-black text-amber-900 shrink-0">
-                          {minD} km · ~{gymMins}m
-                        </span>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Links / Action Footer */}
-                  <div className="flex items-center justify-between flex-wrap gap-1.5 pt-2.5 mt-1.5 border-t border-zinc-100 text-xs">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (selectedPropertyId === prop.id) {
-                          setSelectedPropertyId(null);
-                        } else {
-                          setSelectedPropertyId(prop.id);
-                          setFocusTarget({ lat: prop.lat, lng: prop.lng, zoom: 16.8, timestamp: Date.now() });
-                        }
-                      }}
-                      className="text-[11px] text-indigo-600 font-bold hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                      title="Focus and highlight this property on the map"
-                    >
-                      <span>Focus on map</span>
-                      <NavigationArrow size={11} weight="fill" />
-                    </button>
-
-                    <div className="flex items-center flex-wrap gap-1 min-w-0">
+                    {/* Links / Action Footer */}
+                    <div className="flex items-center justify-between flex-wrap gap-1.5 pt-2.5 mt-1.5 border-t border-zinc-100 text-xs">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleCompareProperty(prop);
+                          if (selectedPropertyId === prop.id) {
+                            setSelectedPropertyId(null);
+                          } else {
+                            setSelectedPropertyId(prop.id);
+                            setFocusTarget({ lat: prop.lat, lng: prop.lng, zoom: 16.8, timestamp: Date.now() });
+                          }
                         }}
-                        className={`px-2 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1 border transition-colors whitespace-nowrap cursor-pointer ${compareIds.includes(prop.id)
+                        className="text-[11px] text-indigo-600 font-bold hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                        title="Focus and highlight this property on the map"
+                      >
+                        <span>Focus on map</span>
+                        <NavigationArrow size={11} weight="fill" />
+                      </button>
+
+                      <div className="flex items-center flex-wrap gap-1 min-w-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleCompareProperty(prop);
+                          }}
+                          className={`px-2 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1 border transition-colors whitespace-nowrap cursor-pointer ${compareIds.includes(prop.id)
                             ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
                             : 'bg-white hover:bg-purple-50 border-zinc-200 text-zinc-700 hover:border-purple-200'
-                          }`}
-                        title={compareIds.includes(prop.id) ? 'Remove from AI Compare' : 'Add to AI Compare (2–4 properties)'}
-                      >
-                        <Scales size={12} weight="bold" className="shrink-0" />
-                        <span>{compareIds.includes(prop.id) ? '✓' : '+'}</span>
-                      </button>
+                            }`}
+                          title={compareIds.includes(prop.id) ? 'Remove from AI Compare' : 'Add to AI Compare (2–4 properties)'}
+                        >
+                          <Scales size={12} weight="bold" className="shrink-0" />
+                          <span>{compareIds.includes(prop.id) ? '✓' : '+'}</span>
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleTogglePropertyAiReport(prop);
-                        }}
-                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition-all cursor-pointer whitespace-nowrap ${viewingAiReportProp?.id === prop.id
-                          ? 'bg-purple-950 text-white ring-2 ring-purple-400/50'
-                          : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white'
-                          }`}
-                        title={viewingAiReportProp?.id === prop.id ? "Close AI Forensic Report" : "Get AI Report for this property"}
-                      >
-                        <Sparkle size={12} weight="fill" className="text-amber-300 shrink-0" />
-                        <span>{viewingAiReportProp?.id === prop.id ? 'Close' : 'AI Analysis'}</span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTogglePropertyAiReport(prop);
+                          }}
+                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition-all cursor-pointer whitespace-nowrap ${viewingAiReportProp?.id === prop.id
+                            ? 'bg-purple-950 text-white ring-2 ring-purple-400/50'
+                            : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white'
+                            }`}
+                          title={viewingAiReportProp?.id === prop.id ? "Close AI Forensic Report" : "Get AI Report for this property"}
+                        >
+                          <Sparkle size={12} weight="fill" className="text-amber-300 shrink-0" />
+                          <span>{viewingAiReportProp?.id === prop.id ? 'Close' : 'AI Analysis'}</span>
+                        </button>
 
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openCommentsModal(prop);
+                          }}
+                          className={`px-2 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1 border transition-colors whitespace-nowrap cursor-pointer ${(commentCounts[prop.id] || 0) > 0
+                            ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200'
+                            : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600 border-zinc-200'
+                            }`}
+                          title={(commentCounts[prop.id] || 0) > 0 ? `Open ${commentCounts[prop.id]} comment(s)` : 'Add a comment on this listing'}
+                        >
+                          <span>💬</span>
+                          {(commentCounts[prop.id] || 0) > 0 && <span>{commentCounts[prop.id]}</span>}
+                        </button>
+
+                        <a
+                          href={resolveGoogleMapsUrl(prop)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-1.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 hover:text-zinc-950 text-[10.5px] font-bold flex items-center gap-1 border border-zinc-200 transition-colors whitespace-nowrap cursor-pointer"
+                          title="Show exact address / location on Google Maps (opens in a new tab)"
+                        >
+                          <MapPin size={12} weight="bold" className="text-rose-500 shrink-0" />
+                          <span>Maps</span>
+                          <ArrowSquareOut size={10} weight="bold" className="text-zinc-400 shrink-0" />
+                        </a>
+
+                        <a
+                          href={resolveProperty24Url(prop)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => openProperty24Url(e, resolveProperty24Url(prop))}
+                          className="px-2 py-1.5 rounded-lg bg-zinc-900 hover:bg-indigo-600 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
+                          title="Open original listing on Property24"
+                        >
+                          <span>P24</span>
+                          <ArrowSquareOut size={11} weight="bold" className="shrink-0" />
+                        </a>
+                      </div>
+                    </div>
+                    {recentComments[prop.id] && recentComments[prop.id].length > 0 && (
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           openCommentsModal(prop);
                         }}
-                        className={`px-2 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1 border transition-colors whitespace-nowrap cursor-pointer ${(commentCounts[prop.id] || 0) > 0
-                          ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200'
-                          : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600 border-zinc-200'
-                          }`}
-                        title={(commentCounts[prop.id] || 0) > 0 ? `Open ${commentCounts[prop.id]} comment(s)` : 'Add a comment on this listing'}
+                        className="w-full text-left mt-2 px-2.5 py-2 rounded-xl bg-indigo-50/75 hover:bg-indigo-100/75 border border-indigo-200/70 text-[11px] text-zinc-700 transition-colors cursor-pointer space-y-1"
+                        title="Click to view or add comments"
                       >
-                        <span>💬</span>
-                        {(commentCounts[prop.id] || 0) > 0 && <span>{commentCounts[prop.id]}</span>}
+                        {recentComments[prop.id].slice(0, 3).map((c) => (
+                          <div key={c.id} className="leading-snug line-clamp-2">
+                            <span className="font-extrabold text-indigo-800">u/{c.nickname}:</span>{' '}
+                            <span className="text-zinc-700">{c.body}</span>
+                          </div>
+                        ))}
+                        {(commentCounts[prop.id] || 0) > 3 && (
+                          <div className="text-[10px] font-bold text-indigo-600 pt-0.5">
+                            View all {commentCounts[prop.id]} comments →
+                          </div>
+                        )}
                       </button>
-
-                      <a
-                        href={resolveGoogleMapsUrl(prop)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="px-1.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 hover:text-zinc-950 text-[10.5px] font-bold flex items-center gap-1 border border-zinc-200 transition-colors whitespace-nowrap cursor-pointer"
-                        title="Show exact address / location on Google Maps (opens in a new tab)"
-                      >
-                        <MapPin size={12} weight="bold" className="text-rose-500 shrink-0" />
-                        <span>Maps</span>
-                        <ArrowSquareOut size={10} weight="bold" className="text-zinc-400 shrink-0" />
-                      </a>
-
-                      <a
-                        href={resolveProperty24Url(prop)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => openProperty24Url(e, resolveProperty24Url(prop))}
-                        className="px-2 py-1.5 rounded-lg bg-zinc-900 hover:bg-indigo-600 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
-                        title="Open original listing on Property24"
-                      >
-                        <span>P24</span>
-                        <ArrowSquareOut size={11} weight="bold" className="shrink-0" />
-                      </a>
-                    </div>
+                    )}
                   </div>
-                  {recentComments[prop.id] && recentComments[prop.id].length > 0 && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openCommentsModal(prop);
-                      }}
-                      className="w-full text-left mt-2 px-2.5 py-2 rounded-xl bg-indigo-50/75 hover:bg-indigo-100/75 border border-indigo-200/70 text-[11px] text-zinc-700 transition-colors cursor-pointer space-y-1"
-                      title="Click to view or add comments"
-                    >
-                      {recentComments[prop.id].slice(0, 3).map((c) => (
-                        <div key={c.id} className="leading-snug line-clamp-2">
-                          <span className="font-extrabold text-indigo-800">u/{c.nickname}:</span>{' '}
-                          <span className="text-zinc-700">{c.body}</span>
-                        </div>
-                      ))}
-                      {(commentCounts[prop.id] || 0) > 3 && (
-                        <div className="text-[10px] font-bold text-indigo-600 pt-0.5">
-                          View all {commentCounts[prop.id]} comments →
-                        </div>
-                      )}
-                    </button>
-                  )}
-                </div>
-              );
+                );
               };
 
               if (displayProperties.length === 0) {
@@ -6689,1812 +5450,118 @@ export default function SearchMapPage() {
       </main>
 
       {/* LISTING COMMENTS MODAL */}
-      {commentModalProp && (
-        <div
-          className="fixed inset-0 z-[120] bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setCommentModalProp(null)}
-        >
-          <div
-            className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col max-h-[82vh]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-4 py-3 border-b border-zinc-100 flex items-center justify-between gap-3 bg-zinc-50/80">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-black text-zinc-950 truncate">
-                    💬 {commentModalProp.title}
-                  </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 shrink-0">
-                    {listingComments.length} {listingComments.length === 1 ? 'comment' : 'comments'}
-                  </span>
-                </div>
-                <p className="text-[11px] text-zinc-500 truncate">{commentModalProp.address}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCommentModalProp(null)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-200/60 cursor-pointer"
-                aria-label="Close comments"
-              >
-                <X size={16} weight="bold" />
-              </button>
-            </div>
-
-            <div className="p-4 border-b border-zinc-100 space-y-2 bg-white">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-zinc-500">
-                  Posting as{' '}
-                  <span className="font-extrabold text-indigo-700">
-                    u/{activeCommentNickname || 'Generating...'}
-                  </span>
-                </span>
-                {user ? (
-                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                    Google Verified
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-semibold text-zinc-500">
-                    Guest Seeker
-                  </span>
-                )}
-              </div>
-              <textarea
-                rows={2}
-                value={newCommentText}
-                onChange={(e) => setNewCommentText(e.target.value)}
-                placeholder="Share viewing notes, noise observations, landlord/agency feedback..."
-                className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 resize-none"
-              />
-              {commentError && (
-                <p className="text-[11px] text-rose-600 font-semibold">{commentError}</p>
-              )}
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  disabled={isPostingComment || !newCommentText.trim()}
-                  onClick={handleCreateComment}
-                  className="px-3.5 py-1.5 rounded-xl bg-zinc-950 hover:bg-indigo-600 disabled:opacity-40 text-white text-xs font-bold transition-colors cursor-pointer"
-                >
-                  {isPostingComment ? 'Posting...' : 'Post Comment'}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-zinc-50/40">
-              {isLoadingComments ? (
-                <p className="text-xs text-zinc-400 text-center py-6">Loading comments...</p>
-              ) : listingComments.length === 0 ? (
-                <p className="text-xs text-zinc-400 text-center py-6">
-                  No comments yet. Be the first to share notes on this listing!
-                </p>
-              ) : (
-                listingComments.map((c) => {
-                  const isOwner = c.user_id === activeCommentUid;
-                  const isEditing = editingCommentId === c.id;
-                  const isEdited = c.updated_at - c.created_at > 2;
-                  return (
-                    <div
-                      key={c.id}
-                      className="p-3 rounded-xl bg-white border border-zinc-200/80 shadow-2xs space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-[11px] font-black text-indigo-700 truncate">
-                            u/{c.nickname}
-                          </span>
-                          {isOwner && (
-                            <span className="text-[9.5px] font-bold px-1.5 py-0.2 rounded bg-zinc-100 text-zinc-600">
-                              You
-                            </span>
-                          )}
-                          <span className="text-[10px] text-zinc-400">
-                            · {new Date(c.created_at * 1000).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
-                            {isEdited ? ' (edited)' : ''}
-                          </span>
-                        </div>
-                        {isOwner && !isEditing && (
-                          <div className="flex items-center flex-wrap gap-1 min-w-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingCommentId(c.id);
-                                setEditingCommentText(c.body);
-                              }}
-                              className="text-[10.5px] font-bold text-zinc-500 hover:text-indigo-700 cursor-pointer"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteComment(c.id)}
-                              className="text-[10.5px] font-bold text-zinc-400 hover:text-rose-600 cursor-pointer"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {isEditing ? (
-                        <div className="space-y-1.5 pt-1">
-                          <textarea
-                            rows={2}
-                            value={editingCommentText}
-                            onChange={(e) => setEditingCommentText(e.target.value)}
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-indigo-300 text-xs text-zinc-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
-                          />
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setEditingCommentId(null)}
-                              className="px-2.5 py-1 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[10.5px] font-bold cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateComment(c.id)}
-                              className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10.5px] font-bold cursor-pointer"
-                            >
-                              Save
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-zinc-800 whitespace-pre-wrap leading-relaxed">
-                          {c.body}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* AI DEEP ANALYSIS MODAL */}
-      {isAiModalOpen && (
-        <div
-          className="fixed inset-0 z-[120] bg-zinc-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setIsAiModalOpen(false);
-            }
-          }}
-          onMouseDown={(e) => {
-            if (e.target !== e.currentTarget) {
-              e.stopPropagation();
-            }
-          }}
-        >
-          <div
-            className="bg-white rounded-3xl shadow-2xl border border-zinc-200 max-w-lg w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-start justify-between gap-3 pb-3 border-b border-zinc-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
-                  <Sparkle size={22} weight="fill" className="text-amber-300" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-extrabold text-zinc-950 leading-tight">
-                      AI Deep Analysis
-                    </h2>
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 uppercase tracking-wider">
-                      Top 10 Audit
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-500 font-medium mt-0.5">
-                    Inspects photos, sun angles, floor plans &amp; agent copy to generate forensic reports for your top 10 listings.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAiModalOpen(false)}
-                className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
-              >
-                <X size={18} weight="bold" />
-              </button>
-            </div>
-
-            {/* Section 1: Active Search Filters Taken into Account */}
-            <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold text-zinc-900">
-                <span className="flex items-center gap-1.5 text-zinc-700">
-                  <CheckCircle size={15} weight="bold" className="text-emerald-600" />
-                  Active Search Filters Taken Into Account:
-                </span>
-                <span className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">
-                  {displayProperties.length} Matching
-                </span>
-              </div>
-
-              <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-semibold">
-                <span className="bg-white px-2 py-0.5 rounded-md border border-zinc-200 text-zinc-800 shadow-2xs">
-                  📍 {selectedSuburbs.length > 0 ? selectedSuburbs.join(', ') : 'All Suburbs'}
-                </span>
-                <span className="bg-white px-2 py-0.5 rounded-md border border-zinc-200 text-zinc-800 shadow-2xs">
-                  💰 R {formatPrice(minPrice)} – R {formatPrice(maxPrice)}
-                </span>
-                <span className="bg-white px-2 py-0.5 rounded-md border border-zinc-200 text-zinc-800 shadow-2xs">
-                  🛏️ {bedrooms} Bed
-                </span>
-                {safeishFilter && (
-                  <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-800 shadow-2xs">
-                    ✓ 🛡️ Safe-ish (Hiding High Risk Zones)
-                  </span>
-                )}
-                {withinRadiusFilter && activeAnchor && (
-                  <span className="bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded-md border border-indigo-800 shadow-2xs">
-                    ✓ 🎯 In Radius (≤{locationRadiusKm.toFixed(1)} km of {activeAnchor.label})
-                  </span>
-                )}
-                {fibreFilter && (
-                  <span className="bg-zinc-900 text-cyan-300 px-2 py-0.5 rounded-md border border-zinc-800 shadow-2xs">
-                    ✓ 🌐 Fibre ready
-                  </span>
-                )}
-                {parkingFilter && (
-                  <span className="bg-zinc-900 text-emerald-300 px-2 py-0.5 rounded-md border border-zinc-800 shadow-2xs">
-                    ✓ 🚗 Off-street parking
-                  </span>
-                )}
-                {petFriendlyFilter && (
-                  <span className="bg-zinc-900 text-pink-300 px-2 py-0.5 rounded-md border border-zinc-800 shadow-2xs">
-                    ✓ 🐾 Pet-friendly
-                  </span>
-                )}
-                {!fibreFilter && !parkingFilter && !petFriendlyFilter && (
-                  <span className="bg-white/80 text-zinc-400 px-2 py-0.5 rounded-md border border-zinc-200/60 text-[10.5px]">
-                    (No feature toggles active · showing all verified)
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Section 2: Personal Preferences Input Box */}
-            <div className="space-y-2">
-              <label className="block text-xs font-black text-zinc-900 uppercase tracking-wider">
-                Personal Preferences &amp; Lifestyle Sanctuary
-              </label>
-              <p className="text-[11px] text-zinc-500 font-medium">
-                Specify views, sunlight, remote work requirements, noise sensitivity, or special needs. The AI will evaluate each of your Top 10 homes against these criteria.
-              </p>
-              <textarea
-                rows={3}
-                value={personalPreferences}
-                onChange={(e) => handleUpdatePreferences(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleRunDeepAiAnalysis();
-                  }
-                }}
-                placeholder="e.g. Quiet sanctuary, ocean views, natural light, gas stove, and dedicated remote work space..."
-                className="w-full text-xs p-3 rounded-2xl border border-zinc-200 bg-zinc-50/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 text-zinc-900 font-medium resize-none leading-relaxed transition-all"
-              />
-              <div className="flex items-center justify-between text-[10.5px] text-zinc-400 font-medium px-1 pt-0.5">
-                <span>Tip: Press <strong className="text-zinc-600">Enter ↵</strong> to run analysis</span>
-                <span><strong className="text-zinc-600">Shift + Enter</strong> for new line</span>
-              </div>
-
-              {/* Standard Lifestyle & Work Mode Checkboxes */}
-              <div className="pt-1.5 space-y-2">
-                <span className="text-[10px] font-bold text-zinc-400 block uppercase tracking-wider">
-                  Work Style &amp; Daily Routine:
-                </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {[
-                    { label: 'Work from home (full-time)', tag: 'WFH (Full-time): quiet acoustic environment, fibre ready, desk space', icon: '💻' },
-                    { label: 'Work from home (part-time)', tag: 'WFH (Part-time): flexible hybrid work, stable fibre', icon: '🏠' },
-                    { label: 'Work from cafes', tag: 'Work from cafes: walkable to coffee shops & laptop-friendly spots', icon: '☕' },
-                    { label: 'Work from an office', tag: 'Office commuter: proximity to major business hubs & commute transit', icon: '🏢' },
-                  ].map((item) => {
-                    const isChecked = personalPreferences.toLowerCase().includes(item.label.toLowerCase());
-                    return (
-                      <label
-                        key={item.label}
-                        className={`flex items-center gap-2 p-2 rounded-xl border text-[11px] font-bold cursor-pointer transition-all select-none ${isChecked
-                          ? 'bg-purple-50/90 border-purple-300 text-purple-950 shadow-2xs font-extrabold ring-1 ring-purple-400/40'
-                          : 'bg-white hover:bg-zinc-50 border-zinc-200/90 text-zinc-700'
-                          }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              const cleaned = personalPreferences.trim().replace(/\.$/, '');
-                              handleUpdatePreferences(cleaned ? `${cleaned}. ${item.label}.` : `${item.label}.`);
-                            } else {
-                              const updated = personalPreferences
-                                .replace(new RegExp(`\\b${item.label}\\b\\.?`, 'gi'), '')
-                                .replace(/\.\s*\./g, '.')
-                                .replace(/,\s*,/g, ',')
-                                .trim();
-                              handleUpdatePreferences(updated);
-                            }
-                          }}
-                          className="w-3.5 h-3.5 rounded text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600 shrink-0"
-                        />
-                        <span className="truncate">{item.icon} {item.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-
-                <span className="text-[10px] font-bold text-zinc-400 block uppercase tracking-wider pt-1">
-                  Key Rental Decision Factors:
-                </span>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {[
-                    { label: 'Quiet sanctuary (no traffic)', icon: '🔇' },
-                    { label: '100% Private (no landlord on-site)', icon: '🔒' },
-                    { label: 'Secure estate / 24h security', icon: '🛡️' },
-                    { label: 'Backup power / solar inverter', icon: '🔋' },
-                    { label: 'Private patio / balcony', icon: '🌿' },
-                    { label: 'Lock-up garage', icon: '🚗' },
-                    { label: 'Gas cooking hob', icon: '🍳' },
-                    { label: 'Pet-friendly lease', icon: '🐾' },
-                    { label: 'Scenic mountain / ocean views', icon: '🏔️' },
-                  ].map((factor) => {
-                    const isChecked = personalPreferences.toLowerCase().includes(factor.label.toLowerCase());
-                    return (
-                      <label
-                        key={factor.label}
-                        className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-[10.5px] font-bold cursor-pointer transition-all select-none ${isChecked
-                          ? 'bg-purple-100/80 border-purple-300 text-purple-950 font-black shadow-2xs'
-                          : 'bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-700'
-                          }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              const cleaned = personalPreferences.trim().replace(/\.$/, '');
-                              handleUpdatePreferences(cleaned ? `${cleaned}. ${factor.label}.` : `${factor.label}.`);
-                            } else {
-                              const updated = personalPreferences
-                                .replace(new RegExp(`\\b${factor.label}\\b\\.?`, 'gi'), '')
-                                .replace(/\.\s*\./g, '.')
-                                .replace(/,\s*,/g, ',')
-                                .trim();
-                              handleUpdatePreferences(updated);
-                            }
-                          }}
-                          className="w-3 h-3 rounded text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600 shrink-0"
-                        />
-                        <span className="truncate">{factor.icon} {factor.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Quick Inspiration Chips */}
-              <div className="pt-1">
-                <span className="text-[10px] font-bold text-zinc-400 block mb-1.5 uppercase tracking-wider">
-                  Quick-Add Inspiration:
-                </span>
-                <div className="flex items-center flex-wrap gap-1.5">
-                  {[
-                    '🔒 Private (No Landlord On-Site)',
-                    '🔇 Off-Main Road Sanctuary',
-                    '🌿 Quiet Sanctuary',
-                    '☀️ North-Facing Sunlight',
-                    '🏔️ Mountain or Ocean Views',
-                    '🍳 Gas Cooking & Load-Shedding',
-                    '💻 Remote Work & Fibre',
-                    '🐕 Dog & Garden Space'
-                  ].map((chip) => {
-                    const chipKey = chip.replace(/^[^\w\s]+\s*/, '');
-                    const isAlreadyIn = personalPreferences.toLowerCase().includes(chipKey.toLowerCase());
-                    return (
-                      <button
-                        key={chip}
-                        type="button"
-                        onClick={() => {
-                          if (isAlreadyIn) {
-                            handleUpdatePreferences(
-                              personalPreferences.replace(new RegExp(chipKey, 'gi'), '').replace(/,\s*,/g, ',').trim()
-                            );
-                          } else {
-                            handleUpdatePreferences(
-                              personalPreferences ? `${personalPreferences.trim().replace(/\.$/, '')}, ${chipKey}.` : `${chipKey}.`
-                            );
-                          }
-                        }}
-                        className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all cursor-pointer ${isAlreadyIn
-                          ? 'bg-purple-100 border-purple-300 text-purple-900 shadow-2xs font-black'
-                          : 'bg-white hover:bg-zinc-100 text-zinc-700 border-zinc-200'
-                          }`}
-                      >
-                        {chip}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer / Action Button */}
-            <div className="pt-3 border-t border-zinc-100 flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => setIsAiModalOpen(false)}
-                className="px-4 py-2.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 text-xs font-bold text-zinc-700 transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isRunningDeepAi}
-                onClick={handleRunDeepAiAnalysis}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-700 hover:to-pink-700 text-white text-xs font-extrabold shadow-md shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all cursor-pointer"
-              >
-                {isRunningDeepAi ? (
-                  <>
-                    <CircleNotch size={15} className="animate-spin text-white" />
-                    <span>Auditing Photos, Lighting &amp; Agent Copy...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkle size={15} weight="fill" className="text-amber-300" />
-                    <span>Run Deep AI Analysis (Top 10)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* AI PROPERTY REPORT MODAL */}
-      {viewingAiReportProp && (
-        <div
-          className="fixed inset-0 z-[130] bg-zinc-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setViewingAiReportProp(null);
-            }
-          }}
-          onMouseDown={(e) => {
-            if (e.target !== e.currentTarget) {
-              e.stopPropagation();
-            }
-          }}
-        >
-          <div
-            className="bg-white rounded-3xl shadow-2xl border border-zinc-200 max-w-4xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-start justify-between pb-3 border-b border-zinc-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20 shrink-0">
-                  <Sparkle size={22} weight="fill" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-extrabold text-zinc-950 leading-tight">
-                      AI Property Forensic Report
-                    </h2>
-                    {viewingAiReportProp.fit_score && (
-                      <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                        {viewingAiReportProp.fit_score}% Fit
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-zinc-500 font-medium">
-                    Automated multimodal vision, acoustic modeling &amp; lease verification.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewingAiReportProp(null)}
-                className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
-                aria-label="Close Report"
-              >
-                <X size={18} weight="bold" />
-              </button>
-            </div>
-
-            {/* Property Quick Summary Banner */}
-            <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200/80 flex items-center gap-3">
-              <img
-                src={viewingAiReportProp.image}
-                alt={viewingAiReportProp.title}
-                className="w-16 h-16 rounded-xl object-cover shrink-0 border border-zinc-200 shadow-2xs"
-              />
-              <div className="min-w-0 flex-1">
-                <h3 className="font-extrabold text-sm text-zinc-900 truncate">
-                  {viewingAiReportProp.title}
-                </h3>
-                <p className="text-xs text-zinc-500 truncate">{viewingAiReportProp.address}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs font-black text-indigo-700">
-                    R {viewingAiReportProp.price.toLocaleString()} /mo
-                  </span>
-                  <span className="text-zinc-300">·</span>
-                  <span className="text-[11px] font-medium text-zinc-600">
-                    🛏️ {viewingAiReportProp.bedrooms} {viewingAiReportProp.bedrooms === 1 ? 'bed' : 'beds'}
-                  </span>
-                  <span className="text-[11px] font-medium text-zinc-600">
-                    🚿 {viewingAiReportProp.bathrooms} bath
-                  </span>
-                  {viewingAiReportProp.sqm && (
-                    <span className="text-[11px] font-medium text-zinc-600">
-                      📐 {viewingAiReportProp.sqm} m²
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Active Search Filters in Effect */}
-            <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold text-zinc-900">
-                <span className="flex items-center gap-1.5 text-zinc-800">
-                  <SlidersHorizontal size={14} weight="bold" className="text-indigo-600" />
-                  Active Search Filters
-                </span>
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                  Live Session Filters
-                </span>
-              </div>
-              <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-semibold">
-                <span className="bg-white px-2 py-0.5 rounded-md border border-zinc-200 text-zinc-800 shadow-2xs">
-                  📍 {selectedSuburbs.length > 0 ? selectedSuburbs.join(', ') : 'All Suburbs'}
-                </span>
-                <span className="bg-white px-2 py-0.5 rounded-md border border-zinc-200 text-zinc-800 shadow-2xs">
-                  💰 R {formatPrice(minPrice)} – R {formatPrice(maxPrice)}
-                </span>
-                <span className="bg-white px-2 py-0.5 rounded-md border border-zinc-200 text-zinc-800 shadow-2xs">
-                  🛏️ {bedrooms} Bed
-                </span>
-                {minSqm && (
-                  <span className="bg-white px-2 py-0.5 rounded-md border border-zinc-200 text-zinc-800 shadow-2xs">
-                    📐 {minSqm}+ m²
-                  </span>
-                )}
-                {activeAnchor && (
-                  <span className="bg-indigo-50 text-indigo-900 px-2 py-0.5 rounded-md border border-indigo-200 shadow-2xs">
-                    🎯 {activeAnchor.label}
-                  </span>
-                )}
-                {safeishFilter && (
-                  <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-md border border-emerald-300 shadow-2xs">
-                    ✓ 🛡️ Safe-ish
-                  </span>
-                )}
-                {fibreFilter && (
-                  <span className="bg-cyan-50 text-cyan-900 px-2 py-0.5 rounded-md border border-cyan-300 shadow-2xs">
-                    ✓ 🌐 Fibre ready
-                  </span>
-                )}
-                {parkingFilter && (
-                  <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-md border border-emerald-300 shadow-2xs">
-                    ✓ 🚗 Parking
-                  </span>
-                )}
-                {petFriendlyFilter && (
-                  <span className="bg-pink-50 text-pink-900 px-2 py-0.5 rounded-md border border-pink-300 shadow-2xs">
-                    ✓ 🐾 Pet-friendly
-                  </span>
-                )}
-                {offMainRoadFilter && (
-                  <span className="bg-purple-50 text-purple-900 px-2 py-0.5 rounded-md border border-purple-300 shadow-2xs">
-                    ✓ 🛣️ Off-Main Rd
-                  </span>
-                )}
-                {privateOnlyFilter && (
-                  <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-md border border-emerald-300 shadow-2xs">
-                    ✓ 🔒 100% Private Standalone
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* User Personal Preferences Input Box (Stored in localStorage) */}
-            <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-black text-zinc-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkle size={14} weight="fill" className="text-purple-600" />
-                  Your Personal Preferences
-                </label>
-                {personalPreferences.trim().length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => handleUpdatePreferences('')}
-                    className="text-[11px] font-bold text-zinc-500 hover:text-rose-600 transition-colors flex items-center gap-1 cursor-pointer"
-                  >
-                    <X size={12} weight="bold" />
-                    Clear
-                  </button>
-                )}
-              </div>
-              <p className="text-[11px] text-zinc-500 font-medium">
-                Saved automatically across sessions. Enter your lifestyle, space, or noise criteria. The report updates in real time.
-              </p>
-              <textarea
-                rows={2}
-                value={personalPreferences}
-                onChange={(e) => handleUpdatePreferences(e.target.value)}
-                placeholder="e.g. Quiet street, high natural light, fibre internet, space for desk, gas stove..."
-                className="w-full text-xs p-2.5 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 text-zinc-900 font-medium resize-none leading-relaxed transition-all shadow-2xs"
-              />
-              {/* Standard Lifestyle & Work Mode Checkboxes */}
-              <div className="space-y-1.5 pt-1">
-                <span className="text-[10px] font-bold text-zinc-400 block uppercase tracking-wider">
-                  Work &amp; Lifestyle Mode:
-                </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {[
-                    { label: 'Work from home (full-time)', tag: 'WFH (Full-time): quiet acoustic environment, fibre ready, desk space' },
-                    { label: 'Work from home (part-time)', tag: 'WFH (Part-time): flexible hybrid work, stable fibre' },
-                    { label: 'Work from cafes', tag: 'Work from cafes: walkable to coffee shops & laptop-friendly spots' },
-                    { label: 'Work from an office', tag: 'Office commuter: proximity to major business hubs & commute transit' },
-                  ].map((item) => {
-                    const isChecked = personalPreferences.toLowerCase().includes(item.label.toLowerCase());
-                    return (
-                      <label
-                        key={item.label}
-                        className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-[10.5px] font-bold cursor-pointer transition-all select-none ${isChecked
-                          ? 'bg-purple-50/90 border-purple-300 text-purple-950 shadow-2xs font-extrabold ring-1 ring-purple-400/40'
-                          : 'bg-white hover:bg-zinc-50 border-zinc-200/90 text-zinc-700'
-                          }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              const cleaned = personalPreferences.trim().replace(/\.$/, '');
-                              handleUpdatePreferences(cleaned ? `${cleaned}. ${item.label}.` : `${item.label}.`);
-                            } else {
-                              const updated = personalPreferences
-                                .replace(new RegExp(`\\b${item.label}\\b\\.?`, 'gi'), '')
-                                .replace(/\.\s*\./g, '.')
-                                .replace(/,\s*,/g, ',')
-                                .trim();
-                              handleUpdatePreferences(updated);
-                            }
-                          }}
-                          className="w-3.5 h-3.5 rounded text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600 shrink-0"
-                        />
-                        <span className="truncate">{item.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Pro Feature: Viewing / Off-Portal Photo Upload */}
-              <div className="pt-2 border-t border-zinc-200/60 space-y-2">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-1.5">
-                    <Camera size={13} weight="bold" className="text-purple-600" />
-                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-700">
-                      Viewing / Off-Portal Photos
-                    </span>
-                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black uppercase tracking-wider">
-                      {planSummary?.tier === 'free' ? 'Pro' : planSummary?.tier === 'hunter_pass' ? 'Hunter Pass' : 'Pro Active'}
-                    </span>
-                    {planSummary && (
-                      <span className="text-[10px] font-semibold text-zinc-500">
-                        • {planSummary.remainingAudits} {planSummary.remainingAudits === 1 ? 'audit' : 'audits'} left
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {planSummary?.tier === 'free' ? (
-                      <a
-                        href="/pricing"
-                        className="text-[10px] font-black text-purple-700 hover:text-purple-900 underline"
-                      >
-                        Unlock R149 Hunter Pass →
-                      </a>
-                    ) : (
-                      <a
-                        href="/pricing"
-                        className="text-[10px] font-bold text-zinc-500 hover:text-zinc-800 underline"
-                      >
-                        Manage Plan
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                {planSummary && !planSummary.canUploadPhotos ? (
-                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-[11px] text-amber-900">
-                    <span>
-                      Upload photos you snapped at a viewing (cracks, damp, plug points, street noise, kitchen) or off-portal Gumtree/Facebook screenshots for Gemini Vision inspection.
-                    </span>
-                    <a
-                      href="/pricing"
-                      className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black transition-colors"
-                    >
-                      Upgrade
-                    </a>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white hover:bg-purple-50 border border-dashed border-purple-300 text-[11px] font-bold text-purple-800 cursor-pointer transition-colors">
-                        <Camera size={13} weight="bold" />
-                        <span>Upload Viewing Photos ({uploadedViewingPhotos.length}/8)</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={(e) => {
-                            handleUploadViewingPhotos(e.target.files);
-                            e.target.value = '';
-                          }}
-                        />
-                      </label>
-
-                      {uploadedViewingPhotos.length > 0 && (
-                        <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-zinc-200">
-                          {(
-                            [
-                              { id: 'both', label: 'Listing + Mine' },
-                              { id: 'uploaded', label: 'My Photos Only' },
-                              { id: 'listing', label: 'Listing Only' },
-                            ] as const
-                          ).map((mode) => (
-                            <button
-                              key={mode.id}
-                              type="button"
-                              onClick={() => setPhotoSourceMode(mode.id)}
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer ${photoSourceMode === mode.id
-                                  ? 'bg-purple-700 text-white'
-                                  : 'text-zinc-600 hover:bg-zinc-100'
-                                }`}
-                            >
-                              {mode.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {uploadedViewingPhotos.length > 0 && (
-                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                        {uploadedViewingPhotos.map((src, idx) => (
-                          <div key={idx} className="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-purple-200 bg-zinc-100">
-                            <img src={src} alt={`Viewing photo ${idx + 1}`} className="w-full h-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setUploadedViewingPhotos((prev) => prev.filter((_, i) => i !== idx))
-                              }
-                              className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-zinc-900/80 text-white text-[9px] font-black flex items-center justify-center cursor-pointer"
-                              title="Remove photo"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Submit / Re-Run Button & Quick-Add Chips */}
-              <div className="pt-2 border-t border-zinc-200/60 flex items-center justify-between gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (viewingAiReportProp) {
-                      runForensicAiInspection(viewingAiReportProp);
-                    }
-                  }}
-                  disabled={Boolean((viewingAiReportProp as any).deep_ai_audit?.isVisionLoading)}
-                  className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 active:scale-95 text-white text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Sparkle size={13} weight="fill" />
-                  <span>
-                    {(viewingAiReportProp as any).deep_ai_audit?.isVisionLoading
-                      ? 'Analyzing Property...'
-                      : 'Submit Preferences & Run AI Report'}
-                  </span>
-                </button>
-                <div className="flex items-center flex-wrap gap-1">
-                  {[
-                    '🔒 100% Private (No Landlord)',
-                    '🌿 Quiet Sanctuary',
-                    '☀️ North-Facing Sunlight',
-                    '🍳 Gas Cooking',
-                    '💻 High-Speed Fibre',
-                    '🐾 Pet-Friendly',
-                    '🚗 Secure Parking',
-                    '🏔️ Mountain or Ocean Views'
-                  ].map((chip) => {
-                    const chipKey = chip.replace(/^[^\w\s]+\s*/, '');
-                    const isAlreadyIn = personalPreferences.toLowerCase().includes(chipKey.toLowerCase());
-                    return (
-                      <button
-                        key={chip}
-                        type="button"
-                        onClick={() => {
-                          if (isAlreadyIn) {
-                            handleUpdatePreferences(
-                              personalPreferences.replace(new RegExp(chipKey, 'gi'), '').replace(/,\s*,/g, ',').trim()
-                            );
-                          } else {
-                            handleUpdatePreferences(
-                              personalPreferences ? `${personalPreferences.trim().replace(/\.$/, '')}, ${chipKey}.` : `${chipKey}.`
-                            );
-                          }
-                        }}
-                        className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${isAlreadyIn
-                          ? 'bg-purple-100 border-purple-300 text-purple-900 shadow-2xs font-black'
-                          : 'bg-white hover:bg-zinc-100 text-zinc-600 border-zinc-200/80'
-                          }`}
-                      >
-                        {chip}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Section: AI Forensic Report Results Container */}
-            <div className="pt-2">
-              <div className="p-4 rounded-2xl bg-gradient-to-b from-purple-50/60 via-white to-white border-2 border-purple-200/90 shadow-md space-y-4">
-                {/* Formal Report Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-purple-100">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-purple-700 text-white flex items-center justify-center shrink-0 shadow-xs">
-                      <Sparkle size={18} weight="fill" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-black text-zinc-950 uppercase tracking-wide">
-                          AI Property Forensic Report
-                        </h3>
-                        {viewingAiReportProp.fit_score && (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-200">
-                            {viewingAiReportProp.fit_score}% Fit
-                          </span>
-                        )}
-                        {(viewingAiReportProp as any).deep_ai_audit?.hasAiRun && (
-                          <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            ✓ Verified Run
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-zinc-500 font-medium">
-                        Autonomous multimodal vision, acoustic decibel modeling &amp; lease audit.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Metadata Stamp (Time + Status) + Compare / Snag Export Actions */}
-                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => viewingAiReportProp && toggleCompareProperty(viewingAiReportProp)}
-                      className={`px-2.5 py-1 rounded-xl border text-[11px] font-black flex items-center gap-1 transition-colors cursor-pointer ${viewingAiReportProp && compareIds.includes(viewingAiReportProp.id)
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                          : 'bg-white border-zinc-200 text-zinc-700 hover:bg-purple-50 hover:border-purple-200'
-                        }`}
-                    >
-                      <Scales size={13} weight="bold" />
-                      <span>
-                        {viewingAiReportProp && compareIds.includes(viewingAiReportProp.id) ? '✓ In Compare' : '+ Compare'}
-                      </span>
-                    </button>
-
-                    {compareIds.length >= 2 && (
-                      <a
-                        href="/compare"
-                        className="px-2.5 py-1 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-black transition-colors"
-                      >
-                        Open Compare ({compareIds.length}) →
-                      </a>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => viewingAiReportProp && handleCopySnagReport(viewingAiReportProp)}
-                      className="px-2.5 py-1 rounded-xl bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 text-[11px] font-bold transition-colors cursor-pointer"
-                      title="Copy formatted viewing / move-in snag checklist"
-                    >
-                      {snagCopied ? '✓ Snag Copied' : 'Copy Snag Report'}
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={isExportingPdf}
-                      onClick={() => viewingAiReportProp && handleDownloadReportPdf(viewingAiReportProp)}
-                      className="px-2.5 py-1 rounded-xl bg-zinc-900 hover:bg-indigo-600 disabled:opacity-50 text-white text-[11px] font-bold transition-colors cursor-pointer"
-                      title="Download this report as a PDF"
-                    >
-                      {isExportingPdf ? 'Generating...' : '📄 Save PDF'}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsEmailPdfOpen(!isEmailPdfOpen);
-                        setEmailPdfStatus(null);
-                        if (!emailPdfTarget && user?.email) setEmailPdfTarget(user.email);
-                      }}
-                      className="px-2.5 py-1 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 text-[11px] font-bold transition-colors cursor-pointer"
-                      title="Email this PDF report to an email address"
-                    >
-                      ✉️ Email PDF
-                    </button>
-
-                    <div className="flex items-center gap-2 text-[11px] text-zinc-500 font-semibold bg-white px-2.5 py-1 rounded-xl border border-zinc-200 shadow-2xs">
-                      <Clock size={13} weight="bold" className="text-purple-600" />
-                      <span>
-                        Generated: {(viewingAiReportProp as any).deep_ai_audit?.generatedAt || 'Standby (Pending Submission)'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {isEmailPdfOpen && viewingAiReportProp && (
-                  <div className="p-3 rounded-2xl bg-indigo-50/70 border border-indigo-200 flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-bold text-indigo-900">Email PDF Report to:</span>
-                    <input
-                      type="email"
-                      value={emailPdfTarget}
-                      onChange={(e) => setEmailPdfTarget(e.target.value)}
-                      placeholder="name@example.com"
-                      className="flex-1 min-w-[200px] px-3 py-1.5 rounded-xl bg-white border border-indigo-200 text-xs text-zinc-900 focus:outline-none focus:border-indigo-500"
-                    />
-                    <button
-                      type="button"
-                      disabled={isSendingEmailPdf}
-                      onClick={() => handleEmailReportPdf(viewingAiReportProp)}
-                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold cursor-pointer"
-                    >
-                      {isSendingEmailPdf ? 'Sending...' : 'Send PDF'}
-                    </button>
-                    {emailPdfStatus && (
-                      <span className={`text-[11px] font-bold ${emailPdfStatus.type === 'ok' ? 'text-emerald-700' : 'text-rose-600'}`}>
-                        {emailPdfStatus.text}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* Consolidated Preference Alignment & Search Baseline Card (Zero Duplication) */}
-                <div className="p-3.5 rounded-2xl bg-purple-50/75 border border-purple-200/80 space-y-2.5">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                      <Sparkle size={16} weight="fill" className="text-purple-600" />
-                      <h4 className="text-xs font-black uppercase tracking-wider text-purple-950">
-                        Preference Alignment &amp; Search Baseline
-                      </h4>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-semibold text-zinc-500">
-                        {selectedSuburbs.length > 0 ? selectedSuburbs.join(', ') : 'All Suburbs'} · R {formatPrice(minPrice)}–{formatPrice(maxPrice)}
-                      </span>
-                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                        {viewingAiReportProp.rank ? `Rank #${viewingAiReportProp.rank}` : 'Forensic Match'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Active Search Filters (only shown if any filters or anchor are active) */}
-                  {(activeAnchor || safeishFilter || fibreFilter || parkingFilter || petFriendlyFilter || offMainRoadFilter || offBarsFilter || privateOnlyFilter) && (
-                    <div className="flex items-center flex-wrap gap-1.5 text-[10px] font-semibold">
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mr-0.5 flex items-center gap-1">
-                        <SlidersHorizontal size={11} weight="bold" className="text-indigo-500" />
-                        Filters:
-                      </span>
-                      {activeAnchor && (
-                        <span className="bg-indigo-50 text-indigo-900 px-2 py-0.5 rounded-md border border-indigo-200">
-                          🎯 {activeAnchor.label}
-                        </span>
-                      )}
-                      {safeishFilter && (
-                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                          Safe-ish
-                        </span>
-                      )}
-                      {offBarsFilter && (
-                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                          Off-Bars/Clubs
-                        </span>
-                      )}
-                      {fibreFilter && (
-                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                          Fibre
-                        </span>
-                      )}
-                      {parkingFilter && (
-                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                          Parking
-                        </span>
-                      )}
-                      {petFriendlyFilter && (
-                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                          Pet-friendly
-                        </span>
-                      )}
-                      {offMainRoadFilter && (
-                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                          Off-Main Rd
-                        </span>
-                      )}
-                      {privateOnlyFilter && (
-                        <span className="bg-white text-zinc-700 px-2 py-0.5 rounded-md border border-zinc-200">
-                          100% Private
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Applied Lifestyle Input + AI Verdict in a clean 2-part card */}
-                  <div className="bg-white/90 rounded-xl border border-purple-100 divide-y divide-purple-100/70">
-                    <div className="p-2.5 text-[11px] text-zinc-600 flex items-start gap-1.5">
-                      <span className="font-extrabold text-purple-900 shrink-0">Your Brief:</span>
-                      <span className="italic text-zinc-700">
-                        {(viewingAiReportProp as any).deep_ai_audit?.appliedPreferences ||
-                          personalPreferences.trim() ||
-                          'Standard optimal rental baseline (no custom criteria provided).'}
-                      </span>
-                    </div>
-                    <div className="p-2.5 text-[11.5px] font-semibold text-purple-950 leading-relaxed flex items-start gap-1.5">
-                      <span className="font-extrabold text-purple-700 shrink-0">Verdict:</span>
-                      <span>
-                        {(viewingAiReportProp as any).deep_ai_audit?.personalMatchVerdict ||
-                          (viewingAiReportProp as any).deep_ai_audit?.amenitiesVerdict ||
-                          'Evaluated against your active search criteria and property telemetry.'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Verified Property Telemetry & Risk Badges (Shown Once) */}
-                  <div className="flex items-center flex-wrap gap-1.5 pt-0.5">
-                    {(() => {
-                      const rep = getAgencyReputationInfo(viewingAiReportProp);
-                      if (!rep.isPoorAgency) return null;
-                      return (
-                        <span
-                          className="text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-600 border border-rose-700 text-white flex items-center gap-1 shadow-2xs"
-                          title={rep.tooltipReason}
-                        >
-                          <WarningCircle size={11} weight="fill" className="text-white" />
-                          <span>{rep.badgeLabel}</span>
-                        </span>
-                      );
-                    })()}
-                    {(() => {
-                      const barNoise = getPropertyBarNoiseExposure(viewingAiReportProp);
-                      if (!barNoise.isExposed || !barNoise.badgeLabel) return null;
-                      return (
-                        <span
-                          className="text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-50 border border-rose-300 text-rose-950 flex items-center gap-1 shadow-2xs"
-                          title={barNoise.tooltipReason}
-                        >
-                          <SpeakerHigh size={11} weight="fill" className="text-rose-600" />
-                          <span>{barNoise.badgeLabel}</span>
-                        </span>
-                      );
-                    })()}
-                    {(() => {
-                      const busyRoad = getPropertyBusyRoadExposure(viewingAiReportProp);
-                      if (!busyRoad.isNearBusyRoad || !busyRoad.badgeLabel) return null;
-                      return (
-                        <span
-                          className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-50 border border-amber-300 text-amber-950 flex items-center gap-1 shadow-2xs"
-                          title={busyRoad.tooltipReason}
-                        >
-                          <Car size={11} weight="fill" className="text-amber-700" />
-                          <span>{busyRoad.badgeLabel}</span>
-                        </span>
-                      );
-                    })()}
-                    {isLandlordOnSiteProperty(viewingAiReportProp) ? (
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-amber-950 flex items-center gap-1 shadow-2xs">
-                        <WarningCircle size={11} weight="fill" className="text-amber-700" />
-                        <span>Landlord On-Site / Shared Grounds</span>
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-950 flex items-center gap-1">
-                        <ShieldCheck size={11} weight="bold" className="text-emerald-700" />
-                        <span>Autonomous 100% Private Lease</span>
-                      </span>
-                    )}
-                    {!isPropertyInHighRiskCrimeZone(viewingAiReportProp.lat, viewingAiReportProp.lng) ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-emerald-300 text-emerald-900 flex items-center gap-1">
-                        <span>🛡️</span> Safe-ish Verified
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 border border-rose-300 text-rose-900 flex items-center gap-1">
-                        <span>⚠️</span> Near Crime Hotspot
-                      </span>
-                    )}
-                    {Boolean(viewingAiReportProp.fibre_ready) && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-cyan-200 text-cyan-900">
-                        ✓ Fibre Ready
-                      </span>
-                    )}
-                    {(viewingAiReportProp.has_garage || (viewingAiReportProp.parking_type && viewingAiReportProp.parking_type !== 'none')) && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-emerald-200 text-emerald-900">
-                        ✓ Off-Street Parking
-                      </span>
-                    )}
-                    {viewingAiReportProp.stove_type === 'gas' && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-orange-200 text-orange-900">
-                        ✓ Gas Hob
-                      </span>
-                    )}
-                    {viewingAiReportProp.pet_friendly && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-pink-200 text-pink-900">
-                        ✓ Pet Friendly
-                      </span>
-                    )}
-                    {((viewingAiReportProp.acoustic_audit?.facing_direction || '').toLowerCase().includes('north') || viewingAiReportProp.title.toLowerCase().includes('north')) && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-amber-200 text-amber-900">
-                        ✓ North-Facing
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Unified Pros & Cons Audit (Info, Images & Strategic Fit) */}
-                {(() => {
-                  const audit = (viewingAiReportProp as any).deep_ai_audit;
-                  const insights = audit?.strategicInsights;
-                  const rawPros: string[] = Array.isArray(audit?.pros) ? audit.pros : [];
-                  const rawCons: string[] = Array.isArray(audit?.cons) ? audit.cons : [];
-                  const reasonsToRent: string[] = Array.isArray(insights?.reasonsToRent) ? insights.reasonsToRent : [];
-                  const reasonsToAvoid: string[] = Array.isArray(insights?.reasonsToAvoid) ? insights.reasonsToAvoid : [];
-                  const watchouts: string[] = Array.isArray(insights?.criticalWatchouts) ? insights.criticalWatchouts : [];
-
-                  // Deduplicate and consolidate all good-fit reasons and raw pros (excluding baseline "has photos" filler)
-                  const unifiedPros = Array.from(new Set([...reasonsToRent, ...rawPros])).filter(
-                    (p) => !/gallery includes \d+\+? photos|comprehensive \d+-photo gallery/i.test(p)
-                  );
-                  const unifiedCons = Array.from(new Set([...reasonsToAvoid, ...rawCons]));
-
-                  if (unifiedPros.length === 0 && unifiedCons.length === 0 && watchouts.length === 0) return null;
-
-                  return (
-                    <div className="space-y-3">
-                      {/* Header */}
-                      <div className="flex items-center justify-between px-1">
-                        <div className="flex items-center gap-2">
-                          <Sparkle size={16} weight="fill" className="text-purple-600" />
-                          <h4 className="text-xs font-black uppercase tracking-wider text-zinc-900">
-                            Pros &amp; Cons (Info, Images &amp; Strategic Fit)
-                          </h4>
-                        </div>
-                        <span className="text-[10px] font-bold text-zinc-500">
-                          {unifiedPros.length} Pros · {unifiedCons.length} Cons · {watchouts.length} Watchouts
-                        </span>
-                      </div>
-
-                      {/* 3-Column Grid for Pros, Cons & Things to Be Aware Of */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        {/* PROS: Good Fit & Visual Highlights */}
-                        <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/90 flex flex-col justify-between space-y-2.5">
-                          <div>
-                            <div className="flex items-center justify-between pb-1.5 border-b border-emerald-200/60">
-                              <h5 className="text-[11.5px] font-extrabold uppercase tracking-wide text-emerald-950 flex items-center gap-1.5">
-                                <CheckCircle size={15} weight="fill" className="text-emerald-600 shrink-0" />
-                                <span>Pros ({unifiedPros.length})</span>
-                              </h5>
-                              <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                                Good Fit
-                              </span>
-                            </div>
-                            <ul className="mt-2 space-y-2 text-[11px] font-medium text-emerald-950 leading-snug">
-                              {unifiedPros.map((item, idx) => {
-                                const isPhoto = /photo|visual|gallery|finishes|worktop|cabinetry|daylight/i.test(item);
-                                return (
-                                  <li key={idx} className="flex items-start gap-1.5">
-                                    <span className="text-emerald-600 font-black shrink-0 mt-0.5">
-                                      {isPhoto ? '📷' : '✓'}
-                                    </span>
-                                    <span>{item}</span>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          </div>
-                          <div className="pt-2 border-t border-emerald-200/40 text-[9.5px] font-bold text-emerald-700">
-                            {unifiedPros.length} positive fit indicator{unifiedPros.length === 1 ? '' : 's'}
-                          </div>
-                        </div>
-
-                        {/* CONS: Friction Points & Visual Gaps */}
-                        <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/90 flex flex-col justify-between space-y-2.5">
-                          <div>
-                            <div className="flex items-center justify-between pb-1.5 border-b border-rose-200/60">
-                              <h5 className="text-[11.5px] font-extrabold uppercase tracking-wide text-rose-950 flex items-center gap-1.5">
-                                <WarningCircle size={15} weight="fill" className="text-rose-600 shrink-0" />
-                                <span>Cons &amp; Risks ({unifiedCons.length})</span>
-                              </h5>
-                              <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800">
-                                Watchouts
-                              </span>
-                            </div>
-                            <ul className="mt-2 space-y-2 text-[11px] font-medium text-rose-950 leading-snug">
-                              {unifiedCons.map((item, idx) => {
-                                const isPhoto = /photo|visual|gallery|withheld|focal length|proportions|gap|sanitaryware/i.test(item);
-                                return (
-                                  <li key={idx} className="flex items-start gap-1.5">
-                                    <span className="text-rose-600 font-black shrink-0 mt-0.5">
-                                      {isPhoto ? '📷' : '⚠️'}
-                                    </span>
-                                    <span>{item}</span>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          </div>
-                          <div className="pt-2 border-t border-rose-200/40 text-[9.5px] font-bold text-rose-700">
-                            {unifiedCons.length} potential friction point{unifiedCons.length === 1 ? '' : 's'}
-                          </div>
-                        </div>
-
-                        {/* THINGS TO BE AWARE OF: Tenant Vigilance Checklist */}
-                        <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/90 flex flex-col justify-between space-y-2.5">
-                          <div>
-                            <div className="flex items-center justify-between pb-1.5 border-b border-indigo-200/60">
-                              <h5 className="text-[11.5px] font-extrabold uppercase tracking-wide text-indigo-950 flex items-center gap-1.5">
-                                <Info size={15} weight="fill" className="text-indigo-600 shrink-0" />
-                                <span>Things to Be Aware Of</span>
-                              </h5>
-                              <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800">
-                                Checklist
-                              </span>
-                            </div>
-                            <ul className="mt-2 space-y-2 text-[11px] font-medium text-indigo-950 leading-snug">
-                              {watchouts.map((item, idx) => (
-                                <li key={idx} className="flex items-start gap-1.5">
-                                  <span className="text-indigo-600 font-black shrink-0 mt-0.5">🔍</span>
-                                  <span>{item}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                          <div className="pt-2 border-t border-indigo-200/40 text-[9.5px] font-bold text-indigo-700">
-                            Tenant checklist before signing
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Notice if Gemini Quota Depleted */}
-                      {audit?.isVisionFallback && (
-                        <div className="text-[10px] text-zinc-500 bg-amber-50/80 border border-amber-200/60 rounded-xl px-3 py-2 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-amber-600">ℹ️</span>
-                            <span><strong>Photo Analysis:</strong> Showing visual gallery inspection findings (AI Studio prepayment balance depleted).</span>
-                          </div>
-                          <a
-                            href="https://aistudio.google.com/billing"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-amber-800 font-bold underline hover:text-amber-950"
-                          >
-                            Top up credits in AI Studio →
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Architecture, Space & Building Intelligence Audit */}
-                {(() => {
-                  const audit = (viewingAiReportProp as any).deep_ai_audit;
-                  if (!audit) return null;
-                  const bIntel = audit.buildingIntel;
-                  const archCards = [
-                    { icon: '💻', title: 'Space & WFH Ergonomics', text: audit.wfhLayoutVerdict },
-                    { icon: '☀️', title: 'Window Placement & Daylight', text: audit.windowLightAudit },
-                    { icon: '🧱', title: 'Wall Type & Acoustics', text: audit.wallAcousticAudit },
-                    { icon: '📐', title: 'Ceiling Height & Volume', text: audit.ceilingVolumeAudit },
-                    { icon: '💡', title: 'Light Fixtures & Evening Mood', text: audit.lightingFixturesAudit },
-                    { icon: '🏢', title: 'Exterior & Building Signal', text: audit.exteriorBuildingAudit },
-                  ].filter((c) => Boolean(c.text));
-
-                  if (archCards.length === 0 && !bIntel?.building_name) return null;
-
-                  return (
-                    <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/90 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Ruler size={17} weight="bold" className="text-slate-700" />
-                          <div>
-                            <h4 className="text-xs font-black uppercase tracking-wider text-slate-900">
-                              Architecture, Space &amp; Building Intelligence
-                            </h4>
-                            <p className="text-[10px] text-slate-500 font-medium">
-                              Evaluated against WFH ergonomics, daylight/sightlines, wall transmission, ceilings, lighting &amp; block reputation
-                            </p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-800 shrink-0">
-                          6-Point Audit
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        {archCards.map((card, i) => (
-                          <div key={i} className="p-3 rounded-xl bg-white border border-slate-200/80 space-y-1 shadow-2xs">
-                            <div className="flex items-center gap-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-slate-800">
-                              <span>{card.icon}</span>
-                              <span>{card.title}</span>
-                            </div>
-                            <p className="text-[11px] font-medium text-slate-700 leading-relaxed">
-                              {card.text}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-
-                      {bIntel?.building_name && (
-                        <div className="p-3.5 rounded-xl bg-white border border-indigo-200/80 space-y-2 shadow-2xs">
-                          <div className="flex items-center justify-between flex-wrap gap-2">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm">🏙️</span>
-                              <span className="text-xs font-black text-indigo-950">
-                                Block Intel: {bIntel.building_name}
-                              </span>
-                            </div>
-                            {bIntel.google_rating && (
-                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-                                ★ {bIntel.google_rating} {bIntel.review_count ? `(${bIntel.review_count} reviews)` : ''}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
-                            {bIntel.has_lift && bIntel.has_lift !== 'unknown' && (
-                              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 border border-slate-200">
-                                Lift: {bIntel.has_lift === 'yes' ? 'Yes' : 'Walk-up (No Lift)'}
-                              </span>
-                            )}
-                            {bIntel.airbnb_risk && (
-                              <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-900 border border-purple-200">
-                                Airbnb/Short-Let Risk: {String(bIntel.airbnb_risk).split('—')[0].trim()}
-                              </span>
-                            )}
-                            {bIntel.backup_power && (
-                              <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-900 border border-emerald-200">
-                                Power: {String(bIntel.backup_power).split('—')[0].trim()}
-                              </span>
-                            )}
-                          </div>
-
-                          {bIntel.review_summary && (
-                            <p className="text-[11px] font-medium text-slate-700 leading-relaxed">
-                              {bIntel.review_summary}
-                            </p>
-                          )}
-                          {(bIntel.soundproofing || bIntel.body_corporate) && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[10.5px] text-slate-600">
-                              {bIntel.soundproofing && (
-                                <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                  <span className="font-bold text-slate-800">Acoustics:</span> {bIntel.soundproofing}
-                                </div>
-                              )}
-                              {bIntel.body_corporate && (
-                                <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                  <span className="font-bold text-slate-800">Body Corporate:</span> {bIntel.body_corporate}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Section 1: Acoustic Decibel & Orientation Audit (Moved from Map Card) */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-white border border-indigo-200/80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <SpeakerHigh size={18} weight="bold" className="text-indigo-600" />
-                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-indigo-950">
-                        Acoustic Decibel &amp; Orientation Audit
-                      </h4>
-                    </div>
-                    <span className={`text-xs font-black px-2.5 py-0.5 rounded-full border ${(viewingAiReportProp.acoustic_audit?.estimated_db || 40) <= 40
-                      ? 'bg-emerald-100/80 text-emerald-900 border-emerald-300'
-                      : 'bg-rose-100/80 text-rose-900 border-rose-300'
-                      }`}>
-                      {viewingAiReportProp.acoustic_audit?.estimated_db || (viewingAiReportProp.noise_risk === 'sanctuary' ? 38 : 45)} dBA
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <div className="p-2.5 rounded-xl bg-white/90 border border-indigo-100/80 space-y-1">
-                      <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">
-                        Sound Shadow Status
-                      </div>
-                      <div className="font-bold text-zinc-800 text-[11px]">
-                        {viewingAiReportProp.acoustic_audit?.sound_shadow_status ||
-                          (viewingAiReportProp.noise_risk === 'sanctuary'
-                            ? 'Quiet Sanctuary Setback'
-                            : 'Standard Residential Buffer')}
-                      </div>
-                      <div className="text-[10px] text-zinc-500 leading-relaxed">
-                        Shielded from direct traffic reverberations and arterial corridors via natural elevation and building setback.
-                      </div>
-                    </div>
-
-                    <div className="p-2.5 rounded-xl bg-white/90 border border-indigo-100/80 space-y-1">
-                      <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">
-                        Orientation &amp; Natural Shielding
-                      </div>
-                      <div className="font-bold text-zinc-800 text-[11px]">
-                        Facing: {viewingAiReportProp.acoustic_audit?.facing_direction || 'Not specified in listing'}
-                      </div>
-                      <div className="text-[10px] text-zinc-500 leading-relaxed">
-                        Balcony and main living windows oriented away from prevailing winds and transit noise.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 2: Multimodal Computer Vision Photo Audit */}
-                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Eye size={18} weight="bold" className="text-purple-600" />
-                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-zinc-900">
-                        Computer Vision Photo Inspection
-                      </h4>
-                    </div>
-                    {((viewingAiReportProp as any).deep_ai_audit?.isVisionLoading) ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 animate-pulse">
-                        Inspecting photos…
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200/80 text-zinc-700">
-                        {(cardGalleries[viewingAiReportProp.id]?.length || viewingAiReportProp.images?.length || 1)} photo(s)
-                      </span>
-                    )}
-                  </div>
-
-                  {(() => {
-                    const imgs = cardGalleries[viewingAiReportProp.id]?.length
-                      ? cardGalleries[viewingAiReportProp.id]
-                      : viewingAiReportProp.images?.length
-                        ? viewingAiReportProp.images
-                        : viewingAiReportProp.image
-                          ? [viewingAiReportProp.image]
-                          : [];
-                    const photoStory = (viewingAiReportProp as any).deep_ai_audit?.photoStory;
-                    return (
-                      <>
-                        {imgs.length > 0 && (
-                          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                            {imgs.slice(0, 6).map((src, idx) => (
-                              <img
-                                key={idx}
-                                src={src}
-                                alt={`Gallery ${idx + 1}`}
-                                className="w-16 h-12 rounded-lg object-cover border border-zinc-200 shrink-0"
-                              />
-                            ))}
-                          </div>
-                        )}
-                        {photoStory && (
-                          <div className="p-2.5 rounded-xl bg-purple-50/70 border border-purple-200/80 text-[11.5px] font-medium text-purple-950 leading-relaxed">
-                            <span className="font-extrabold text-purple-900">Photo Story: </span>
-                            {photoStory}
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-
-                  <div className="space-y-2 text-xs">
-                    {/* Stove Inspection */}
-                    <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
-                      <span className="text-base leading-none mt-0.5">🍳</span>
-                      <div className="min-w-0">
-                        <div className="font-extrabold text-zinc-900 text-[11px]">
-                          Stove &amp; Cooktop Verification
-                        </div>
-                        <div className="text-[11px] text-zinc-600">
-                          {(viewingAiReportProp as any).deep_ai_audit?.stoveType ||
-                            (viewingAiReportProp.stove_type === 'gas' ? 'Gas hob detected (4-burner)' : viewingAiReportProp.stove_type === 'induction' ? 'Induction hob detected' : 'Built-in stove & oven verified')}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Natural Light & Glazing */}
-                    <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
-                      <span className="text-base leading-none mt-0.5">☀️</span>
-                      <div className="min-w-0">
-                        <div className="font-extrabold text-zinc-900 text-[11px]">
-                          Daylight &amp; Glazing Angles
-                        </div>
-                        <div className="text-[11px] text-zinc-600">
-                          {(viewingAiReportProp as any).deep_ai_audit?.glazing ||
-                            'Direct natural daylight verified across main living spaces.'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Plumbing Connections */}
-                    <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
-                      <span className="text-base leading-none mt-0.5">🚰</span>
-                      <div className="min-w-0">
-                        <div className="font-extrabold text-zinc-900 text-[11px]">
-                          Kitchen Appliance Plumbing
-                        </div>
-                        <div className="text-[11px] text-zinc-600">
-                          {(viewingAiReportProp as any).deep_ai_audit?.plumbing ||
-                            'Dedicated washing machine and dishwasher plumbing connection points verified.'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Lens Distortion Check */}
-                    <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white border border-zinc-200/70">
-                      <span className="text-base leading-none mt-0.5">📐</span>
-                      <div className="min-w-0">
-                        <div className="font-extrabold text-zinc-900 text-[11px]">
-                          Camera Perspective &amp; Distortion Check
-                        </div>
-                        <div className="text-[11px] text-zinc-600">
-                          {(viewingAiReportProp as any).deep_ai_audit?.distortion ||
-                            'Standard 28mm architectural lens ratio; zero deceptive fish-eye room stretching detected.'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 3: Agent Copy & Lease Forensic Audit */}
-                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2.5">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck size={18} weight="bold" className="text-emerald-600" />
-                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-zinc-900">
-                      Agent Copy &amp; Lease Forensic Verdict
-                    </h4>
-                  </div>
-
-                  <div className="space-y-2 text-xs">
-                    {(() => {
-                      const rep = getAgencyReputationInfo(viewingAiReportProp);
-                      if (rep.isPoorAgency) {
-                        return (
-                          <div className="flex items-start gap-2 p-2.5 rounded-xl bg-rose-50 border border-rose-300">
-                            <WarningCircle size={16} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
-                            <div>
-                              <div className="font-extrabold text-rose-950 text-[11px]">
-                                🚩 High Agency Risk: {rep.agencyName} ({rep.rating}★)
-                              </div>
-                              <div className="text-[11px] text-rose-900 mt-0.5 leading-snug">
-                                {rep.tooltipReason}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      }
-                      if (rep.agencyName) {
-                        return (
-                          <div className="flex items-start gap-2 p-2 rounded-xl bg-white border border-zinc-200/70">
-                            <CheckCircle size={15} weight="bold" className="text-emerald-600 shrink-0 mt-0.5" />
-                            <div>
-                              <div className="font-extrabold text-zinc-900 text-[11px]">
-                                Managing Agency Reputation
-                              </div>
-                              <div className="text-[11px] text-zinc-600">
-                                {rep.agencyName}{rep.rating ? ` (${rep.rating}★ verified Google rating)` : ' — Standard tenancy verification.'}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-                    <div className="flex items-start gap-2 p-2 rounded-xl bg-white border border-zinc-200/70">
-                      {((viewingAiReportProp as any).deep_ai_audit?.isLandlordOnSite) ? (
-                        <Info size={15} weight="bold" className="text-amber-600 shrink-0 mt-0.5" />
-                      ) : (
-                        <CheckCircle size={15} weight="bold" className="text-emerald-600 shrink-0 mt-0.5" />
-                      )}
-                      <div>
-                        <div className="font-extrabold text-zinc-900 text-[11px]">Private Tenancy Verification</div>
-                        <div className="text-[11px] text-zinc-600">
-                          {(viewingAiReportProp as any).deep_ai_audit?.tenancyType ||
-                            '100% self-contained private lease (zero student digs or shared commune clauses).'}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-2 p-2 rounded-xl bg-white border border-zinc-200/70">
-                      <CheckCircle size={15} weight="bold" className="text-emerald-600 shrink-0 mt-0.5" />
-                      <div>
-                        <div className="font-extrabold text-zinc-900 text-[11px]">Quiet Hours &amp; Rules</div>
-                        <div className="text-[11px] text-zinc-600">
-                          {(viewingAiReportProp as any).deep_ai_audit?.quietRules ||
-                            'Formal residential tenancy agreement prohibiting noise disturbances or disruptive short-lets.'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="pt-3 border-t border-zinc-100 flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => setViewingAiReportProp(null)}
-                  className="px-4 py-2.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 text-xs font-bold text-zinc-700 transition-all cursor-pointer"
-                >
-                  Close Report
-                </button>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={resolveGoogleMapsUrl(viewingAiReportProp)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="py-2.5 px-3.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold flex items-center justify-center gap-1.5 border border-zinc-200 transition-all cursor-pointer"
-                    title="Show this location in Google Maps (opens in a new tab)"
-                  >
-                    <MapPin size={13} weight="bold" className="text-rose-500" />
-                    <span>Google Maps</span>
-                    <ArrowSquareOut size={12} weight="bold" className="text-zinc-400" />
-                  </a>
-                  <a
-                    href={resolveProperty24Url(viewingAiReportProp)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => openProperty24Url(e, resolveProperty24Url(viewingAiReportProp))}
-                    className="py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-indigo-600 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                  >
-                    <span>View Original on Property24</span>
-                    <ArrowSquareOut size={13} weight="bold" />
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PROPERTY24 FAVOURITES IMPORT MODAL */}
-      {isImportModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setIsImportModalOpen(false)}
-        >
-          <div
-            className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-zinc-200 p-6 flex flex-col gap-4 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center">
-                  <Heart size={20} weight="fill" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-base text-zinc-950">Import Property24 Favourites</h3>
-                  <p className="text-xs text-zinc-500">Paste your saved Property24 links or page HTML</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsImportModalOpen(false)}
-                className="p-1.5 rounded-xl hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
-              >
-                <X size={18} weight="bold" />
-              </button>
-            </div>
-
-            {/* Input area */}
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold text-zinc-700">
-                Paste Property24 Links, Listing IDs, or copied HTML from favourites:
-              </label>
-              <textarea
-                value={importInputText}
-                onChange={(e) => setImportInputText(e.target.value)}
-                placeholder="Paste one or more Property24 links, e.g.:
-https://www.property24.com/to-rent/tamboerskloof/cape-town/western-cape/9151/117183204
-https://www.property24.com/to-rent/gardens/cape-town/western-cape/9143/116982405
-
-Tip: You can also copy all text (Ctrl+A, Ctrl+C) from your Property24 Favourites page and paste it here!"
-                className="w-full h-36 p-3 rounded-2xl border border-zinc-200 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400 resize-none font-mono"
-              />
-            </div>
-
-            {/* Quick Load Sample Links for instant testing */}
-            <div className="flex items-center justify-between text-xs">
-              <button
-                type="button"
-                onClick={() => {
-                  setImportInputText(
-                    'https://www.property24.com/to-rent/tamboerskloof/cape-town/western-cape/9151/117183204\nhttps://www.property24.com/to-rent/gardens/cape-town/western-cape/9143/116982405\nhttps://www.property24.com/to-rent/sea-point/cape-town/western-cape/11013/116849201'
-                  );
-                }}
-                className="text-rose-600 hover:text-rose-800 font-bold hover:underline cursor-pointer"
-              >
-                + Load Sample Property24 Links
-              </button>
-              {importedFavourites.length > 0 && (
-                <button
-                  type="button"
-                  onClick={clearAllFavourites}
-                  className="text-zinc-400 hover:text-rose-600 font-semibold cursor-pointer"
-                >
-                  Clear {importedFavourites.length} imported favourites
-                </button>
-              )}
-            </div>
-
-            {/* Status Feedback */}
-            {importStatusMsg && (
-              <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${importStatusMsg.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                : 'bg-rose-50 border-rose-200 text-rose-800'
-                }`}>
-                <Sparkle size={14} weight="fill" className={importStatusMsg.type === 'success' ? "text-emerald-500 shrink-0" : "text-rose-500 shrink-0"} />
-                <span>{importStatusMsg.text}</span>
-              </div>
-            )}
-
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-100">
-              <button
-                type="button"
-                onClick={() => setIsImportModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleImportFavourites}
-                disabled={isImporting || !importInputText.trim()}
-                className={`px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md cursor-pointer ${isImporting || !importInputText.trim()
-                  ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed'
-                  : 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20 active:scale-95'
-                  }`}
-              >
-                {isImporting ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Importing &amp; Geocoding...</span>
-                  </>
-                ) : (
-                  <>
-                    <Heart size={14} weight="fill" />
-                    <span>Import Favourites</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CommentsModal
+        prop={commentModalProp}
+        comments={listingComments}
+        isLoading={isLoadingComments}
+        newCommentText={newCommentText}
+        isPosting={isPostingComment}
+        editingCommentId={editingCommentId}
+        editingCommentText={editingCommentText}
+        commentError={commentError}
+        activeCommentUid={activeCommentUid}
+        activeCommentNickname={activeCommentNickname}
+        isSignedIn={Boolean(user)}
+        onClose={() => setCommentModalProp(null)}
+        onChangeNewComment={setNewCommentText}
+        onCreateComment={handleCreateComment}
+        onStartEdit={(id, body) => {
+          setEditingCommentId(id);
+          setEditingCommentText(body);
+        }}
+        onCancelEdit={() => setEditingCommentId(null)}
+        onChangeEditText={setEditingCommentText}
+        onSaveEdit={handleUpdateComment}
+        onDeleteComment={handleDeleteComment}
+      />
+
+      <TopTenRankerModal
+        isOpen={isAiModalOpen}
+        matchingCount={displayProperties.length}
+        selectedSuburbs={selectedSuburbs}
+        minPrice={minPrice}
+        maxPrice={maxPrice}
+        bedrooms={bedrooms}
+        safeishFilter={safeishFilter}
+        withinRadiusFilter={withinRadiusFilter}
+        activeAnchorLabel={activeAnchor?.label ?? null}
+        locationRadiusKm={locationRadiusKm}
+        fibreFilter={fibreFilter}
+        parkingFilter={parkingFilter}
+        petFriendlyFilter={petFriendlyFilter}
+        personalPreferences={personalPreferences}
+        walkablePlaces={walkablePlaces}
+        isRunningDeepAi={isRunningDeepAi}
+        onClose={() => setIsAiModalOpen(false)}
+        onUpdatePreferences={handleUpdatePreferences}
+        onAddWalkablePlace={handleAddWalkablePlace}
+        onRemoveWalkablePlace={handleRemoveWalkablePlace}
+        onRunAnalysis={handleRunDeepAiAnalysis}
+      />
+
+      <AiPropertyReportModal
+        viewingAiReportProp={viewingAiReportProp}
+        setViewingAiReportProp={setViewingAiReportProp}
+        selectedSuburbs={selectedSuburbs}
+        minPrice={minPrice}
+        maxPrice={maxPrice}
+        bedrooms={bedrooms}
+        safeishFilter={safeishFilter}
+        withinRadiusFilter={withinRadiusFilter}
+        activeAnchor={activeAnchor}
+        locationRadiusKm={locationRadiusKm}
+        fibreFilter={fibreFilter}
+        parkingFilter={parkingFilter}
+        petFriendlyFilter={petFriendlyFilter}
+        minSqm={minSqm}
+        offMainRoadFilter={offMainRoadFilter}
+        offBarsFilter={offBarsFilter}
+        privateOnlyFilter={privateOnlyFilter}
+        personalPreferences={personalPreferences}
+        handleUpdatePreferences={handleUpdatePreferences}
+        planSummary={planSummary}
+        uploadedViewingPhotos={uploadedViewingPhotos}
+        setUploadedViewingPhotos={setUploadedViewingPhotos}
+        handleUploadViewingPhotos={handleUploadViewingPhotos}
+        photoSourceMode={photoSourceMode}
+        setPhotoSourceMode={setPhotoSourceMode}
+        runForensicAiInspection={runForensicAiInspection}
+        compareIds={compareIds}
+        toggleCompareProperty={toggleCompareProperty}
+        snagCopied={snagCopied}
+        handleCopySnagReport={handleCopySnagReport}
+        isExportingPdf={isExportingPdf}
+        handleDownloadReportPdf={handleDownloadReportPdf}
+        isEmailPdfOpen={isEmailPdfOpen}
+        setIsEmailPdfOpen={setIsEmailPdfOpen}
+        emailPdfTarget={emailPdfTarget}
+        setEmailPdfTarget={setEmailPdfTarget}
+        isSendingEmailPdf={isSendingEmailPdf}
+        emailPdfStatus={emailPdfStatus}
+        setEmailPdfStatus={setEmailPdfStatus}
+        handleEmailReportPdf={handleEmailReportPdf}
+        userEmail={user?.email ?? null}
+        cardGalleries={cardGalleries}
+        getAgencyReputationInfo={getAgencyReputationInfo}
+        getPropertyBarNoiseExposure={getPropertyBarNoiseExposure}
+        getPropertyBusyRoadExposure={getPropertyBusyRoadExposure}
+        isLandlordOnSiteProperty={isLandlordOnSiteProperty}
+        resolveGoogleMapsUrl={resolveGoogleMapsUrl}
+        resolveProperty24Url={resolveProperty24Url}
+        openProperty24Url={openProperty24Url}
+      />
+
+      <FavouritesImportModal
+        isOpen={isImportModalOpen}
+        importInputText={importInputText}
+        importedCount={importedFavourites.length}
+        isImporting={isImporting}
+        importStatusMsg={importStatusMsg}
+        onClose={() => setIsImportModalOpen(false)}
+        onChangeInput={setImportInputText}
+        onClearAll={clearAllFavourites}
+        onImport={handleImportFavourites}
+      />
 
     </div>
   );
