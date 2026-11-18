@@ -33,7 +33,7 @@ import {
   Tree,
   Waves
 } from '@phosphor-icons/react';
-import { Wine, Dumbbell, ShoppingBag, Coffee as CoffeeLucide } from 'lucide-react';
+import { Wine, Dumbbell, ShoppingBag, Coffee as CoffeeLucide, Ghost } from 'lucide-react';
 import { resolveLocationCoords, getPropertyMarketValuation } from '@/lib/geo';
 
 import {
@@ -55,6 +55,7 @@ import {
   drivingRouteCache,
   type AcousticAudit,
   type PropertyMapItem,
+  type GhostListingItem,
   type ProximityAnchor,
   type ProximityFilterConfig,
   type PropertyMapProps,
@@ -75,6 +76,7 @@ export {
   calculateDrivingDurationMins,
   type AcousticAudit,
   type PropertyMapItem,
+  type GhostListingItem,
   type ProximityAnchor,
   type ProximityFilterConfig,
   type PropertyMapProps,
@@ -82,6 +84,7 @@ export {
 
 export const PropertyMap: React.FC<PropertyMapProps> = ({
   properties,
+  ghostListings = [],
   anchors,
   selectedPropertyId,
   selectedAnchorId,
@@ -175,6 +178,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   const [showCafes, setShowCafes] = useState(false);
   const [showShops, setShowShops] = useState(false);
   const [showHiking, setShowHiking] = useState(true);
+  const [showGhostLayer, setShowGhostLayer] = useState(false);
+  const [selectedGhostId, setSelectedGhostId] = useState<string | null>(null);
   const [showCrimeRadar, setShowCrimeRadar] = useState(true);
   const hasLoadedLayerPrefsRef = useRef(false);
 
@@ -190,6 +195,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         if (typeof saved.showCafes === 'boolean') setShowCafes(saved.showCafes);
         if (typeof saved.showShops === 'boolean') setShowShops(saved.showShops);
         if (typeof saved.showHiking === 'boolean') setShowHiking(saved.showHiking);
+        if (typeof saved.showGhostLayer === 'boolean') setShowGhostLayer(saved.showGhostLayer);
         if (typeof saved.showCrimeRadar === 'boolean') setShowCrimeRadar(saved.showCrimeRadar);
       }
     } catch {
@@ -204,12 +210,12 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     try {
       localStorage.setItem(
         'homeseek_map_layers',
-        JSON.stringify({ showAnchors, showRadius, showBars, showGyms, showCafes, showShops, showHiking, showCrimeRadar })
+        JSON.stringify({ showAnchors, showRadius, showBars, showGyms, showCafes, showShops, showHiking, showGhostLayer, showCrimeRadar })
       );
     } catch {
       // ignore storage errors
     }
-  }, [showAnchors, showRadius, showBars, showGyms, showCafes, showShops, showHiking, showCrimeRadar]);
+  }, [showAnchors, showRadius, showBars, showGyms, showCafes, showShops, showHiking, showGhostLayer, showCrimeRadar]);
   const [isHudCollapsed, setIsHudCollapsed] = useState(true);
   const [isSearchRadarCollapsed, setIsSearchRadarCollapsed] = useState(false);
   const [isRadiusCollapsed, setIsRadiusCollapsed] = useState(false);
@@ -1829,6 +1835,91 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
         );
       })()}
 
+      {/* 4d. Ghost Layer (Past / Let Listings from SQLite Pool) */}
+      {showGhostLayer && ghostListings.map((g) => {
+        if (!g.lat || !g.lng) return null;
+        const pos = getScreenPos(g.lat, g.lng);
+        if (pos.x < -80 || pos.x > dimensions.width + 80 || pos.y < -80 || pos.y > dimensions.height + 80) {
+          return null;
+        }
+        const isGhostSelected = selectedGhostId === g.id;
+        const priceK = g.price > 0 ? `R ${(g.price / 1000).toFixed(g.price % 1000 === 0 ? 0 : 1)}k` : 'POA';
+        const firstSeenStr = g.first_seen_at
+          ? new Date(g.first_seen_at * 1000).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: '2-digit' })
+          : null;
+        const removedStr = g.last_seen_at
+          ? new Date(g.last_seen_at * 1000).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: '2-digit' })
+          : null;
+        const dateLabel = firstSeenStr
+          ? (removedStr && removedStr !== firstSeenStr ? `Seen ${firstSeenStr} · Let ${removedStr}` : `Seen ${firstSeenStr}`)
+          : (removedStr ? `Let ${removedStr}` : 'Historical pool');
+        return (
+          <div
+            key={`ghost-${g.id}`}
+            className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-none ${isGhostSelected ? 'z-45' : 'z-15 hover:z-40'}`}
+            style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (hasDraggedRef.current) return;
+              setSelectedGhostId(isGhostSelected ? null : g.id);
+            }}
+            title={`Past listing: ${g.title} · ${priceK} (${dateLabel})`}
+          >
+            <div className={`px-2 py-0.5 rounded-full border border-dashed text-[10px] font-bold flex items-center gap-1 backdrop-blur-xs shadow-xs whitespace-nowrap transition-all ${isGhostSelected
+              ? 'bg-zinc-800 text-zinc-100 border-zinc-400 opacity-100 scale-105'
+              : 'bg-zinc-100/85 text-zinc-600 border-zinc-400/90 opacity-75 hover:opacity-100'
+              }`}>
+              <Ghost size={11} className="shrink-0" />
+              <span>{priceK}</span>
+            </div>
+
+            {isGhostSelected && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 bg-white/98 backdrop-blur-md rounded-2xl shadow-2xl border border-zinc-200 p-3 z-50 text-left space-y-1.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[9.5px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200">
+                    👻 Past / Let Listing
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedGhostId(null)}
+                    className="text-zinc-400 hover:text-zinc-700 cursor-pointer"
+                  >
+                    <X size={12} weight="bold" />
+                  </button>
+                </div>
+                <div className="text-xs font-extrabold text-zinc-900 line-clamp-1">{g.title}</div>
+                <div className="text-[10.5px] text-zinc-500 line-clamp-1">{g.address || g.suburb}</div>
+                <div className="flex items-center justify-between text-[11px] font-bold text-zinc-800 pt-0.5">
+                  <span>{g.price > 0 ? `R ${g.price.toLocaleString()}/mo` : 'POA'}</span>
+                  <span className="text-[10px] font-semibold text-zinc-500">
+                    {g.bedrooms != null ? `${g.bedrooms} bed` : ''}{g.sqm ? ` · ${g.sqm}m²` : ''}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-1 border-t border-zinc-100 text-[10px]">
+                  <span className="text-zinc-400 font-medium">
+                    {dateLabel}
+                  </span>
+                  {g.url && (
+                    <a
+                      href={g.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-bold text-indigo-600 hover:underline flex items-center gap-0.5"
+                    >
+                      <span>P24</span>
+                      <ArrowSquareOut size={10} weight="bold" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
       {/* 4c. Active Anchor Perimeter Distance Badge (when no custom proximity filter is active) */}
       {!proximityFilter && showRadius && showAnchors && activeAnchor && (() => {
         const aPos = getScreenPos(activeAnchor.lat, activeAnchor.lng);
@@ -2012,17 +2103,6 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
                         }`}>
                         {isTopMatch && <Sparkle size={9} weight="fill" />}
                         #{property.rank}
-                      </span>
-                    )}
-
-                    {isApproxArea && (zoom >= 15.2 || isSelected || isHovered) && (
-                      <span
-                        className={`text-[9px] font-black uppercase tracking-wider px-1 py-0.5 rounded ${isSelected
-                          ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
-                          : 'bg-amber-200/70 text-amber-900'
-                          }`}
-                      >
-                        ~Area
                       </span>
                     )}
 
@@ -2635,6 +2715,23 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
             </button>
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
               Hiking Trails: {showHiking ? 'Visible' : 'Hidden'}
+            </div>
+          </div>
+
+          {/* 3g. Ghost Layer (Past / Let Listings) Toggle */}
+          <div className="relative group/layer-btn">
+            <button
+              onClick={() => setShowGhostLayer(!showGhostLayer)}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showGhostLayer
+                ? 'bg-zinc-800 text-white shadow-md shadow-zinc-800/25 ring-2 ring-zinc-400/40'
+                : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'
+                }`}
+              aria-label="Toggle Ghost Layer (Past Listings)"
+            >
+              <Ghost size={16} className={showGhostLayer ? 'text-white' : 'text-zinc-600'} />
+            </button>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-xl bg-zinc-950/95 text-white text-[11px] font-bold whitespace-nowrap opacity-0 group-hover/layer-btn:opacity-100 pointer-events-none shadow-xl transition-all duration-150 z-50 border border-white/10">
+              Ghost Layer (Past{ghostListings.length > 0 ? `: ${ghostListings.length}` : ''}): {showGhostLayer ? 'Visible' : 'Hidden'}
             </div>
           </div>
 

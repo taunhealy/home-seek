@@ -74,3 +74,12 @@ async def place_photo_proxy(photo_reference: str, maxwidth: int = 1000):
         raise HTTPException(status_code=500, detail="Google Places API key not configured")
     photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth={maxwidth}&photo_reference={photo_reference}&key={api_key}"
     return RedirectResponse(url=photo_url, status_code=307)
+
+
+@router.get("/api/config/mapbox")
+async def get_mapbox_public_config():
+    """Returns public Mapbox pk.* token for on-demand 3D Terrain Preview."""
+    tok = (os.getenv("MAPBOX_ACCESS_TOKEN") or "").strip()
+    if tok.startswith("pk."):
+        return {"status": "success", "token": tok}
+    return {"status": "unavailable", "token": None}

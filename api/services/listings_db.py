@@ -209,11 +209,11 @@ def upsert_listings(items: List[Dict[str, Any]], suburb_name: str, is_full_subur
             placeholders = ",".join(["?"] * len(clean_ids_formatted))
             conn.execute(f"""
                 UPDATE listings 
-                SET is_available = 0, updated_at = ?
+                SET is_available = 0
                 WHERE suburb_normalized = ? 
                 AND is_available = 1
                 AND id NOT IN ({placeholders})
-            """, [now, sub_norm] + clean_ids_formatted)
+            """, [sub_norm] + clean_ids_formatted)
 
         # Record sync state for suburb
         conn.execute("""
@@ -434,6 +434,76 @@ def update_listing_vision_attributes(
         )
         conn.commit()
         return True
+
+
+def query_ghost_listings(
+    suburbs: List[str],
+    min_price: int = 0,
+    max_price: int = 999999,
+    beds: str = "any",
+    limit: int = 180,
+) -> List[Dict[str, Any]]:
+    """Queries past / unavailable (is_available = 0) listings for the map Ghost Layer."""
+    if not suburbs:
+        return []
+
+    clean_subs = [s.strip().lower() for s in suburbs if s.strip()]
+    if not clean_subs:
+        return []
+
+    sub_clauses = []
+    sub_params: List[Any] = []
+    for sub in clean_subs:
+        sub_clauses.append(
+            "(suburb_normalized = ? OR LOWER(address) LIKE ? OR LOWER(address) LIKE ? OR LOWER(address) LIKE ? OR LOWER(url) LIKE ?)"
+        )
+        sub_params.extend([sub, f"{sub},%", f"% {sub},%", f"% {sub}", f"%/{sub.replace(' ', '-')}/%"])
+
+    query = """
+        SELECT created_at, updated_at, raw_json FROM listings
+        WHERE ({sub_where})
+        AND is_available = 0
+        AND lat IS NOT NULL AND lng IS NOT NULL
+        AND price >= ?
+        AND price <= ?
+    """.format(sub_where=" OR ".join(sub_clauses))
+
+    params: List[Any] = sub_params + [min_price, max_price]
+    if beds and beds != "any":
+        import re as _re
+        bed_str = _re.sub(r"[^\d.]", "", str(beds))
+        if bed_str:
+            query += " AND bedrooms >= ?"
+            params.append(float(bed_str))
+
+    query += " ORDER BY updated_at DESC LIMIT ?"
+    params.append(int(limit))
+
+    results: List[Dict[str, Any]] = []
+    with _get_connection() as conn:
+        for row in conn.execute(query, params).fetchall():
+            try:
+                item = json.loads(row["raw_json"])
+                results.append({
+                    "id": item.get("id") or f"ghost-{item.get('p24_id')}",
+                    "p24_id": item.get("p24_id"),
+                    "title": item.get("title") or "Past Listing",
+                    "address": item.get("address") or item.get("suburb") or "",
+                    "suburb": item.get("suburb") or "",
+                    "price": item.get("price") or 0,
+                    "bedrooms": item.get("bedrooms"),
+                    "bathrooms": item.get("bathrooms"),
+                    "sqm": item.get("sqm"),
+                    "lat": item.get("lat"),
+                    "lng": item.get("lng"),
+                    "url": item.get("url"),
+                    "image": item.get("image"),
+                    "first_seen_at": row["created_at"],
+                    "last_seen_at": row["updated_at"],
+                })
+            except Exception:
+                pass
+    return results
 
 
 def get_pool_stats() -> Dict[str, Any]:

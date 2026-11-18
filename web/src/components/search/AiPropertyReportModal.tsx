@@ -1,15 +1,18 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ArrowSquareOut,
   Camera,
   Car,
+  ChatCircleText,
   CheckCircle,
+  CircleNotch,
   Clock,
   Eye,
   Info,
   MapPin,
+  PaperPlaneRight,
   Ruler,
   Scales,
   ShieldCheck,
@@ -21,6 +24,8 @@ import {
 } from '@phosphor-icons/react';
 import { formatPrice, isPropertyInHighRiskCrimeZone } from '@/lib/forensicAudit';
 import { getDwellingPrivacyInfo } from '@/lib/geo';
+import { apiUrl } from '@/lib/apiClient';
+import { consumeAuditCredit } from '@/lib/pro-plan';
 
 export interface AiPropertyReportModalProps {
   viewingAiReportProp: any;
@@ -126,7 +131,58 @@ export const AiPropertyReportModal: React.FC<AiPropertyReportModalProps> = ({
   openProperty24Url,
 }) => {
   const user = userEmail ? { email: userEmail } : null;
+  const [chatByProp, setChatByProp] = useState<Record<string, Array<{ role: 'user' | 'assistant'; content: string }>>>({});
+  const [chatInput, setChatInput] = useState('');
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+
   if (!viewingAiReportProp) return null;
+
+  const propIdKey = String(viewingAiReportProp.id || 'default');
+  const chatMessages = chatByProp[propIdKey] || [];
+  const remainingCredits = planSummary?.remainingAudits ?? 0;
+
+  const handleSendChat = async (overrideText?: string) => {
+    const q = (overrideText ?? chatInput).trim();
+    if (!q || isSendingChat) return;
+    if (remainingCredits <= 0) {
+      setChatError('No AI credits left. Upgrade or top up credits to continue chatting.');
+      return;
+    }
+
+    setChatError(null);
+    const nextHistory = [...chatMessages, { role: 'user' as const, content: q }];
+    setChatByProp((prev) => ({ ...prev, [propIdKey]: nextHistory }));
+    if (!overrideText) setChatInput('');
+    setIsSendingChat(true);
+
+    try {
+      const res = await fetch(apiUrl('/api/listing/chat'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          property: viewingAiReportProp,
+          audit: (viewingAiReportProp as any).deep_ai_audit || {},
+          personal_preferences: personalPreferences,
+          messages: chatMessages,
+          question: q,
+        }),
+      });
+      const data = await res.json();
+      const replyText = data?.reply || 'No response returned.';
+      if (data?.status === 'success' && !data?.is_fallback) {
+        consumeAuditCredit();
+      }
+      setChatByProp((prev) => ({
+        ...prev,
+        [propIdKey]: [...nextHistory, { role: 'assistant', content: replyText }],
+      }));
+    } catch {
+      setChatError('Failed to reach AI chat service. No credit charged.');
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
 
   return (
     <>
@@ -1321,6 +1377,111 @@ export const AiPropertyReportModal: React.FC<AiPropertyReportModalProps> = ({
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Section 4: AI Follow-Up Chat (1 AI Credit per message) */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/60 border border-indigo-200/80 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <ChatCircleText size={16} weight="fill" className="text-indigo-600" />
+                      <h4 className="text-xs font-black uppercase tracking-wider text-zinc-900">
+                        Ask AI About This Property
+                      </h4>
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                        1 AI Credit / msg
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-bold">
+                      <span className={remainingCredits > 0 ? 'text-zinc-600' : 'text-rose-600'}>
+                        {remainingCredits} {remainingCredits === 1 ? 'credit' : 'credits'} left
+                      </span>
+                      {remainingCredits <= 0 && (
+                        <a href="/pricing" className="text-purple-700 hover:underline font-black">
+                          Top Up →
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  {chatMessages.length === 0 && (
+                    <div className="flex items-center flex-wrap gap-1.5">
+                      {[
+                        'Is the driveway or yard likely shared?',
+                        'How well does this suit full-time WFH?',
+                        'Draft 4 viewing questions for the agent',
+                      ].map((q) => (
+                        <button
+                          key={q}
+                          type="button"
+                          disabled={isSendingChat || remainingCredits <= 0}
+                          onClick={() => handleSendChat(q)}
+                          className="px-2.5 py-1 rounded-xl bg-white hover:bg-indigo-50 border border-indigo-200/80 text-[10.5px] font-bold text-indigo-900 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {chatMessages.length > 0 && (
+                    <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                      {chatMessages.map((m, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-2.5 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${m.role === 'user'
+                            ? 'bg-indigo-600 text-white ml-8 font-medium'
+                            : 'bg-white border border-zinc-200 text-zinc-800 mr-4'
+                            }`}
+                        >
+                          {m.content}
+                        </div>
+                      ))}
+                      {isSendingChat && (
+                        <div className="p-2.5 rounded-xl bg-white border border-zinc-200 text-zinc-500 text-xs flex items-center gap-2 mr-4">
+                          <CircleNotch size={13} className="animate-spin text-indigo-600" />
+                          <span>Analyzing listing &amp; report...</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {chatError && (
+                    <p className="text-[11px] font-semibold text-rose-600">{chatError}</p>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendChat();
+                        }
+                      }}
+                      disabled={isSendingChat || remainingCredits <= 0}
+                      placeholder={
+                        remainingCredits > 0
+                          ? 'Ask a follow-up question about this listing (1 AI credit)...'
+                          : 'Out of AI credits — top up on Pricing to continue chatting'
+                      }
+                      className="flex-1 px-3 py-2 rounded-xl bg-white border border-indigo-200 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:bg-zinc-100"
+                    />
+                    <button
+                      type="button"
+                      disabled={isSendingChat || !chatInput.trim() || remainingCredits <= 0}
+                      onClick={() => handleSendChat()}
+                      className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                    >
+                      {isSendingChat ? (
+                        <CircleNotch size={14} className="animate-spin" />
+                      ) : (
+                        <PaperPlaneRight size={14} weight="fill" />
+                      )}
+                      <span>Send</span>
+                    </button>
                   </div>
                 </div>
               </div>

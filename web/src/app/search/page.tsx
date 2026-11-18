@@ -75,7 +75,9 @@ import {
 } from '@/constants/locations';
 import { CommentsModal, type ListingComment } from '@/components/search/CommentsModal';
 import { FavouritesImportModal } from '@/components/search/FavouritesImportModal';
+import type { GhostListingItem } from '@/constants/capeTownGeo';
 import { TopTenRankerModal, type WalkableTarget } from '@/components/search/TopTenRankerModal';
+import { Mapbox3DModal, type Mapbox3DTarget } from '@/components/search/Mapbox3DModal';
 import { AiPropertyReportModal } from '@/components/search/AiPropertyReportModal';
 import {
   isPropertyInHighRiskCrimeZone,
@@ -1691,6 +1693,24 @@ export default function SearchMapPage() {
       } catch (e) {
         // Silent fallback to local state
       }
+      try {
+        const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const gParams = new URLSearchParams({
+          suburbs: selectedSuburbs.join(','),
+          min_price: String(parseInt(minPrice) || 0),
+          max_price: String(parseInt(maxPrice) || 999999),
+          bedrooms: String(bedrooms || 'any'),
+        });
+        const gRes = await fetch(`${backendBase}/api/listings/ghost?${gParams.toString()}`);
+        if (gRes.ok && !isCancelled) {
+          const gData = await gRes.json();
+          if (Array.isArray(gData.listings)) {
+            setGhostListings(gData.listings);
+          }
+        }
+      } catch {
+        // Non-critical ghost layer fetch
+      }
     };
     syncSuburbListings();
     return () => {
@@ -1778,6 +1798,8 @@ export default function SearchMapPage() {
     oldestAgeSeconds: number;
     staleSuburbs: string[];
   } | null>(null);
+  const [ghostListings, setGhostListings] = useState<GhostListingItem[]>([]);
+  const [preview3DTarget, setPreview3DTarget] = useState<Mapbox3DTarget | null>(null);
   const [walkablePlaces, setWalkablePlaces] = useState<WalkableTarget[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -5241,6 +5263,25 @@ export default function SearchMapPage() {
                           {(commentCounts[prop.id] || 0) > 0 && <span>{commentCounts[prop.id]}</span>}
                         </button>
 
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreview3DTarget({
+                              id: prop.id,
+                              title: prop.title,
+                              address: prop.address,
+                              lat: prop.lat,
+                              lng: prop.lng,
+                              price: prop.price,
+                            });
+                          }}
+                          className="px-2 py-1.5 rounded-lg text-[10.5px] font-black flex items-center gap-1 border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-800 transition-colors whitespace-nowrap cursor-pointer"
+                          title="Open on-demand Mapbox 3D Terrain, Buildings & Sun Shadow Preview"
+                        >
+                          <span>3D</span>
+                        </button>
+
                         <a
                           href={resolveGoogleMapsUrl(prop)}
                           target="_blank"
@@ -5424,6 +5465,7 @@ export default function SearchMapPage() {
           <PropertyMap
             mode="default"
             properties={displayProperties}
+            ghostListings={ghostListings}
             anchors={displayedAnchors}
             selectedPropertyId={selectedPropertyId}
             selectedAnchorId={activeAnchorId}
@@ -5561,6 +5603,11 @@ export default function SearchMapPage() {
         onChangeInput={setImportInputText}
         onClearAll={clearAllFavourites}
         onImport={handleImportFavourites}
+      />
+
+      <Mapbox3DModal
+        target={preview3DTarget}
+        onClose={() => setPreview3DTarget(null)}
       />
 
     </div>

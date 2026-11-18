@@ -19,7 +19,7 @@ import {
   Scales,
   Crown
 } from '@phosphor-icons/react';
-import { getCompareList } from '@/lib/pro-plan';
+import { getCompareList, getPlanSummary, type PlanSummary } from '@/lib/pro-plan';
 import { useAuth } from '@/lib/auth-context';
 
 interface NavbarProps {
@@ -36,6 +36,7 @@ const NAV_ITEMS = [
   { label: 'AI Scout', href: '/discover', icon: Sparkle },
   { label: 'Search', href: '/search', icon: MagnifyingGlass },
   { label: 'Compare', href: '/compare', icon: Scales },
+  { label: 'Inspection', href: '/inspection', icon: Check },
   { label: 'Pro', href: '/pricing', icon: Crown },
   { label: 'Contact', href: '/contact', icon: ChatCircleDots },
 ];
@@ -69,6 +70,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [authPassword, setAuthPassword] = useState('');
   const [authDisplayName, setAuthDisplayName] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [planSummary, setPlanSummary] = useState<PlanSummary | null>(null);
+
+  useEffect(() => {
+    setPlanSummary(getPlanSummary());
+    const syncPlan = () => setPlanSummary(getPlanSummary());
+    window.addEventListener('homeseek-plan-updated', syncPlan);
+    window.addEventListener('storage', syncPlan);
+    return () => {
+      window.removeEventListener('homeseek-plan-updated', syncPlan);
+      window.removeEventListener('storage', syncPlan);
+    };
+  }, []);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
 
   const handleOpenAuthModal = () => {
@@ -330,6 +343,35 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
 
                     <div className="p-2 space-y-1">
+                      {/* AI Credits Summary Pill */}
+                      <div className="px-2.5 py-2 rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200/80 flex items-center justify-between gap-2 mb-1.5">
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1">
+                            <Sparkle size={11} weight="fill" className="text-purple-600 shrink-0" />
+                            <span>{planSummary?.remainingAudits ?? 0} AI Credits</span>
+                          </div>
+                          <div className="text-[10px] text-zinc-500 font-semibold truncate">
+                            {planSummary?.label || 'Free Scout'}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Link
+                            href="/profile"
+                            onClick={() => setIsOpen(false)}
+                            className="px-2 py-1 rounded-lg bg-white hover:bg-zinc-100 border border-zinc-200 text-[10px] font-bold text-zinc-800"
+                          >
+                            Profile
+                          </Link>
+                          <Link
+                            href="/pricing"
+                            onClick={() => setIsOpen(false)}
+                            className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-[10px] font-extrabold text-white"
+                          >
+                            Top Up
+                          </Link>
+                        </div>
+                      </div>
+
                       {/* Profile Settings (Nickname & Avatar) */}
                       <div className="p-2 space-y-2 bg-indigo-50/50 border border-indigo-100 rounded-xl mb-1.5">
                         <label className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider block">
@@ -410,6 +452,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                         >
                           <Sparkle size={14} weight="bold" className="text-purple-600" />
                           <span>AI Scout</span>
+                        </Link>
+                        <Link
+                          href="/inspection"
+                          onClick={() => setIsOpen(false)}
+                          className="col-span-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-zinc-800 hover:bg-indigo-50 text-[11px] font-semibold transition-colors"
+                        >
+                          <Check size={14} weight="bold" className="text-indigo-600" />
+                          <span>Move-In Inspection (PDF)</span>
                         </Link>
                       </div>
                       {/* WhatsApp Routing */}

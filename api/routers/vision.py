@@ -593,3 +593,113 @@ Return STRICT JSON only (no markdown fences):
         print_safe(f"[COMPARE AI ERROR] {e}")
         return {"status": "fallback", "comparison": _build_compare_fallback(props, req.personal_preferences, str(e)[:80])}
 
+
+class ListingChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ListingChatRequest(BaseModel):
+    property: Dict[str, Any]
+    audit: Optional[Dict[str, Any]] = None
+    personal_preferences: str = ""
+    messages: List[ListingChatMessage] = []
+    question: str
+
+
+@router.post("/api/listing/chat")
+async def listing_followup_chat(req: ListingChatRequest):
+    """Continues the forensic inspection conversation for a single property."""
+    question = (req.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    prop = req.property or {}
+    audit = req.audit or {}
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return {
+            "status": "fallback",
+            "reply": "Live Gemini AI is not configured (missing API key), so no credit was charged.",
+            "is_fallback": True,
+        }
+
+    try:
+        import json as json_mod
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+        context_obj = {
+            "title": prop.get("title"),
+            "address": prop.get("address"),
+            "suburb": prop.get("suburb"),
+            "price": prop.get("price"),
+            "bedrooms": prop.get("bedrooms"),
+            "bathrooms": prop.get("bathrooms"),
+            "sqm": prop.get("sqm"),
+            "description": (prop.get("description") or "")[:1800],
+            "fibre_ready": prop.get("fibre_ready"),
+            "has_garage": prop.get("has_garage"),
+            "has_secure_bay": prop.get("has_secure_bay"),
+            "stove_type": prop.get("stove_type"),
+            "pet_friendly": prop.get("pet_friendly"),
+            "is_security_estate": prop.get("is_security_estate"),
+            "estate_name": prop.get("estate_name"),
+            "acoustic_audit": prop.get("acoustic_audit"),
+            "agency_name": prop.get("agency_name"),
+            "agency_rating": prop.get("agency_rating"),
+            "report_summary": {
+                "tenancyType": audit.get("tenancyType"),
+                "wfhLayoutVerdict": audit.get("wfhLayoutVerdict"),
+                "windowLightAudit": audit.get("windowLightAudit"),
+                "wallAcousticAudit": audit.get("wallAcousticAudit"),
+                "photoStory": audit.get("photoStory"),
+                "pros": (audit.get("pros") or [])[:6],
+                "cons": (audit.get("cons") or [])[:6],
+            },
+            "user_preferences": req.personal_preferences,
+        }
+
+        sys_prompt = (
+            "You are HomeSeek's forensic Cape Town rental advisor. Answer the user's follow-up question about this specific "
+            "property concisely (2-5 sentences or tight bullet points), grounding your answer strictly in the listing data, "
+            "location context, and forensic report below. Flag unknowns honestly and suggest what to verify at a viewing.\n\n"
+            f"PROPERTY & REPORT CONTEXT:\n{json_mod.dumps(context_obj, default=str)}"
+        )
+
+        lc_msgs: List[Any] = [SystemMessage(content=sys_prompt)]
+        for m in (req.messages or [])[-10:]:
+            txt = (m.content or "").strip()
+            if not txt:
+                continue
+            if m.role == "assistant":
+                lc_msgs.append(AIMessage(content=txt))
+            else:
+                lc_msgs.append(HumanMessage(content=txt))
+        lc_msgs.append(HumanMessage(content=question))
+
+        for m_name in ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]:
+            try:
+                llm = ChatGoogleGenerativeAI(model=m_name, api_key=api_key, temperature=0.3, request_timeout=35)
+                resp = await llm.ainvoke(lc_msgs)
+                reply = (resp.content if isinstance(resp.content, str) else str(resp.content)).strip()
+                if reply:
+                    return {"status": "success", "reply": reply, "is_fallback": False}
+            except Exception as e:
+                if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e) or "402" in str(e):
+                    continue
+                raise e
+
+        return {
+            "status": "fallback",
+            "reply": "AI Studio quota is currently depleted, so no credit was charged. Please try again later.",
+            "is_fallback": True,
+        }
+    except Exception as e:
+        print_safe(f"[LISTING CHAT ERROR] {e}")
+        return {
+            "status": "fallback",
+            "reply": f"Could not reach Gemini AI right now ({str(e)[:80]}), so no credit was charged.",
+            "is_fallback": True,
+        }
+

@@ -100,8 +100,27 @@ export interface ProximityFilterConfig {
   label: string;
 }
 
+export interface GhostListingItem {
+  id: string;
+  p24_id?: string | null;
+  title: string;
+  address: string;
+  suburb?: string;
+  price: number;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  sqm?: number | null;
+  lat: number;
+  lng: number;
+  url?: string;
+  image?: string;
+  first_seen_at?: number | null;
+  last_seen_at?: number | null;
+}
+
 export interface PropertyMapProps {
   properties: PropertyMapItem[];
+  ghostListings?: GhostListingItem[];
   anchors: ProximityAnchor[];
   selectedPropertyId?: string | null;
   selectedAnchorId?: string | null;

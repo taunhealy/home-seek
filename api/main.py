@@ -51,6 +51,7 @@ from typing import Optional, List, Union, Dict, Any
 from pydantic import BaseModel
 from services.templates import get_match_template, get_subscription_template, get_invoice_template, build_alert_subject
 import json
+import re
 import asyncio
 import time
 import hashlib
@@ -91,6 +92,7 @@ from routers.vision import router as vision_router
 from routers.live_p24 import router as live_p24_router
 from routers.acoustics import router as acoustics_router
 from routers.reports_pro import router as reports_pro_router
+from routers.inspections import router as inspections_router
 app.include_router(community_router)
 app.include_router(reports_router)
 app.include_router(places_router)
@@ -98,6 +100,7 @@ app.include_router(vision_router)
 app.include_router(live_p24_router)
 app.include_router(acoustics_router)
 app.include_router(reports_pro_router)
+app.include_router(inspections_router)
 
 # [TOOL] State Management
 from intelligence.evaluator import PropertyEvaluator

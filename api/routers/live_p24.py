@@ -130,6 +130,23 @@ async def verify_p24_favourites(req: VerifyFavouritesRequest):
         "rate_guard": get_p24_circuit_status(),
     }
 
+@router.get("/api/listings/ghost")
+async def get_ghost_listings_endpoint(
+    suburbs: str = "",
+    min_price: int = 0,
+    max_price: int = 999999,
+    bedrooms: str = "any",
+):
+    """Returns past / let (is_available = 0) listings from local SQLite for the map Ghost Layer."""
+    try:
+        from services.listings_db import query_ghost_listings
+        sub_list = [s.strip() for s in (suburbs or "").split(",") if s.strip()]
+        rows = query_ghost_listings(sub_list, min_price=min_price, max_price=max_price, beds=bedrooms)
+        return {"status": "success", "count": len(rows), "listings": rows}
+    except Exception as e:
+        return {"status": "error", "count": 0, "listings": [], "message": str(e)}
+
+
 @router.get("/api/pool/stats")
 async def get_pool_stats_endpoint():
     """Returns status and metrics of the centralized listings pool and sync poller."""
