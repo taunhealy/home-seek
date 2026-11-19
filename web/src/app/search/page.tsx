@@ -1633,11 +1633,17 @@ export default function SearchMapPage() {
     });
   };
 
-  // Auto-load live/cached listings from backend whenever selectedSuburbs changes
+  const [backendSyncError, setBackendSyncError] = useState<string | null>(null);
+  const [syncRetryTick, setSyncRetryTick] = useState<number>(0);
+  const [ghostRetryTick, setGhostRetryTick] = useState<number>(0);
+
+  // Auto-load live/cached listings from backend whenever selectedSuburbs changes (with startup retry)
   useEffect(() => {
     if (!hasLoadedPersistedState || selectedSuburbs.length === 0) return;
     let isCancelled = false;
-    const syncSuburbListings = async () => {
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const syncSuburbListings = async (attempt = 0) => {
       try {
         const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
         const res = await fetch(`${backendBase}/api/search/live-scrape`, {
@@ -1652,9 +1658,14 @@ export default function SearchMapPage() {
             anchor_lng: activeAnchor ? activeAnchor.lng : null,
           }),
         });
-        if (!res.ok || isCancelled) return;
+        if (isCancelled) return;
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
         const data = await res.json();
-        if (data.rate_guard?.circuit_open && !isCancelled) {
+        if (isCancelled) return;
+        setBackendSyncError(null);
+        if (data.rate_guard?.circuit_open) {
           const secs = data.rate_guard.cooldown_remaining_seconds || 180;
           const mins = Math.max(1, Math.ceil(secs / 60));
           setRateGuardUntil(Date.now() + secs * 1000);
@@ -1663,10 +1674,10 @@ export default function SearchMapPage() {
               ? `🛡️ P24 Rate-Limit Shield Active (${mins}m cooldown). Serving ${data.listings.length} cached listings.`
               : `🛡️ P24 Rate-Limit Shield Active (${mins}m cooldown). Pausing outbound scrapes to protect your IP.`
           );
-        } else if (!isCancelled && data.rate_guard && !data.rate_guard.circuit_open) {
+        } else if (data.rate_guard && !data.rate_guard.circuit_open) {
           setRateGuardUntil(0);
         }
-        if (!isCancelled && data.batch_meta) {
+        if (data.batch_meta) {
           const meta = data.batch_meta;
           const staleSubs: string[] = Array.isArray(meta.stale_suburbs) ? meta.stale_suburbs : [];
           const ageSecs = typeof meta.oldest_age_seconds === 'number' ? meta.oldest_age_seconds : 0;
@@ -1680,7 +1691,7 @@ export default function SearchMapPage() {
             setStaleDataInfo(null);
           }
         }
-        if (Array.isArray(data.listings) && data.listings.length > 0 && !isCancelled) {
+        if (Array.isArray(data.listings) && data.listings.length > 0) {
           const mapped: PropertyMapItem[] = data.listings.map(mapLiveScrapeItem);
           setProperties((prev) => {
             const incomingIds = new Set(mapped.map((m) => m.id));
@@ -1690,9 +1701,31 @@ export default function SearchMapPage() {
             return [...mapped, ...outsideQueried];
           });
         }
-      } catch (e) {
-        // Silent fallback to local state
+      } catch {
+        if (isCancelled) return;
+        if (attempt < 2) {
+          retryTimer = setTimeout(() => {
+            if (!isCancelled) syncSuburbListings(attempt + 1);
+          }, attempt === 0 ? 2500 : 5000);
+        } else {
+          setBackendSyncError('Listings server is offline or still starting up.');
+        }
       }
+    };
+    syncSuburbListings(0);
+    return () => {
+      isCancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [hasLoadedPersistedState, selectedSuburbs.join('|'), minPrice, maxPrice, bedrooms, syncRetryTick]);
+
+  // Independent Ghost Layer fetch — ALWAYS runs regardless of active/stale/empty listings state
+  useEffect(() => {
+    if (!hasLoadedPersistedState || selectedSuburbs.length === 0) return;
+    let isCancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const syncGhostListings = async (attempt = 0) => {
       try {
         const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
         const gParams = new URLSearchParams({
@@ -1702,21 +1735,39 @@ export default function SearchMapPage() {
           bedrooms: String(bedrooms || 'any'),
         });
         const gRes = await fetch(`${backendBase}/api/listings/ghost?${gParams.toString()}`);
-        if (gRes.ok && !isCancelled) {
-          const gData = await gRes.json();
-          if (Array.isArray(gData.listings)) {
-            setGhostListings(gData.listings);
+        if (isCancelled) return;
+        if (!gRes.ok) throw new Error(`HTTP ${gRes.status}`);
+        const gData = await gRes.json();
+        if (isCancelled) return;
+        let fetchedGhosts: GhostListingItem[] = Array.isArray(gData.listings) ? gData.listings : [];
+        // If strict budget/bed filter returned 0 ghosts, fall back to all historical ghosts in selected suburbs
+        if (fetchedGhosts.length === 0) {
+          const fallbackParams = new URLSearchParams({ suburbs: selectedSuburbs.join(',') });
+          const fbRes = await fetch(`${backendBase}/api/listings/ghost?${fallbackParams.toString()}`);
+          if (fbRes.ok && !isCancelled) {
+            const fbData = await fbRes.json();
+            if (Array.isArray(fbData.listings)) {
+              fetchedGhosts = fbData.listings;
+            }
           }
         }
+        if (!isCancelled) {
+          setGhostListings(fetchedGhosts);
+        }
       } catch {
-        // Non-critical ghost layer fetch
+        if (!isCancelled && attempt < 2) {
+          retryTimer = setTimeout(() => {
+            if (!isCancelled) syncGhostListings(attempt + 1);
+          }, attempt === 0 ? 2500 : 5000);
+        }
       }
     };
-    syncSuburbListings();
+    syncGhostListings(0);
     return () => {
       isCancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [hasLoadedPersistedState, selectedSuburbs.join('|'), minPrice, maxPrice, bedrooms]);
+  }, [hasLoadedPersistedState, selectedSuburbs.join('|'), minPrice, maxPrice, bedrooms, ghostRetryTick]);
 
   const handleSaveCurrentSearch = () => {
     if (!newSearchName.trim()) return;
@@ -4326,7 +4377,7 @@ export default function SearchMapPage() {
                       disabled={isScraping || Date.now() < rateGuardUntil}
                       className="px-2 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-extrabold text-[10.5px] shrink-0 cursor-pointer shadow-2xs transition-colors"
                     >
-                      {Date.now() < rateGuardUntil ? 'Cooldown' : 'Scrape Now'}
+                      {Date.now() < rateGuardUntil ? 'Cooldown' : 'Refresh Listings'}
                     </button>
                   </div>
                 )}
@@ -5406,43 +5457,132 @@ export default function SearchMapPage() {
               );
             })()}
 
-            {displayProperties.length === 0 && (
-              <div className="p-8 text-center flex flex-col items-center justify-center space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-zinc-100 flex items-center justify-center text-zinc-400">
-                  <EyeSlash size={24} weight="bold" />
+            {displayProperties.length === 0 && (() => {
+              const suburbLoadedCount = properties.filter((p) => doesPropMatchSuburbs(p, selectedSuburbs)).length;
+              const isStaleEmpty = Boolean(staleDataInfo?.isStale);
+              const isServerDown = Boolean(backendSyncError) && suburbLoadedCount === 0;
+              const isFilteredOut = suburbLoadedCount > 0 && hiddenCount === 0;
+              const staleDays = staleDataInfo?.oldestAgeSeconds ? Math.floor(staleDataInfo.oldestAgeSeconds / 86400) : 0;
+
+              return (
+                <div className="p-8 text-center flex flex-col items-center justify-center space-y-3">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                    isStaleEmpty ? 'bg-amber-100 text-amber-600' : isServerDown ? 'bg-rose-100 text-rose-600' : 'bg-zinc-100 text-zinc-400'
+                  }`}>
+                    <EyeSlash size={24} weight="bold" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="font-extrabold text-sm text-zinc-900">
+                      {hiddenCount > 0
+                        ? 'All Matching Listings Are Hidden'
+                        : isServerDown
+                          ? 'Listings Server Unreachable'
+                          : isStaleEmpty
+                            ? 'Cached Listings Are Stale'
+                            : isFilteredOut
+                              ? 'No Listings Match Active Filters'
+                              : 'No Fresh Listings Loaded'}
+                    </h3>
+                    <p className="text-xs text-zinc-500 max-w-[270px] mx-auto leading-relaxed">
+                      {hiddenCount > 0
+                        ? `You have hidden ${hiddenCount} listing${hiddenCount > 1 ? 's' : ''}. Toggle visibility to review or restore them.`
+                        : isServerDown
+                          ? `${backendSyncError} Retry to load cached listings or refresh live data from Property24.`
+                          : isStaleEmpty
+                            ? `${staleDays >= 1 ? `Cached listings for these suburbs are ${staleDays}d+ old` : 'Cached data for these suburbs is stale'} and needs a refresh to load current availability.`
+                            : isFilteredOut
+                              ? `${suburbLoadedCount} cached listing${suburbLoadedCount > 1 ? 's' : ''} found in ${selectedSuburbs.join(', ')}, but your active filter pills (e.g. Private, Off-street pkg, Safe-ish) filtered them out.`
+                              : 'No active cached listings were found for your selected suburbs. Refresh listings from Property24 or paste favourites.'}
+                    </p>
+                  </div>
+
+                  {hiddenCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowHidden(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    >
+                      <Eye size={13} weight="bold" />
+                      <span>Show {hiddenCount} Hidden Listing{hiddenCount > 1 ? 's' : ''}</span>
+                    </button>
+                  ) : isServerDown ? (
+                    <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBackendSyncError(null);
+                          setSyncRetryTick((t) => t + 1);
+                          setGhostRetryTick((t) => t + 1);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      >
+                        <MagnifyingGlass size={13} weight="bold" />
+                        <span>Retry Connection</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleScrapeP24}
+                        disabled={isScraping}
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      >
+                        <span>{isScraping ? 'Refreshing...' : 'Refresh Listings'}</span>
+                      </button>
+                    </div>
+                  ) : isFilteredOut ? (
+                    <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrivateOnlyFilter(false);
+                          setParkingFilter(false);
+                          setPetFriendlyFilter(false);
+                          setFibreFilter(false);
+                          setOffBarsFilter(false);
+                          setOffMainRoadFilter(false);
+                          setSafeishFilter(false);
+                          setWithinRadiusFilter(false);
+                          setShowOnlyFavourites(false);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      >
+                        <span>Clear Filter Pills</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleScrapeP24}
+                        disabled={isScraping || Date.now() < rateGuardUntil}
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      >
+                        <MagnifyingGlass size={13} weight="bold" />
+                        <span>{isScraping ? 'Refreshing...' : 'Refresh Listings'}</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleScrapeP24}
+                      disabled={isScraping || Date.now() < rateGuardUntil}
+                      className={`mt-1 px-4 py-2 rounded-xl font-extrabold text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-50 ${
+                        isStaleEmpty
+                          ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                          : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      }`}
+                    >
+                      <MagnifyingGlass size={14} weight="bold" />
+                      <span>
+                        {isScraping
+                          ? 'Refreshing Listings...'
+                          : Date.now() < rateGuardUntil
+                            ? 'Rate-Limit Cooldown'
+                            : isStaleEmpty
+                              ? 'Refresh Listings'
+                              : 'Refresh Listings (Scrape P24)'}
+                      </span>
+                    </button>
+                  )}
                 </div>
-                <div className="space-y-1">
-                  <h3 className="font-extrabold text-sm text-zinc-900">
-                    {hiddenCount > 0 ? 'All Matching Listings Are Hidden' : 'No Properties Scraped Yet'}
-                  </h3>
-                  <p className="text-xs text-zinc-500 max-w-[260px] mx-auto">
-                    {hiddenCount > 0
-                      ? `You have hidden ${hiddenCount} listing${hiddenCount > 1 ? 's' : ''}. Toggle visibility to review or restore them.`
-                      : 'Click "Scrape P24" to fetch real listings for your selected suburbs, or paste favourites.'}
-                  </p>
-                </div>
-                {hiddenCount > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowHidden(true)}
-                    className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                  >
-                    <Eye size={13} weight="bold" />
-                    <span>Show {hiddenCount} Hidden Listing{hiddenCount > 1 ? 's' : ''}</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleScrapeP24}
-                    disabled={isScraping}
-                    className="mt-1 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
-                  >
-                    <MagnifyingGlass size={14} weight="bold" />
-                    <span>{isScraping ? 'Scraping P24...' : 'Scrape P24 Live'}</span>
-                  </button>
-                )}
-              </div>
-            )}
+              );
+            })()}
           </div>
         </aside>
 
@@ -5466,6 +5606,11 @@ export default function SearchMapPage() {
             mode="default"
             properties={displayProperties}
             ghostListings={ghostListings}
+            onGhostLayerToggle={(visible) => {
+              if (visible && ghostListings.length === 0) {
+                setGhostRetryTick((t) => t + 1);
+              }
+            }}
             anchors={displayedAnchors}
             selectedPropertyId={selectedPropertyId}
             selectedAnchorId={activeAnchorId}

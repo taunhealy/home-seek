@@ -85,6 +85,7 @@ export {
 export const PropertyMap: React.FC<PropertyMapProps> = ({
   properties,
   ghostListings = [],
+  onGhostLayerToggle,
   anchors,
   selectedPropertyId,
   selectedAnchorId,
@@ -2721,7 +2722,11 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
           {/* 3g. Ghost Layer (Past / Let Listings) Toggle */}
           <div className="relative group/layer-btn">
             <button
-              onClick={() => setShowGhostLayer(!showGhostLayer)}
+              onClick={() => {
+                const next = !showGhostLayer;
+                setShowGhostLayer(next);
+                onGhostLayerToggle?.(next);
+              }}
               className={`w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-150 ${showGhostLayer
                 ? 'bg-zinc-800 text-white shadow-md shadow-zinc-800/25 ring-2 ring-zinc-400/40'
                 : 'bg-white/95 hover:bg-white text-zinc-600 hover:text-zinc-950 border border-zinc-300/80 shadow-2xs hover:shadow-xs'

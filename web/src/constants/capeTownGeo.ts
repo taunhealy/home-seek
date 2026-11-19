@@ -121,6 +121,7 @@ export interface GhostListingItem {
 export interface PropertyMapProps {
   properties: PropertyMapItem[];
   ghostListings?: GhostListingItem[];
+  onGhostLayerToggle?: (visible: boolean) => void;
   anchors: ProximityAnchor[];
   selectedPropertyId?: string | null;
   selectedAnchorId?: string | null;
