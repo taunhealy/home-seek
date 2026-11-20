@@ -83,6 +83,22 @@ const LIFESTYLE_MODES = [
   'Work from an office',
 ];
 
+const KEY_COMPARISON_FACTORS = [
+  { label: 'Quiet sanctuary (no traffic)', shortLabel: 'Quiet (no traffic)', icon: '🔇' },
+  { label: '100% Private (no landlord on-site)', shortLabel: '100% Private', icon: '🔒' },
+  { label: 'Secure estate / 24h security', shortLabel: '24h Security', icon: '🛡️' },
+  { label: 'Backup power / solar inverter', shortLabel: 'Solar / Inverter', icon: '🔋' },
+  { label: 'Private garden / courtyard', shortLabel: 'Private Garden', icon: '🌿' },
+  { label: 'Private patio / balcony', shortLabel: 'Patio / Balcony', icon: '🪴' },
+  { label: 'Lock-up garage', shortLabel: 'Lock-up garage', icon: '🚗' },
+  { label: 'Secure off-street parking', shortLabel: 'Secure parking', icon: '🅿️' },
+  { label: 'Gas cooking hob', shortLabel: 'Gas hob', icon: '🍳' },
+  { label: 'Pet-friendly lease', shortLabel: 'Pet-friendly', icon: '🐾' },
+  { label: 'High-speed fibre ready', shortLabel: 'Fibre ready', icon: '💻' },
+  { label: 'Scenic mountain / ocean views', shortLabel: 'Mountain / Ocean views', icon: '🏔️' },
+  { label: 'North-facing natural sunlight', shortLabel: 'North-facing sun', icon: '☀️' },
+];
+
 const SAMPLE_COMPARE_PROPERTIES: PropertyMapItem[] = [
   {
     id: 'sample-gardens-palmhof',
@@ -394,6 +410,39 @@ export default function ComparePage() {
                 </button>
               );
             })}
+          </div>
+
+          <div className="space-y-1.5 pt-1">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Key Rental Decision Factors:
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5">
+              {KEY_COMPARISON_FACTORS.map((factor) => {
+                const active = preferences.toLowerCase().includes(factor.label.toLowerCase());
+                return (
+                  <button
+                    key={factor.label}
+                    type="button"
+                    onClick={() => toggleMode(factor.label)}
+                    title={factor.label}
+                    className={`px-2.5 py-1.5 rounded-xl border text-left text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      active
+                        ? 'bg-purple-50 border-purple-400 text-purple-950 shadow-2xs'
+                        : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:bg-zinc-100'
+                    }`}
+                  >
+                    <span
+                      className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[9px] border shrink-0 ${
+                        active ? 'bg-purple-600 border-purple-600 text-white' : 'bg-white border-zinc-300'
+                      }`}
+                    >
+                      {active ? '✓' : ''}
+                    </span>
+                    <span className="truncate">{factor.icon} {factor.shortLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
