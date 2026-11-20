@@ -9,10 +9,12 @@ import {
   removeFromCompare,
   clearCompareList,
   toggleCompareProperty,
+  replaceCompareProperty,
   getPlanSummary,
   type PlanSummary,
 } from '@/lib/pro-plan';
 import { isLandlordOnSiteProperty } from '@/lib/geo';
+import { SUBURB_ABBREVIATIONS } from '@/constants/capeTownGeo';
 import {
   Sparkle,
   Scales,
@@ -25,7 +27,28 @@ import {
   Plus,
   MagnifyingGlass,
   CircleNotch,
+  PencilSimple,
+  MapPin,
+  X,
 } from '@phosphor-icons/react';
+
+const COMPARE_AREA_SUGGESTIONS = Array.from(
+  new Set([
+    ...Object.keys(SUBURB_ABBREVIATIONS)
+      .filter((k) => k !== 'simons town')
+      .map((k) => k.replace(/\b\w/g, (c) => c.toUpperCase())),
+    'Llandudno',
+    'Noordhoek',
+    'Sunnydale',
+    'Capri',
+    'Kommetjie',
+    'Scarborough',
+    'Tokai',
+    'Kenilworth',
+    'Wynberg',
+    'Plumstead',
+  ])
+).sort();
 
 interface CompareRanking {
   id: string;
@@ -34,9 +57,14 @@ interface CompareRanking {
   headline: string;
   best_for: string;
   biggest_tradeoff: string;
+  photo_story?: string;
   wfh_fit: string;
+  wall_acoustic_audit?: string;
+  window_light_audit?: string;
+  lighting_fixtures_audit?: string;
   acoustic_verdict: string;
   value_verdict: string;
+  gotchas?: string[];
 }
 
 interface CompareResult {
@@ -129,6 +157,64 @@ export default function ComparePage() {
   const [isComparing, setIsComparing] = useState(false);
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Swap / Add Property by Area Modal State
+  const [swapTargetId, setSwapTargetId] = useState<string | null>(null);
+  const [swapAreaQuery, setSwapAreaQuery] = useState('Hout Bay');
+  const [showAreaSuggestions, setShowAreaSuggestions] = useState(false);
+  const [swapTextFilter, setSwapTextFilter] = useState('');
+  const [areaListings, setAreaListings] = useState<PropertyMapItem[]>([]);
+  const [isLoadingAreaListings, setIsLoadingAreaListings] = useState(false);
+
+  const fetchListingsForArea = async (areaName: string) => {
+    const clean = areaName.trim();
+    if (!clean) return;
+    setIsLoadingAreaListings(true);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${backendBase}/api/search/live-scrape`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          suburbs: [clean],
+          min_price: 0,
+          max_price: 999999,
+          bedrooms: 'any',
+          force_fresh: false,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const raw = Array.isArray(data?.listings) ? data.listings : [];
+      setAreaListings(
+        raw.map((it: any) => ({
+          ...it,
+          id: String(it.id || `p24-${it.p24_id}`),
+          title: it.title || 'Property Listing',
+          address: it.address || clean,
+          price: Number(it.price || 0),
+          bedrooms: Number(it.bedrooms || 1),
+          bathrooms: Number(it.bathrooms || 1),
+          image: it.image || (Array.isArray(it.images) && it.images[0]) || '',
+          lat: Number(it.lat || -33.9249),
+          lng: Number(it.lng || 18.4241),
+        }))
+      );
+    } catch {
+      setAreaListings([]);
+    } finally {
+      setIsLoadingAreaListings(false);
+    }
+  };
+
+  const openSwapModal = (prop: PropertyMapItem | null) => {
+    const initialArea = prop?.suburb || (prop?.address ? prop.address.split(',').slice(-1)[0].trim() : '') || 'Hout Bay';
+    setSwapTargetId(prop ? String(prop.id) : '__add_new__');
+    setSwapAreaQuery(initialArea);
+    setSwapTextFilter('');
+    setShowAreaSuggestions(false);
+    fetchListingsForArea(initialArea);
+  };
 
   useEffect(() => {
     setCompareProps(getCompareList());
@@ -493,17 +579,28 @@ export default function ComparePage() {
                           <span>#{r.rank} · {r.score}/100</span>
                         </div>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          removeFromCompare(prop.id);
-                          setCompareProps(getCompareList());
-                        }}
-                        title="Remove from Compare"
-                        className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-black/65 hover:bg-rose-600 text-white flex items-center justify-center text-xs font-bold cursor-pointer transition-colors"
-                      >
-                        ×
-                      </button>
+                      <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openSwapModal(prop)}
+                          title="Edit / swap this listing by area"
+                          className="px-2.5 h-7 rounded-full bg-black/70 hover:bg-indigo-600 text-white flex items-center gap-1 text-[11px] font-bold cursor-pointer transition-colors backdrop-blur-xs"
+                        >
+                          <PencilSimple size={12} weight="bold" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            removeFromCompare(prop.id);
+                            setCompareProps(getCompareList());
+                          }}
+                          title="Remove from Compare"
+                          className="w-7 h-7 rounded-full bg-black/65 hover:bg-rose-600 text-white flex items-center justify-center text-xs font-bold cursor-pointer transition-colors"
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
 
                     <div className="p-4 space-y-3">
@@ -534,15 +631,15 @@ export default function ComparePage() {
                         </div>
                       </div>
 
-                      {/* AI Verdict Rows */}
+                      {/* AI Verdict Rows — Deep Architectural & Multimodal Insights */}
                       {r && (
-                        <div className="space-y-2 text-[11px]">
+                        <div className="space-y-2.5 text-[11px]">
                           <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
                             <div className="font-extrabold text-emerald-900 flex items-center gap-1 mb-0.5">
                               <CheckCircle size={13} weight="fill" className="text-emerald-600" />
                               <span>Best For</span>
                             </div>
-                            <div className="text-emerald-950 font-medium">{r.best_for}</div>
+                            <div className="text-emerald-950 font-medium leading-relaxed">{r.best_for}</div>
                           </div>
 
                           <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-200/80">
@@ -550,14 +647,74 @@ export default function ComparePage() {
                               <WarningCircle size={13} weight="fill" className="text-rose-600" />
                               <span>Biggest Trade-Off</span>
                             </div>
-                            <div className="text-rose-950 font-medium">{r.biggest_tradeoff}</div>
+                            <div className="text-rose-950 font-medium leading-relaxed">{r.biggest_tradeoff}</div>
                           </div>
 
-                          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
-                            <div><span className="font-bold text-slate-800">WFH Fit:</span> <span className="text-slate-700">{r.wfh_fit}</span></div>
-                            <div><span className="font-bold text-slate-800">Acoustics:</span> <span className="text-slate-700">{r.acoustic_verdict}</span></div>
-                            <div><span className="font-bold text-slate-800">Value:</span> <span className="text-slate-700">{r.value_verdict}</span></div>
+                          {r.photo_story && (
+                            <div className="p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-200/70 space-y-1">
+                              <div className="font-extrabold text-indigo-950 uppercase tracking-wider text-[10px]">
+                                Photo &amp; Spatial Read
+                              </div>
+                              <p className="text-zinc-800 leading-relaxed">{r.photo_story}</p>
+                            </div>
+                          )}
+
+                          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+                            <div>
+                              <div className="font-extrabold text-slate-900 text-[10px] uppercase tracking-wider mb-0.5">
+                                WFH &amp; Desk Ergonomics
+                              </div>
+                              <p className="text-slate-700 leading-relaxed">{r.wfh_fit}</p>
+                            </div>
+
+                            <div>
+                              <div className="font-extrabold text-slate-900 text-[10px] uppercase tracking-wider mb-0.5">
+                                Walls, Floor Echo &amp; Acoustics
+                              </div>
+                              <p className="text-slate-700 leading-relaxed">
+                                {r.wall_acoustic_audit || r.acoustic_verdict}
+                              </p>
+                            </div>
+
+                            {r.window_light_audit && (
+                              <div>
+                                <div className="font-extrabold text-slate-900 text-[10px] uppercase tracking-wider mb-0.5">
+                                  Windows, Daylight &amp; Sun Glare
+                                </div>
+                                <p className="text-slate-700 leading-relaxed">{r.window_light_audit}</p>
+                              </div>
+                            )}
+
+                            {r.lighting_fixtures_audit && (
+                              <div>
+                                <div className="font-extrabold text-slate-900 text-[10px] uppercase tracking-wider mb-0.5">
+                                  Lighting Fixtures &amp; Evening Feel
+                                </div>
+                                <p className="text-slate-700 leading-relaxed">{r.lighting_fixtures_audit}</p>
+                              </div>
+                            )}
+
+                            <div>
+                              <div className="font-extrabold text-slate-900 text-[10px] uppercase tracking-wider mb-0.5">
+                                Monthly Value
+                              </div>
+                              <p className="text-slate-700 leading-relaxed">{r.value_verdict}</p>
+                            </div>
                           </div>
+
+                          {Array.isArray(r.gotchas) && r.gotchas.length > 0 && (
+                            <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200 space-y-1">
+                              <div className="font-extrabold text-amber-950 text-[10px] uppercase tracking-wider flex items-center gap-1">
+                                <WarningCircle size={12} weight="fill" className="text-amber-600" />
+                                <span>Gotchas &amp; Viewing Checks</span>
+                              </div>
+                              <ul className="space-y-1 list-disc pl-4 text-amber-950">
+                                {r.gotchas.map((g, gi) => (
+                                  <li key={gi} className="leading-snug">{g}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -606,9 +763,221 @@ export default function ComparePage() {
                 </div>
               );
             })}
+
+            {compareProps.length < 4 && (
+              <button
+                type="button"
+                onClick={() => openSwapModal(null)}
+                className="min-h-[280px] rounded-2xl border-2 border-dashed border-zinc-300 hover:border-indigo-400 bg-white/70 hover:bg-indigo-50/40 flex flex-col items-center justify-center gap-2 p-6 text-center transition-all cursor-pointer group"
+              >
+                <div className="w-11 h-11 rounded-2xl bg-indigo-50 group-hover:bg-indigo-100 text-indigo-600 flex items-center justify-center transition-colors">
+                  <Plus size={22} weight="bold" />
+                </div>
+                <div className="text-xs font-black text-zinc-900">Add Property by Area</div>
+                <div className="text-[11px] text-zinc-500 max-w-[190px]">
+                  Search cached Cape Town listings by suburb to compare side-by-side
+                </div>
+              </button>
+            )}
           </div>
         )}
       </main>
+
+      {/* Change / Select Property by Area Modal */}
+      {swapTargetId && (
+        <div
+          className="fixed inset-0 z-[200] bg-zinc-950/65 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setSwapTargetId(null)}
+        >
+          <div
+            className="w-full max-w-2xl bg-white rounded-3xl border border-zinc-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-black text-zinc-950 flex items-center gap-2">
+                  <MapPin size={18} weight="fill" className="text-indigo-600" />
+                  <span>{swapTargetId === '__add_new__' ? 'Add Property to Compare' : 'Change Comparison Listing'}</span>
+                </h2>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Search cached listings by Cape Town suburb and click any property to select it.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSwapTargetId(null)}
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 cursor-pointer"
+                aria-label="Close"
+              >
+                <X size={18} weight="bold" />
+              </button>
+            </div>
+
+            {/* Area Search + Keyword Filter */}
+            <div className="p-4 border-b border-zinc-100 bg-zinc-50/70 space-y-2.5">
+              <div className="flex flex-col sm:flex-row gap-2 relative">
+                <div className="relative flex-1">
+                  <MapPin size={14} weight="bold" className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-600 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={swapAreaQuery}
+                    onFocus={() => setShowAreaSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowAreaSuggestions(false), 160)}
+                    onChange={(e) => {
+                      setSwapAreaQuery(e.target.value);
+                      setShowAreaSuggestions(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        setShowAreaSuggestions(false);
+                        fetchListingsForArea(swapAreaQuery);
+                      }
+                    }}
+                    placeholder="Area / Suburb (e.g. Hout Bay, Gardens, Sea Point)..."
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-950 focus:outline-none focus:border-indigo-500"
+                  />
+                  {showAreaSuggestions && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-zinc-200 rounded-xl shadow-xl max-h-44 overflow-y-auto z-30 py-1">
+                      {COMPARE_AREA_SUGGESTIONS.filter(
+                        (sub) => !swapAreaQuery.trim() || sub.toLowerCase().includes(swapAreaQuery.trim().toLowerCase())
+                      )
+                        .slice(0, 8)
+                        .map((sub) => (
+                          <button
+                            key={sub}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setSwapAreaQuery(sub);
+                              setShowAreaSuggestions(false);
+                              fetchListingsForArea(sub);
+                            }}
+                            className="w-full text-left px-3.5 py-2 text-xs font-semibold text-zinc-800 hover:bg-indigo-50 hover:text-indigo-900 flex items-center justify-between cursor-pointer"
+                          >
+                            <span>{sub}</span>
+                            <span className="text-[10px] font-bold text-zinc-400">Load area</span>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fetchListingsForArea(swapAreaQuery)}
+                  disabled={isLoadingAreaListings}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  {isLoadingAreaListings ? (
+                    <CircleNotch size={14} className="animate-spin" />
+                  ) : (
+                    <MagnifyingGlass size={14} weight="bold" />
+                  )}
+                  <span>Search Area</span>
+                </button>
+              </div>
+
+              <div className="relative">
+                <MagnifyingGlass size={13} weight="bold" className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={swapTextFilter}
+                  onChange={(e) => setSwapTextFilter(e.target.value)}
+                  placeholder="Filter loaded listings by street, title, bedrooms, or price..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-white border border-zinc-200 text-xs text-zinc-900 focus:outline-none focus:border-zinc-900"
+                />
+              </div>
+            </div>
+
+            {/* Results List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+              {isLoadingAreaListings ? (
+                <div className="space-y-2.5">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="h-20 rounded-2xl bg-zinc-100 animate-pulse" />
+                  ))}
+                </div>
+              ) : (() => {
+                const q = swapTextFilter.trim().toLowerCase();
+                const filtered = areaListings.filter(
+                  (item) =>
+                    !q ||
+                    `${item.title} ${item.address} ${item.suburb || ''} ${item.price} ${item.bedrooms} bed`
+                      .toLowerCase()
+                      .includes(q)
+                );
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-10 text-center space-y-2">
+                      <p className="text-xs font-bold text-zinc-800">
+                        No cached listings found for &ldquo;{swapAreaQuery}&rdquo;
+                      </p>
+                      <p className="text-[11px] text-zinc-500">
+                        Try another Cape Town suburb above or scrape fresh listings on the Search page.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return filtered.map((item) => {
+                  const isAlreadySelected = compareProps.some((p) => String(p.id) === String(item.id));
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        const next =
+                          swapTargetId === '__add_new__'
+                            ? toggleCompareProperty(item).list
+                            : replaceCompareProperty(swapTargetId, item);
+                        setCompareProps(next);
+                        setCompareResult(null);
+                        setSwapTargetId(null);
+                      }}
+                      className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center gap-3.5 cursor-pointer ${
+                        isAlreadySelected
+                          ? 'bg-indigo-50/70 border-indigo-300'
+                          : 'bg-white hover:bg-zinc-50 border-zinc-200 hover:border-indigo-300'
+                      }`}
+                    >
+                      {item.image ? (
+                        <img
+                          src={item.image}
+                          alt={item.title}
+                          className="w-16 h-16 rounded-xl object-cover border border-zinc-200 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-400 shrink-0">
+                          <MapPin size={18} />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="text-xs font-black text-zinc-950 truncate">{item.title}</div>
+                        <div className="text-[11px] text-zinc-500 truncate">{item.address}</div>
+                        <div className="flex items-center gap-2 text-[11px] font-bold pt-0.5">
+                          <span className="text-emerald-700">
+                            {item.price > 0 ? `R ${item.price.toLocaleString()}/mo` : 'POA'}
+                          </span>
+                          <span className="text-zinc-400">·</span>
+                          <span className="text-zinc-700">
+                            {item.bedrooms}bd{item.sqm ? ` · ${item.sqm}m²` : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="px-3 py-1.5 rounded-xl bg-zinc-950 text-white text-[11px] font-extrabold shrink-0">
+                        {swapTargetId === '__add_new__' ? 'Add' : 'Select'}
+                      </span>
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

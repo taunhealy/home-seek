@@ -139,6 +139,7 @@ export const Mapbox3DModal: React.FC<Mapbox3DModalProps> = ({ target, onClose })
   const [liveNow, setLiveNow] = useState(() => getCapeTownNow());
   const [manualHour, setManualHour] = useState<number>(() => Math.max(5.5, Math.min(20, getCapeTownNow().hour)));
   const [isOrbiting, setIsOrbiting] = useState<boolean>(false);
+  const [is3DReady, setIs3DReady] = useState<boolean>(false);
 
   const activeHour = isLiveClock ? liveNow.hour : manualHour;
 
@@ -246,6 +247,7 @@ export const Mapbox3DModal: React.FC<Mapbox3DModalProps> = ({ target, onClose })
     // Initialize Mapbox GL JS 3D Map on-demand
     useEffect(() => {
       if (!target || !token || !mapContainerRef.current) return;
+    setIs3DReady(false);
 
       mapboxgl.accessToken = token;
       const styleUrl =
@@ -271,6 +273,7 @@ export const Mapbox3DModal: React.FC<Mapbox3DModalProps> = ({ target, onClose })
 
       map.on('style.load', () => {
         apply3DLayersAndLight(map, activeHour, sunMode, target.lat, target.lng, liveNow.dayOfYear);
+        setIs3DReady(true);
       });
 
       mapRef.current = map;
@@ -433,7 +436,17 @@ export const Mapbox3DModal: React.FC<Mapbox3DModalProps> = ({ target, onClose })
               {tokenError}
             </div>
           ) : (
-            <div ref={mapContainerRef} className="w-full h-full" />
+            <>
+              <div ref={mapContainerRef} className="w-full h-full" />
+              {!is3DReady && (
+                <div className="absolute inset-0 bg-zinc-900/85 backdrop-blur-xs flex flex-col items-center justify-center gap-3 z-20 pointer-events-none">
+                  <div className="w-9 h-9 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
+                  <p className="text-xs font-bold text-zinc-200 tracking-wide">
+                    Loading 3D Terrain, Buildings &amp; Sun Angle...
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
           {/* Bottom Sun & Shadow Simulator Bar */}

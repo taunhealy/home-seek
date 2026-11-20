@@ -230,15 +230,16 @@ async def ai_describe_inspection_photo(req: AiDescribeSnagRequest):
             "Inspect this photo and write 1-2 concise, objective sentences describing any visible defects, scuffs, cracks, stains, damp, "
             "or general condition so the tenant has a clear, dispute-proof record. No markdown."
         )
-        for m_name in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+        for m_name in ["gemini-4-neon", "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"]:
             try:
-                llm = ChatGoogleGenerativeAI(model=m_name, api_key=api_key, temperature=0.2, request_timeout=30)
+                llm = ChatGoogleGenerativeAI(model=m_name, api_key=api_key, temperature=0.2, request_timeout=25, max_retries=0)
                 resp = await llm.ainvoke([HumanMessage(content=[{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": req.photo_data}}])])
                 txt = (resp.content if isinstance(resp.content, str) else str(resp.content)).strip()
                 if txt:
                     return {"status": "success", "description": txt, "is_fallback": False}
             except Exception as e:
-                if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e) or "402" in str(e):
+                err_str = str(e)
+                if any(k in err_str for k in ("RESOURCE_EXHAUSTED", "429", "402", "404", "NOT_FOUND", "503", "UNAVAILABLE")):
                     continue
                 raise e
         return {"status": "fallback", "description": req.existing_notes or "AI quota unavailable; please enter defect notes manually.", "is_fallback": True}
@@ -314,9 +315,9 @@ Return STRICT JSON only (no markdown fences):
     }}
   ]
 }}"""
-            for m_name in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+            for m_name in ["gemini-4-neon", "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"]:
                 try:
-                    llm = ChatGoogleGenerativeAI(model=m_name, api_key=api_key, temperature=0.2, request_timeout=35)
+                    llm = ChatGoogleGenerativeAI(model=m_name, api_key=api_key, temperature=0.2, request_timeout=25, max_retries=0)
                     resp = await llm.ainvoke([HumanMessage(content=prompt)])
                     txt = (resp.content if isinstance(resp.content, str) else str(resp.content)).strip()
                     txt = re.sub(r"^```(?:json)?\s*", "", txt)
@@ -325,7 +326,8 @@ Return STRICT JSON only (no markdown fences):
                     if isinstance(parsed.get("rooms"), list) and parsed["rooms"]:
                         return {"status": "success", "criteria": parsed, "is_fallback": False}
                 except Exception as e:
-                    if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e) or "402" in str(e):
+                    err_str = str(e)
+                    if any(k in err_str for k in ("RESOURCE_EXHAUSTED", "429", "402", "404", "NOT_FOUND", "503", "UNAVAILABLE")):
                         continue
                     raise e
         except Exception:

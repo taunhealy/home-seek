@@ -3,12 +3,17 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Navbar } from '@/components/Navbar';
-import { Check, Sparkle, Crown, Camera, Scales, ShieldCheck, ArrowRight, Lightning } from '@phosphor-icons/react';
+import { Check, Sparkle, Crown, Camera, Scales, ShieldCheck, ArrowRight, Lightning, CircleNotch } from '@phosphor-icons/react';
 import { getPlanSummary, setProPlanTier, addTopupCredits, type PlanSummary, type ProPlanTier } from '@/lib/pro-plan';
+import { useAuth } from '@/lib/auth-context';
+import { apiUrl } from '@/lib/apiClient';
 
 export default function PricingPage() {
+  const { user, refreshProfile } = useAuth();
   const [plan, setPlan] = useState<PlanSummary | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [isAddingCredits, setIsAddingCredits] = useState(false);
+  const [topupFeedback, setTopupFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     setPlan(getPlanSummary());
@@ -23,10 +28,34 @@ export default function PricingPage() {
     setStatusMsg(`Active plan switched to ${label}. Remaining AI Audits: ${updated.remainingAudits}.`);
   };
 
-  const handleTopup = () => {
-    const updated = addTopupCredits(15);
-    setPlan(updated);
-    setStatusMsg(`+15 Photo Audit credits added! Total remaining audits: ${updated.remainingAudits}.`);
+  const handleTopup = async () => {
+    if (isAddingCredits) return;
+    setIsAddingCredits(true);
+    try {
+      const updated = addTopupCredits(15);
+      setPlan(updated);
+      let backendNote = '';
+      if (user?.uid) {
+        try {
+          const res = await fetch(apiUrl('/api/credits/topup'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: user.uid, credits: 15 }),
+          });
+          if (res.ok) {
+            await refreshProfile();
+            backendNote = ' (synced to your account)';
+          }
+        } catch {
+          // Local quota still applied
+        }
+      }
+      const msg = `+15 AI Audit credits added${backendNote}! Total remaining: ${updated.remainingAudits}.`;
+      setStatusMsg(msg);
+      setTopupFeedback(`+15 credits added · ${updated.remainingAudits} total audits`);
+    } finally {
+      setIsAddingCredits(false);
+    }
   };
 
   return (
@@ -172,15 +201,47 @@ export default function PricingPage() {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleTopup}
-            className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-black shrink-0 cursor-pointer transition-colors"
-          >
-            + Add 15 Credits (R69)
-          </button>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+            {topupFeedback && (
+              <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold">
+                <Check size={13} weight="bold" className="text-emerald-600" />
+                <span>{topupFeedback}</span>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleTopup}
+              disabled={isAddingCredits}
+              className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 text-white text-xs font-black shrink-0 cursor-pointer transition-colors flex items-center justify-center gap-1.5"
+            >
+              {isAddingCredits ? (
+                <>
+                  <CircleNotch size={14} className="animate-spin" />
+                  <span>Adding Credits...</span>
+                </>
+              ) : (
+                <span>+ Add 15 Credits (R69)</span>
+              )}
+            </button>
+          </div>
         </div>
       </main>
+
+      {/* Floating Bottom-Right Confirmation Toast (always visible regardless of scroll) */}
+      {statusMsg && (
+        <div className="fixed bottom-5 right-5 z-[150] max-w-sm bg-zinc-950 text-white border border-white/15 rounded-2xl shadow-2xl px-4 py-3 flex items-center justify-between gap-3 animate-in fade-in duration-150">
+          <div className="flex items-center gap-2 min-w-0">
+            <Check size={16} weight="bold" className="text-emerald-400 shrink-0" />
+            <span className="text-xs font-bold leading-snug">{statusMsg}</span>
+          </div>
+          <Link
+            href="/search"
+            className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-extrabold shrink-0"
+          >
+            Search →
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

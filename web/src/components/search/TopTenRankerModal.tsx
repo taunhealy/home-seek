@@ -52,26 +52,24 @@ const WORK_STYLE_ITEMS = [
 ];
 
 const KEY_RENTAL_FACTORS = [
-  { label: 'Quiet sanctuary (no traffic)', icon: '🔇' },
-  { label: '100% Private (no landlord on-site)', icon: '🔒' },
-  { label: 'Secure estate / 24h security', icon: '🛡️' },
-  { label: 'Backup power / solar inverter', icon: '🔋' },
-  { label: 'Private patio / balcony', icon: '🌿' },
-  { label: 'Lock-up garage', icon: '🚗' },
-  { label: 'Gas cooking hob', icon: '🍳' },
-  { label: 'Pet-friendly lease', icon: '🐾' },
-  { label: 'Scenic mountain / ocean views', icon: '🏔️' },
+  { label: 'Quiet sanctuary (no traffic)', shortLabel: 'Quiet (no traffic)', icon: '🔇' },
+  { label: '100% Private (no landlord on-site)', shortLabel: '100% Private', icon: '🔒' },
+  { label: 'Secure estate / 24h security', shortLabel: '24h Security', icon: '🛡️' },
+  { label: 'Backup power / solar inverter', shortLabel: 'Solar / Inverter', icon: '🔋' },
+  { label: 'Private patio / balcony', shortLabel: 'Patio / Balcony', icon: '🌿' },
+  { label: 'Lock-up garage', shortLabel: 'Lock-up garage', icon: '🚗' },
+  { label: 'Gas cooking hob', shortLabel: 'Gas hob', icon: '🍳' },
+  { label: 'Pet-friendly lease', shortLabel: 'Pet-friendly', icon: '🐾' },
+  { label: 'Scenic mountain / ocean views', shortLabel: 'Mountain / Ocean views', icon: '🏔️' },
 ];
 
 const QUICK_INSPIRATION_CHIPS = [
-  '🔒 Private (No Landlord On-Site)',
-  '🔇 Off-Main Road Sanctuary',
-  '🌿 Quiet Sanctuary',
   '☀️ North-Facing Sunlight',
-  '🏔️ Mountain or Ocean Views',
-  '🍳 Gas Cooking & Load-Shedding',
-  '💻 Remote Work & Fibre',
-  '🐕 Dog & Garden Space',
+  '🏄 Surf & Trail Access',
+  '🚶 Walkable Village Vibe',
+  '🎸 Acoustic / Music Friendly',
+  '🚲 Secure Bike & Gear Storage',
+  '🐕 Enclosed Garden Space',
 ];
 
 export const TopTenRankerModal: React.FC<TopTenRankerModalProps> = ({
@@ -443,7 +441,7 @@ export const TopTenRankerModal: React.FC<TopTenRankerModalProps> = ({
                       onChange={(e) => togglePhrase(factor.label, e.target.checked)}
                       className="w-3 h-3 rounded text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600 shrink-0"
                     />
-                    <span className="truncate">{factor.icon} {factor.label}</span>
+                    <span className="truncate" title={factor.label}>{factor.icon} {factor.shortLabel}</span>
                   </label>
                 );
               })}

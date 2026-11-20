@@ -542,14 +542,14 @@ export const AiPropertyReportModal: React.FC<AiPropertyReportModalProps> = ({
                 </button>
                 <div className="flex items-center flex-wrap gap-1">
                   {[
-                    '🔒 100% Private (No Landlord)',
-                    '🌿 Quiet Sanctuary',
                     '☀️ North-Facing Sunlight',
-                    '🍳 Gas Cooking',
-                    '💻 High-Speed Fibre',
-                    '🐾 Pet-Friendly',
-                    '🚗 Secure Parking',
-                    '🏔️ Mountain or Ocean Views'
+                    '🍳 Gas Cooking / Load-Shedding',
+                    '🔋 Solar / Inverter Backup',
+                    '🏔️ Mountain or Ocean Views',
+                    '🔇 Thick Brick Walls / Low Echo',
+                    '💻 Dedicated WFH Desk Zone',
+                    '🌿 Private Balcony / Patio',
+                    '🚲 Secure Bike / Gear Storage'
                   ].map((chip) => {
                     const chipKey = chip.replace(/^[^\w\s]+\s*/, '');
                     const isAlreadyIn = personalPreferences.toLowerCase().includes(chipKey.toLowerCase());

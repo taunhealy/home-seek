@@ -60,7 +60,7 @@ class PropertyEvaluationResult(BaseModel):
     privacy_intel: Optional[PrivacyIntel] = None
 
 class PropertyEvaluator:
-    def __init__(self, model_name: str = "gemini-3.8-flash"):
+    def __init__(self, model_name: str = "gemini-3-flash-preview"):
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         self.model_name = model_name
         self._llm = None
@@ -74,7 +74,7 @@ class PropertyEvaluator:
             return None
 
         # Gemini model mapping & fallback
-        candidate_models = [self.model_name, "gemini-2.5-flash", "gemini-1.5-flash"]
+        candidate_models = [self.model_name, "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"]
         for m in candidate_models:
             try:
                 print_safe(f"[EVALUATOR] Initializing ChatGoogleGenerativeAI with model: {m}")

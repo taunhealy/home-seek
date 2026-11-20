@@ -46,7 +46,8 @@ import {
   Crown,
   Camera,
   SquaresFour,
-  ListBullets
+  ListBullets,
+  Bell
 } from '@phosphor-icons/react';
 import { Dumbbell, ShoppingBag } from 'lucide-react';
 import dynamic from 'next/dynamic';
@@ -601,6 +602,7 @@ export default function SearchMapPage() {
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(DEFAULT_SAVED_SEARCHES);
   const [activeSavedSearchId, setActiveSavedSearchId] = useState<string>('preset-cape-trailside');
   const [isSavedSearchMenuOpen, setIsSavedSearchMenuOpen] = useState(false);
+  const [areaMenuFilter, setAreaMenuFilter] = useState('');
   const [newSearchName, setNewSearchName] = useState('');
   const [isSavingSearch, setIsSavingSearch] = useState(false);
 
@@ -1555,6 +1557,42 @@ export default function SearchMapPage() {
           setHiddenPropertyIds(parsed);
         }
       }
+
+      // Override with URL query params when arriving from Alerts ("View") or Profile Favourites
+      if (typeof window !== 'undefined' && window.location.search) {
+        const qp = new URLSearchParams(window.location.search);
+        const qSuburbs = qp.get('suburbs');
+        if (qSuburbs) {
+          const list = qSuburbs
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+          if (list.length > 0) {
+            setSelectedSuburbs(list);
+            const coords = resolveLocationCoords(list[0]);
+            if (coords) {
+              setFocusTarget({ lat: coords.lat, lng: coords.lng, zoom: 13.5, timestamp: Date.now() });
+            }
+          }
+        }
+        const qMinP = qp.get('minPrice');
+        if (qMinP !== null) setMinPrice(qMinP);
+        const qMaxP = qp.get('maxPrice');
+        if (qMaxP !== null) setMaxPrice(qMaxP);
+        const qBeds = qp.get('beds');
+        if (qBeds) setBedrooms(qBeds);
+        const qSqm = qp.get('minSqm');
+        if (qSqm) setMinSqm(parseInt(qSqm, 10) || 0);
+        if (qp.has('safeish')) setSafeishFilter(qp.get('safeish') === '1');
+        if (qp.has('offMain')) setOffMainRoadFilter(qp.get('offMain') === '1');
+        if (qp.has('offBars')) setOffBarsFilter(qp.get('offBars') === '1');
+        if (qp.has('fibre')) setFibreFilter(qp.get('fibre') === '1');
+        if (qp.has('parking')) setParkingFilter(qp.get('parking') === '1');
+        if (qp.has('pet')) setPetFriendlyFilter(qp.get('pet') === '1');
+        if (qp.has('private')) setPrivateOnlyFilter(qp.get('private') === '1');
+        const qPropId = qp.get('propertyId');
+        if (qPropId) setSelectedPropertyId(qPropId);
+      }
     } catch (e) { }
     setHasLoadedPersistedState(true);
   }, []);
@@ -1633,7 +1671,81 @@ export default function SearchMapPage() {
     });
   };
 
+  const [isSavingAlert, setIsSavingAlert] = useState(false);
+  const [alertSavedToast, setAlertSavedToast] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const handleSaveAsAiAlert = async () => {
+    if (isSavingAlert || selectedSuburbs.length === 0) return;
+    setIsSavingAlert(true);
+    setAlertSavedToast(null);
+    try {
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const uid = profile?.id || user?.uid || 'taun_test_user';
+      const minP = parseInt(minPrice) || 0;
+      const maxP = parseInt(maxPrice) || 25000;
+      const parsedBeds = bedrooms === 'any' ? 0 : parseFloat(bedrooms) || 0;
+      const bedsLabel = bedrooms === 'any' ? 'Any Beds' : `${bedrooms}+ Beds`;
+
+      const activeTastes: string[] = [];
+      if (safeishFilter) activeTastes.push('Safe-ish area (low crime radar)');
+      if (offMainRoadFilter) activeTastes.push('Off-Main Rd (quiet street)');
+      if (offBarsFilter) activeTastes.push('Off-Bars/Clubs (quiet nights)');
+      if (fibreFilter) activeTastes.push('Fibre ready');
+      if (parkingFilter) activeTastes.push('Off-street parking');
+      if (petFriendlyFilter) activeTastes.push('Pet-friendly');
+      if (privateOnlyFilter) activeTastes.push('Private / independent entrance');
+      if (activeAnchor) {
+        activeTastes.push(`Near ${activeAnchor.label} (<= ${locationRadiusKm.toFixed(1)} km)`);
+      }
+
+      const payload = {
+        user_id: uid,
+        target_area: selectedSuburbs.join(', '),
+        search_query: `AI Radar: ${selectedSuburbs.join(', ')} (${bedsLabel}, R${minP.toLocaleString()}–R${maxP.toLocaleString()})`,
+        min_price: minP,
+        max_price: maxP,
+        min_bedrooms: parsedBeds > 0 ? [parsedBeds] : [],
+        min_size_sqm: minSqm || 0,
+        safeish: safeishFilter,
+        off_main_road: offMainRoadFilter,
+        off_bars: offBarsFilter,
+        within_radius: withinRadiusFilter,
+        radius_km: locationRadiusKm,
+        fibre_ready: fibreFilter,
+        off_street_parking: parkingFilter,
+        pet_friendly: petFriendlyFilter,
+        private_only: privateOnlyFilter,
+        min_fit_score: 80,
+        require_private_entrance: privateOnlyFilter,
+        require_independent_living: privateOnlyFilter,
+        personal_tastes: activeTastes.join(' · '),
+        commute_anchors: activeAnchor
+          ? [{ label: activeAnchor.label, lat: activeAnchor.lat, lng: activeAnchor.lng, radius_km: locationRadiusKm }]
+          : [],
+        trigger_initial_scan: false,
+      };
+
+      const res = await fetch(`${backendBase}/save-alert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setAlertSavedToast({
+        ok: true,
+        text: `Personal AI Alert saved for ${selectedSuburbs.slice(0, 2).join(', ')}${selectedSuburbs.length > 2 ? ` +${selectedSuburbs.length - 2}` : ''}`,
+      });
+      setTimeout(() => setAlertSavedToast(null), 6500);
+    } catch {
+      setAlertSavedToast({ ok: false, text: 'Could not save alert — check backend connection.' });
+      setTimeout(() => setAlertSavedToast(null), 5000);
+    } finally {
+      setIsSavingAlert(false);
+    }
+  };
+
   const [backendSyncError, setBackendSyncError] = useState<string | null>(null);
+  const [isInitialSyncing, setIsInitialSyncing] = useState<boolean>(false);
   const [syncRetryTick, setSyncRetryTick] = useState<number>(0);
   const [ghostRetryTick, setGhostRetryTick] = useState<number>(0);
 
@@ -1644,6 +1756,7 @@ export default function SearchMapPage() {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     const syncSuburbListings = async (attempt = 0) => {
+      if (attempt === 0) setIsInitialSyncing(true);
       try {
         const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
         const res = await fetch(`${backendBase}/api/search/live-scrape`, {
@@ -1701,6 +1814,7 @@ export default function SearchMapPage() {
             return [...mapped, ...outsideQueried];
           });
         }
+        if (!isCancelled) setIsInitialSyncing(false);
       } catch {
         if (isCancelled) return;
         if (attempt < 2) {
@@ -1708,6 +1822,7 @@ export default function SearchMapPage() {
             if (!isCancelled) syncSuburbListings(attempt + 1);
           }, attempt === 0 ? 2500 : 5000);
         } else {
+          setIsInitialSyncing(false);
           setBackendSyncError('Listings server is offline or still starting up.');
         }
       }
@@ -2155,26 +2270,55 @@ export default function SearchMapPage() {
     }
 
     setIsScraping(true);
-    setScrapeStatusText(`Connecting to Property24 and scraping live listings for ${selectedSuburbs.join(', ')}...`);
+    const startTs = Date.now();
+    const areaLabel = selectedSuburbs.join(', ');
+    setScrapeStatusText(`Connecting to Property24 stealth browser for ${areaLabel}... (0s · please don't refresh)`);
+
+    let progressTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
+      const secs = Math.floor((Date.now() - startTs) / 1000);
+      if (secs <= 3) {
+        setScrapeStatusText(`Connecting to Property24 stealth browser for ${areaLabel}... (${secs}s · please don't refresh)`);
+      } else if (secs <= 9) {
+        setScrapeStatusText(`Scraping ${areaLabel} with polite anti-block pacing (3.5s–5s)... (${secs}s)`);
+      } else if (secs <= 18) {
+        setScrapeStatusText(`Extracting listings, specs & geocoding ${areaLabel}... (${secs}s · hang tight)`);
+      } else {
+        setScrapeStatusText(`Finalizing listings & syncing cache for ${areaLabel} — almost done (${secs}s · please don't refresh)`);
+      }
+    }, 1000);
+
+    const stopProgressTimer = () => {
+      if (progressTimer) {
+        clearInterval(progressTimer);
+        progressTimer = null;
+      }
+    };
 
     try {
       const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const runScrapeBatch = async (batchSuburbs: string[]) => {
-        const res = await fetch(`${backendBase}/api/search/live-scrape`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            suburbs: batchSuburbs,
-            min_price: parseInt(minPrice) || 0,
-            max_price: parseInt(maxPrice) || 999999,
-            bedrooms: bedrooms,
-            anchor_lat: activeAnchor ? activeAnchor.lat : null,
-            anchor_lng: activeAnchor ? activeAnchor.lng : null,
-            force_fresh: true,
-          }),
-        });
-        if (!res.ok) return null;
-        return await res.json();
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        try {
+          const res = await fetch(`${backendBase}/api/search/live-scrape`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              suburbs: batchSuburbs,
+              min_price: parseInt(minPrice) || 0,
+              max_price: parseInt(maxPrice) || 999999,
+              bedrooms: bedrooms,
+              anchor_lat: activeAnchor ? activeAnchor.lat : null,
+              anchor_lng: activeAnchor ? activeAnchor.lng : null,
+              force_fresh: true,
+            }),
+          });
+          if (!res.ok) return null;
+          return await res.json();
+        } finally {
+          clearTimeout(timeoutId);
+        }
       };
 
       const mergeBatchProperties = (
@@ -2183,24 +2327,64 @@ export default function SearchMapPage() {
         prevSnapshot: PropertyMapItem[]
       ) => {
         const batchIds = new Set(batchMapped.map((m) => m.id));
+        const batchP24Ids = new Set(
+          batchMapped.map((m) => String((m as any).p24_id || m.id).replace('p24-', '')).filter(Boolean)
+        );
         const removed =
           suburbsToReplace.length > 0
-            ? prevSnapshot.filter((p) => !batchIds.has(p.id) && doesPropMatchSuburbs(p, suburbsToReplace)).length
+            ? prevSnapshot.filter(
+              (p) =>
+                !batchIds.has(p.id) &&
+                !favouritePropertyIds.includes(p.id) &&
+                doesPropMatchSuburbs(p, suburbsToReplace)
+            ).length
             : 0;
         setProperties((prev) => {
+          const prevById = new Map(prev.map((p) => [p.id, p]));
+          const prevByP24 = new Map(
+            prev.map((p) => [String((p as any).p24_id || p.id).replace('p24-', ''), p])
+          );
+          const mergedBatch = batchMapped.map((incoming) => {
+            const pid = String((incoming as any).p24_id || incoming.id).replace('p24-', '');
+            const existing = prevById.get(incoming.id) || (pid ? prevByP24.get(pid) : undefined);
+            if (!existing) return incoming;
+            const keepUserAddress = (existing as any).address_source === 'user_submitted';
+            return {
+              ...incoming,
+              is_favorite: Boolean(existing.is_favorite || incoming.is_favorite || favouritePropertyIds.includes(incoming.id)),
+              deep_ai_audit: existing.deep_ai_audit || incoming.deep_ai_audit,
+              images:
+                (existing.images?.length || 0) > (incoming.images?.length || 0)
+                  ? existing.images
+                  : incoming.images,
+              ...(keepUserAddress
+                ? {
+                    address: existing.address,
+                    lat: existing.lat,
+                    lng: existing.lng,
+                    is_address_withheld: false,
+                    address_source: 'user_submitted',
+                  }
+                : {}),
+            };
+          });
           const preserved = prev.filter((p) => {
-            if (batchIds.has(p.id)) return false;
+            const pid = String((p as any).p24_id || p.id).replace('p24-', '');
+            if (batchIds.has(p.id) || (pid && batchP24Ids.has(pid))) return false;
+            // Always keep user-starred favourites intact even if not in this scrape page
+            if (favouritePropertyIds.includes(p.id) || p.is_favorite) return true;
             if (suburbsToReplace.length > 0 && doesPropMatchSuburbs(p, suburbsToReplace)) {
               return false;
             }
             return true;
           });
-          return [...batchMapped, ...preserved];
+          return [...mergedBatch, ...preserved];
         });
         return removed;
       };
 
       const data = await runScrapeBatch(selectedSuburbs);
+      stopProgressTimer();
 
       if (data) {
         if (data.rate_guard?.circuit_open) {
@@ -2337,28 +2521,21 @@ export default function SearchMapPage() {
                       continue;
                     }
                     const freshMatch = mappedByP24Id.get(pid);
-                    nextFavs.push(freshMatch ? { ...fav, ...freshMatch, is_favorite: true } : fav);
+                    // Preserve original favourite listing data (address, AI audit, images) when still available
+                    nextFavs.push(
+                      freshMatch
+                        ? {
+                            ...freshMatch,
+                            ...fav,
+                            price: freshMatch.price || fav.price,
+                            price_value_pct: freshMatch.price_value_pct ?? fav.price_value_pct,
+                            is_favorite: true,
+                          }
+                        : fav
+                    );
                   }
                   return nextFavs;
                 });
-
-                if (expiredSet.size > 0) {
-                  setFavouritePropertyIds((prevFavIds) => {
-                    const nextIds = prevFavIds.filter(
-                      (fid) => !expiredSet.has(fid) && !expiredSet.has(fid.replace('p24-', ''))
-                    );
-                    try {
-                      localStorage.setItem('homeseek_p24_favourite_ids', JSON.stringify(nextIds));
-                    } catch { }
-                    return nextIds;
-                  });
-                  setProperties((prev) =>
-                    prev.filter((p) => {
-                      const pid = String((p as any).p24_id || p.id).replace('p24-', '');
-                      return !expiredSet.has(p.id) && !expiredSet.has(pid);
-                    })
-                  );
-                }
               }
             } catch (favErr) {
               console.warn('Favourite expiry verification skipped:', favErr);
@@ -2397,6 +2574,7 @@ export default function SearchMapPage() {
       console.error('Scrape error:', err);
       setScrapeStatusText('Could not connect to live portal. Using cached high-trust properties.');
     } finally {
+      stopProgressTimer();
       setIsScraping(false);
       setTimeout(() => setScrapeStatusText(''), 6000);
     }
@@ -2761,13 +2939,17 @@ export default function SearchMapPage() {
     });
 
     // 4. Generate Forensic AI Reports for every listing
+    const budgetCeiling = parseInt(maxPrice) || 0;
+    const isAutoHiddenUnpriced = (p: { price?: number }) =>
+      budgetCeiling > 0 && budgetCeiling < 50000 && (!p.price || p.price <= 0);
+
     return {
       sortedProperties: sorted.map((prop, idx) => {
         const rank = idx + 1;
         return {
           ...prop,
           rank,
-          is_hidden: hiddenPropertyIds.includes(prop.id),
+          is_hidden: hiddenPropertyIds.includes(prop.id) || isAutoHiddenUnpriced(prop),
           deep_ai_audit: prop.deep_ai_audit || generatePropertyAiAudit(prop, rank, personalPreferences),
         };
       }),
@@ -2787,8 +2969,15 @@ export default function SearchMapPage() {
       ),
     }));
 
-    // 2. Filter hidden if showHidden is false
-    const visible = showHidden ? tagged : tagged.filter((prop) => !hiddenPropertyIds.includes(prop.id));
+    // 2. Apply budget, bedroom, minimum floor size (sqm) & structured feature filters (bypassed in Favs mode)
+    const budgetMaxVal = parseInt(maxPrice) || 0;
+    const isAutoHiddenNoPrice = (p: { price?: number }) =>
+      budgetMaxVal > 0 && budgetMaxVal < 50000 && (!p.price || p.price <= 0);
+
+    // 2b. Filter hidden if showHidden is false (includes auto-hidden POA/unpriced listings when budget < R50k)
+    const visible = showHidden
+      ? tagged
+      : tagged.filter((prop) => !hiddenPropertyIds.includes(prop.id) && !isAutoHiddenNoPrice(prop));
 
     // 3. Filter favourites if showOnlyFavourites is true
     const candidateList = showOnlyFavourites ? visible.filter((prop) => prop.is_favorite) : visible;
@@ -2852,12 +3041,21 @@ export default function SearchMapPage() {
       deduped.push(prop);
     }
 
-    return deduped;
-  }, [sortedProperties, importedFavourites, favouritePropertyIds, hiddenPropertyIds, showHidden, showOnlyFavourites]);
+    // Re-number visible, deduplicated listings sequentially (#1, #2, #3...)
+    return deduped.map((prop: any, idx) => ({
+      ...prop,
+      rank: idx + 1,
+    }));
+  }, [sortedProperties, importedFavourites, favouritePropertyIds, hiddenPropertyIds, showHidden, showOnlyFavourites, maxPrice]);
 
   const hiddenCount = useMemo(() => {
-    return sortedProperties.filter((prop) => hiddenPropertyIds.includes(prop.id)).length;
-  }, [sortedProperties, hiddenPropertyIds]);
+    const budgetMaxVal = parseInt(maxPrice) || 0;
+    return sortedProperties.filter(
+      (prop) =>
+        hiddenPropertyIds.includes(prop.id) ||
+        (budgetMaxVal > 0 && budgetMaxVal < 50000 && (!prop.price || prop.price <= 0))
+    ).length;
+  }, [sortedProperties, hiddenPropertyIds, maxPrice]);
 
   const favouriteCount = useMemo(() => {
     return displayProperties.filter((p) => p.is_favorite).length;
@@ -2977,52 +3175,140 @@ export default function SearchMapPage() {
                       <MapPin size={14} className="text-indigo-600" weight="fill" />
                       Areas (Suburb Group Templates)
                     </span>
-                    <button onClick={() => setIsSavedSearchMenuOpen(false)} className="text-zinc-400 hover:text-zinc-700 p-0.5 cursor-pointer">
+                    <button
+                      onClick={() => {
+                        setIsSavedSearchMenuOpen(false);
+                        setAreaMenuFilter('');
+                      }}
+                      className="text-zinc-400 hover:text-zinc-700 p-0.5 cursor-pointer"
+                    >
                       <X size={14} />
                     </button>
                   </div>
 
-                  <div className="max-h-64 overflow-y-auto space-y-1.5 py-2">
-                    {savedSearches.map((preset) => (
-                      <div
-                        key={preset.id}
-                        onClick={() => applySavedSearch(preset)}
-                        className={`p-2.5 rounded-xl text-xs cursor-pointer transition-all border ${activeSavedSearchId === preset.id
-                          ? 'bg-indigo-50 border-indigo-200 text-indigo-950 font-bold shadow-2xs'
-                          : 'bg-zinc-50/60 hover:bg-zinc-100 border-zinc-200/60 text-zinc-700'
-                          }`}
+                  {/* Quick Area / Suburb Search Input */}
+                  <div className="relative pt-2">
+                    <MagnifyingGlass size={13} weight="bold" className="absolute left-2.5 top-[18px] text-zinc-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={areaMenuFilter}
+                      onChange={(e) => setAreaMenuFilter(e.target.value)}
+                      placeholder="Filter areas or type a suburb..."
+                      autoFocus
+                      className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs text-zinc-900 focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                    {areaMenuFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setAreaMenuFilter('')}
+                        className="absolute right-2 top-[17px] text-zinc-400 hover:text-zinc-700 p-0.5 cursor-pointer"
+                        aria-label="Clear area filter"
                       >
-                        <div className="flex items-center justify-between gap-1 mb-1">
-                          <span className="font-extrabold text-xs text-zinc-950 truncate">{preset.name}</span>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <span className="px-1.5 py-0.5 rounded-md bg-indigo-100/80 text-indigo-800 text-[9px] font-black">
-                              {preset.suburbs.length} {preset.suburbs.length === 1 ? 'area' : 'areas'}
-                            </span>
-                            {preset.isCustom && (
-                              <button
-                                type="button"
-                                onClick={(e) => handleDeleteSavedSearch(preset.id, e)}
-                                className="text-zinc-400 hover:text-rose-600 p-1"
-                                title="Delete area template"
-                              >
-                                <Trash size={12} weight="bold" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center flex-wrap gap-1 mt-1">
-                          {preset.suburbs.map((sub) => (
-                            <span
-                              key={sub}
-                              className="px-1.5 py-0.5 rounded-md bg-white border border-zinc-200/80 text-[10px] font-semibold text-zinc-600"
-                            >
-                              {sub}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                        <X size={12} weight="bold" />
+                      </button>
+                    )}
                   </div>
+
+                  {(() => {
+                    const q = areaMenuFilter.trim().toLowerCase();
+                    const filteredPresets = savedSearches.filter(
+                      (preset) =>
+                        !q ||
+                        preset.name.toLowerCase().includes(q) ||
+                        preset.suburbs.some((s) => s.toLowerCase().includes(q))
+                    );
+                    const allKnownSuburbs = Array.from(
+                      new Set([
+                        ...savedSearches.flatMap((s) => s.suburbs),
+                        'Llandudno', 'Noordhoek', 'Kommetjie', 'Scarborough', 'Tokai', 'Kenilworth', 'Wynberg', 'Plumstead',
+                      ])
+                    );
+                    const matchingSuburbs = q
+                      ? allKnownSuburbs.filter((s) => s.toLowerCase().includes(q)).slice(0, 5)
+                      : [];
+
+                    return (
+                      <div className="max-h-64 overflow-y-auto space-y-1.5 py-2">
+                        {matchingSuburbs.length > 0 && (
+                          <div className="pb-1.5 mb-1.5 border-b border-zinc-100 space-y-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 px-1">
+                              Jump to Suburb
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {matchingSuburbs.map((sub) => (
+                                <button
+                                  key={sub}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedPropertyId(null);
+                                    setSelectedSuburbs([sub]);
+                                    const coords = resolveLocationCoords(sub);
+                                    if (coords) {
+                                      setFocusTarget({ lat: coords.lat, lng: coords.lng, zoom: 13.5, timestamp: Date.now() });
+                                    }
+                                    setIsSavedSearchMenuOpen(false);
+                                    setAreaMenuFilter('');
+                                  }}
+                                  className="px-2.5 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[11px] font-bold text-indigo-900 cursor-pointer transition-colors"
+                                >
+                                  + {sub}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {filteredPresets.length === 0 && matchingSuburbs.length === 0 ? (
+                          <div className="py-4 text-center text-[11px] text-zinc-500">
+                            No matching area groups for &ldquo;{areaMenuFilter}&rdquo;
+                          </div>
+                        ) : (
+                          filteredPresets.map((preset) => (
+                            <div
+                              key={preset.id}
+                              onClick={() => {
+                                applySavedSearch(preset);
+                                setAreaMenuFilter('');
+                              }}
+                              className={`p-2.5 rounded-xl text-xs cursor-pointer transition-all border ${activeSavedSearchId === preset.id
+                                ? 'bg-indigo-50 border-indigo-200 text-indigo-950 font-bold shadow-2xs'
+                                : 'bg-zinc-50/60 hover:bg-zinc-100 border-zinc-200/60 text-zinc-700'
+                                }`}
+                            >
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="font-extrabold text-xs text-zinc-950 truncate">{preset.name}</span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className="px-1.5 py-0.5 rounded-md bg-indigo-100/80 text-indigo-800 text-[9px] font-black">
+                                    {preset.suburbs.length} {preset.suburbs.length === 1 ? 'area' : 'areas'}
+                                  </span>
+                                  {preset.isCustom && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDeleteSavedSearch(preset.id, e)}
+                                      className="text-zinc-400 hover:text-rose-600 p-1"
+                                      title="Delete area template"
+                                    >
+                                      <Trash size={12} weight="bold" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center flex-wrap gap-1 mt-1">
+                                {preset.suburbs.map((sub) => (
+                                  <span
+                                    key={sub}
+                                    className="px-1.5 py-0.5 rounded-md bg-white border border-zinc-200/80 text-[10px] font-semibold text-zinc-600"
+                                  >
+                                    {sub}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Save Current Area Group Form */}
                   <div className="pt-2 border-t border-zinc-100">
@@ -4063,8 +4349,35 @@ export default function SearchMapPage() {
             </div>
           </div>
 
-          {/* Right: Primary Actions (Top 10 Rank & Scrape P24) */}
+          {/* Right: Primary Actions (Save Alert, Top 10 Rank & Scrape P24) */}
           <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            {/* Save Current Search as Personal AI Alert */}
+            {alertSavedToast?.ok ? (
+              <Link
+                href="/alerts"
+                className="h-7 flex items-center gap-1.5 px-3 rounded-xl text-[11px] font-extrabold border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-all leading-none shadow-2xs shrink-0 whitespace-nowrap"
+                title={alertSavedToast.text}
+              >
+                <Check size={12} weight="bold" className="text-emerald-600 shrink-0" />
+                <span>Saved · Manage Alerts →</span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSaveAsAiAlert}
+                disabled={isSavingAlert || selectedSuburbs.length === 0}
+                className="h-7 flex items-center gap-1.5 px-2.5 rounded-xl text-[11px] font-extrabold border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 transition-all cursor-pointer leading-none shadow-2xs disabled:opacity-50 shrink-0 whitespace-nowrap"
+                title={alertSavedToast?.text || 'Save your active suburbs, budget, pills & anchor as a personal AI Alert'}
+              >
+                {isSavingAlert ? (
+                  <CircleNotch size={12} className="animate-spin text-indigo-600 shrink-0" />
+                ) : (
+                  <Bell size={12} weight="fill" className="text-indigo-600 shrink-0" />
+                )}
+                <span>{isSavingAlert ? 'Saving...' : 'Save Alert'}</span>
+              </button>
+            )}
+
             {/* Top 10 Data-Driven Match Ranker Button */}
             <button
               type="button"
@@ -4350,37 +4663,6 @@ export default function SearchMapPage() {
                     </button>
                   )}
                 </div>
-                {withinRadiusFilter && activeAnchor && radiusExcludedCount > 0 && (
-                  <div className="mt-1.5 px-2.5 py-1 rounded-xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-between gap-2 text-[11px]">
-                    <span className="font-semibold text-indigo-900 truncate">
-                      🎯 <strong className="font-extrabold tabular-nums">{radiusExcludedCount}</strong> outside {locationRadiusKm.toFixed(1)} km hidden
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setWithinRadiusFilter(false)}
-                      className="font-extrabold text-indigo-700 hover:text-indigo-950 underline shrink-0 cursor-pointer"
-                    >
-                      Show all {displayProperties.length + radiusExcludedCount}
-                    </button>
-                  </div>
-                )}
-                {staleDataInfo?.isStale && !isScraping && (
-                  <div className="mt-1.5 px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-300/90 flex items-center justify-between gap-2 text-[11px]">
-                    <span className="font-semibold text-amber-950 leading-snug">
-                      ⏳ {staleDataInfo.oldestAgeSeconds >= 86400
-                        ? `Cached data is ${Math.floor(staleDataInfo.oldestAgeSeconds / 86400)}d+ old`
-                        : 'Some suburb data is stale'} — scrape to refresh.
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleScrapeP24}
-                      disabled={isScraping || Date.now() < rateGuardUntil}
-                      className="px-2 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-extrabold text-[10.5px] shrink-0 cursor-pointer shadow-2xs transition-colors"
-                    >
-                      {Date.now() < rateGuardUntil ? 'Cooldown' : 'Refresh Listings'}
-                    </button>
-                  </div>
-                )}
               </div>
 
               {/* View Mode Toggle, Sorting Dropdown & Collapse Toggle */}
@@ -4434,6 +4716,39 @@ export default function SearchMapPage() {
               </div>
             </div>
 
+            {withinRadiusFilter && activeAnchor && radiusExcludedCount > 0 && (
+              <div className="mt-2 px-2.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-between gap-2 text-[11px]">
+                <span className="font-semibold text-indigo-900 truncate">
+                  🎯 <strong className="font-extrabold tabular-nums">{radiusExcludedCount}</strong> outside {locationRadiusKm.toFixed(1)} km hidden
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setWithinRadiusFilter(false)}
+                  className="font-extrabold text-indigo-700 hover:text-indigo-950 underline shrink-0 cursor-pointer"
+                >
+                  Show all {displayProperties.length + radiusExcludedCount}
+                </button>
+              </div>
+            )}
+
+            {staleDataInfo?.isStale && !isScraping && (
+              <div className="mt-2 px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-300/90 flex items-center justify-between gap-2 text-[11px]">
+                <span className="font-semibold text-amber-950 leading-snug">
+                  ⏳ {staleDataInfo.oldestAgeSeconds >= 86400
+                    ? `Cached data is ${Math.floor(staleDataInfo.oldestAgeSeconds / 86400)}d+ old`
+                    : 'Some suburb data is stale'} — refresh to update.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleScrapeP24}
+                  disabled={isScraping || Date.now() < rateGuardUntil}
+                  className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-extrabold text-[10.5px] shrink-0 cursor-pointer shadow-2xs transition-colors"
+                >
+                  {Date.now() < rateGuardUntil ? 'Cooldown' : 'Refresh Listings'}
+                </button>
+              </div>
+            )}
+
             {/* Scrape / Status Banner in Feed Header */}
             {scrapeStatusText && (
               <div className={`mt-2 p-2 rounded-xl text-[11px] font-bold flex items-center justify-between gap-2 border animate-in fade-in duration-150 ${scrapeStatusText.includes('Found') || scrapeStatusText.includes('complete')
@@ -4470,7 +4785,7 @@ export default function SearchMapPage() {
               const renderPropertyCard = (prop: PropertyMapItem) => {
                 const isSelected = selectedPropertyId === prop.id;
                 const isHoveredOnMap = hoveredPropertyId === prop.id;
-                const isHidden = hiddenPropertyIds.includes(prop.id);
+                const isHidden = hiddenPropertyIds.includes(prop.id) || Boolean(prop.is_hidden);
                 const privacyInfo = getDwellingPrivacyInfo(prop);
                 const agencyRep = getAgencyReputationInfo(prop);
                 const barNoiseInfo = getPropertyBarNoiseExposure(prop);
@@ -4792,9 +5107,20 @@ export default function SearchMapPage() {
                             </div>
                           )}
 
-                          {/* Bottom-Left: Critical Agency Warning only (keeps photo clean; feature chips below display full acoustic/privacy status) */}
-                          {agencyRep.isPoorAgency && agencyRep.shortFlag && (
-                            <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
+                          {/* Bottom-Left: Rank Number Badge (+ optional Poor Agency Warning) */}
+                          <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1.5 pointer-events-none">
+                            {prop.rank && (
+                              <span
+                                className={`px-2 py-0.5 rounded-lg text-[11px] font-black shadow-md backdrop-blur-xs border ${prop.rank === 1
+                                  ? 'bg-emerald-600 text-white border-emerald-400/70'
+                                  : 'bg-zinc-950/85 text-white border-white/15'
+                                  }`}
+                                title={`Ranked #${prop.rank} match`}
+                              >
+                                #{prop.rank}
+                              </span>
+                            )}
+                            {agencyRep.isPoorAgency && agencyRep.shortFlag && (
                               <div
                                 className="px-2 py-0.5 rounded-md text-[9.5px] font-black flex items-center gap-1 backdrop-blur-xs shadow-md bg-rose-950/95 text-rose-200 border border-rose-500/70"
                                 title={agencyRep.tooltipReason}
@@ -4802,20 +5128,39 @@ export default function SearchMapPage() {
                                 <WarningCircle size={11} weight="fill" className="text-rose-400 shrink-0" />
                                 <span>{agencyRep.shortFlag}</span>
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
 
-                          <a
-                            href={p24Href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => openProperty24Url(e, p24Href)}
-                            title="Open original listing on Property24"
-                            className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-zinc-950/90 hover:bg-indigo-600 text-white text-[10px] font-extrabold flex items-center gap-1 backdrop-blur-xs shadow-sm transition-colors z-20 cursor-pointer"
-                          >
-                            <span>Property24</span>
-                            <ArrowSquareOut size={11} weight="bold" />
-                          </a>
+                          <div className="absolute bottom-2 right-2 z-20 flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTogglePropertyAiReport(prop);
+                              }}
+                              title={viewingAiReportProp?.id === prop.id ? 'Close AI Forensic Report' : 'Open AI Analysis'}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 backdrop-blur-xs shadow-sm transition-colors cursor-pointer ${
+                                viewingAiReportProp?.id === prop.id
+                                  ? 'bg-purple-950 text-white ring-1 ring-purple-400'
+                                  : 'bg-purple-700/95 hover:bg-purple-800 text-white'
+                              }`}
+                            >
+                              <Sparkle size={10} weight="fill" className="text-amber-300 shrink-0" />
+                              <span>{viewingAiReportProp?.id === prop.id ? 'Close AI' : 'AI Analysis'}</span>
+                            </button>
+
+                            <a
+                              href={p24Href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => openProperty24Url(e, p24Href)}
+                              title="Open original listing on Property24"
+                              className="px-2 py-0.5 rounded-md bg-zinc-950/90 hover:bg-indigo-600 text-white text-[10px] font-extrabold flex items-center gap-1 backdrop-blur-xs shadow-sm transition-colors cursor-pointer"
+                            >
+                              <span>Property24</span>
+                              <ArrowSquareOut size={11} weight="bold" />
+                            </a>
+                          </div>
                         </div>
                       );
                     })()}
@@ -5314,6 +5659,22 @@ export default function SearchMapPage() {
                           {(commentCounts[prop.id] || 0) > 0 && <span>{commentCounts[prop.id]}</span>}
                         </button>
 
+                        <a
+                          href={resolveGoogleMapsUrl(prop)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-1.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 hover:text-zinc-950 text-[10.5px] font-bold flex items-center gap-1 border border-zinc-200 transition-colors whitespace-nowrap cursor-pointer"
+                          title="Show exact address / location on Google Maps (opens in a new tab)"
+                        >
+                          <MapPin size={12} weight="bold" className="text-rose-500 shrink-0" />
+                          <span>Maps</span>
+                          <ArrowSquareOut size={10} weight="bold" className="text-zinc-400 shrink-0" />
+                        </a>
+                      </div>
+
+                      {/* Right-aligned 3D Preview & View on P24 actions */}
+                      <div className="flex items-center gap-1.5 ml-auto shrink-0">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -5327,34 +5688,21 @@ export default function SearchMapPage() {
                               price: prop.price,
                             });
                           }}
-                          className="px-2 py-1.5 rounded-lg text-[10.5px] font-black flex items-center gap-1 border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-800 transition-colors whitespace-nowrap cursor-pointer"
+                          className="px-2.5 py-1.5 rounded-lg text-[10.5px] font-black flex items-center gap-1 border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-800 transition-colors whitespace-nowrap cursor-pointer"
                           title="Open on-demand Mapbox 3D Terrain, Buildings & Sun Shadow Preview"
                         >
                           <span>3D</span>
                         </button>
 
                         <a
-                          href={resolveGoogleMapsUrl(prop)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="px-1.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 hover:text-zinc-950 text-[10.5px] font-bold flex items-center gap-1 border border-zinc-200 transition-colors whitespace-nowrap cursor-pointer"
-                          title="Show exact address / location on Google Maps (opens in a new tab)"
-                        >
-                          <MapPin size={12} weight="bold" className="text-rose-500 shrink-0" />
-                          <span>Maps</span>
-                          <ArrowSquareOut size={10} weight="bold" className="text-zinc-400 shrink-0" />
-                        </a>
-
-                        <a
                           href={resolveProperty24Url(prop)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => openProperty24Url(e, resolveProperty24Url(prop))}
-                          className="px-2 py-1.5 rounded-lg bg-zinc-900 hover:bg-indigo-600 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
+                          className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-indigo-600 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
                           title="Open original listing on Property24"
                         >
-                          <span>P24</span>
+                          <span>View on P24</span>
                           <ArrowSquareOut size={11} weight="bold" className="shrink-0" />
                         </a>
                       </div>
@@ -5457,7 +5805,21 @@ export default function SearchMapPage() {
               );
             })()}
 
-            {displayProperties.length === 0 && (() => {
+            {displayProperties.length === 0 && (isInitialSyncing || isScraping) ? (
+              <div className="space-y-3 p-1">
+                {[0, 1, 2].map((idx) => (
+                  <div key={idx} className="rounded-2xl border border-zinc-200 bg-white p-3 space-y-2.5">
+                    <div className="w-full h-36 rounded-xl bg-zinc-100 animate-pulse" />
+                    <div className="w-3/4 h-4 rounded bg-zinc-200 animate-pulse" />
+                    <div className="w-1/2 h-3 rounded bg-zinc-100 animate-pulse" />
+                    <div className="flex gap-2 pt-1">
+                      <div className="w-16 h-6 rounded-lg bg-zinc-100 animate-pulse" />
+                      <div className="w-16 h-6 rounded-lg bg-zinc-100 animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : displayProperties.length === 0 && (() => {
               const suburbLoadedCount = properties.filter((p) => doesPropMatchSuburbs(p, selectedSuburbs)).length;
               const isStaleEmpty = Boolean(staleDataInfo?.isStale);
               const isServerDown = Boolean(backendSyncError) && suburbLoadedCount === 0;

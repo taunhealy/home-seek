@@ -3,17 +3,33 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
+  ArrowSquareOut,
   Camera,
   CheckCircle,
   Crown,
+  Heart,
   MagnifyingGlass,
+  MapPin,
   Sparkle,
-  UserCircle,
+  Trash,
   WarningCircle,
 } from '@phosphor-icons/react';
 import { useAuth } from '@/lib/auth-context';
 import { getPlanSummary, type PlanSummary } from '@/lib/pro-plan';
 import { apiUrl } from '@/lib/apiClient';
+import { KnightAvatar } from '@/components/KnightAvatar';
+
+interface SavedFavItem {
+  id: string;
+  title?: string;
+  price?: number;
+  address?: string;
+  suburb?: string;
+  url?: string;
+  image_url?: string;
+  bedrooms?: number;
+  size_sqm?: number;
+}
 
 export default function ProfilePage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -22,6 +38,49 @@ export default function ProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<'account' | 'favourites'>('account');
+  const [importedFavs, setImportedFavs] = useState<SavedFavItem[]>([]);
+  const [favIds, setFavIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'favourites') {
+        setActiveTab('favourites');
+      }
+      try {
+        const rawImported = localStorage.getItem('homeseek_imported_favourites_v1');
+        if (rawImported) {
+          const parsed = JSON.parse(rawImported);
+          if (Array.isArray(parsed)) setImportedFavs(parsed);
+        }
+        const rawIds = localStorage.getItem('homeseek_p24_favourite_ids');
+        if (rawIds) {
+          const parsedIds = JSON.parse(rawIds);
+          if (Array.isArray(parsedIds)) setFavIds(parsedIds.map(String));
+        }
+      } catch {
+        // Ignore malformed localStorage
+      }
+    }
+  }, []);
+
+  const handleRemoveFavourite = (id: string) => {
+    const nextImported = importedFavs.filter((f) => f.id !== id);
+    const nextIds = favIds.filter((fid) => fid !== id);
+    setImportedFavs(nextImported);
+    setFavIds(nextIds);
+    try {
+      localStorage.setItem('homeseek_imported_favourites_v1', JSON.stringify(nextImported));
+      localStorage.setItem('homeseek_p24_favourite_ids', JSON.stringify(nextIds));
+    } catch {
+      // Ignore
+    }
+  };
+
+  const importedIdSet = new Set(importedFavs.map((f) => f.id));
+  const extraStarredIds = favIds.filter((id) => !importedIdSet.has(id));
+  const totalFavsCount = importedFavs.length + extraStarredIds.length;
 
   useEffect(() => {
     setPlan(getPlanSummary());
@@ -103,6 +162,165 @@ export default function ProfilePage() {
           <span>Back to Search Radar</span>
         </Link>
       </div>
+
+      {/* Profile Sub-Tabs */}
+      <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-zinc-900 border border-white/10">
+        <button
+          type="button"
+          onClick={() => setActiveTab('account')}
+          className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-colors cursor-pointer ${
+            activeTab === 'account'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          Profile &amp; Credits
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('favourites')}
+          className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-colors cursor-pointer ${
+            activeTab === 'favourites'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          <Heart size={13} weight="fill" />
+          <span>Favourites</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-black/30 text-[10px] font-black tabular-nums">
+            {totalFavsCount}
+          </span>
+        </button>
+      </div>
+
+      {activeTab === 'favourites' ? (
+        <div className="rounded-3xl bg-zinc-900/90 border border-white/10 p-6 space-y-5">
+          <div className="flex items-center justify-between flex-wrap gap-3 border-b border-white/10 pb-4">
+            <div>
+              <h2 className="text-base font-extrabold flex items-center gap-2">
+                <Heart size={18} weight="fill" className="text-rose-400" />
+                <span>Saved Favourites</span>
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Properties you starred on Search or imported from Property24.
+              </p>
+            </div>
+            <Link
+              href="/search"
+              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold flex items-center gap-1.5 transition-colors"
+            >
+              <MagnifyingGlass size={13} weight="bold" />
+              <span>Browse or Import in Search</span>
+            </Link>
+          </div>
+
+          {totalFavsCount === 0 ? (
+            <div className="py-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto text-rose-400">
+                <Heart size={24} weight="bold" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-extrabold text-white">No Favourites Saved Yet</h3>
+                <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                  Star listings on the Search map or use &ldquo;Import P24 Favs&rdquo; to collect your shortlist here.
+                </p>
+              </div>
+              <Link
+                href="/search"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white text-zinc-950 text-xs font-extrabold hover:bg-zinc-200 transition-colors"
+              >
+                <span>Go to Search</span>
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {importedFavs.map((fav) => (
+                <div
+                  key={fav.id}
+                  className="rounded-2xl bg-black/40 border border-white/10 p-3.5 flex gap-3.5 items-start"
+                >
+                  {fav.image_url ? (
+                    <img
+                      src={fav.image_url}
+                      alt={fav.title || 'Favourite property'}
+                      className="w-20 h-20 rounded-xl object-cover border border-white/10 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 text-zinc-500">
+                      <MapPin size={20} />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="text-xs font-extrabold text-white truncate">
+                      {fav.title || `Listing ${fav.id}`}
+                    </div>
+                    <div className="text-[11px] text-zinc-400 truncate">
+                      {fav.address || fav.suburb || 'Cape Town'}
+                    </div>
+                    <div className="flex items-center flex-wrap gap-2 text-[11px] font-bold pt-0.5">
+                      {fav.price ? (
+                        <span className="text-emerald-400">R {fav.price.toLocaleString()}/mo</span>
+                      ) : null}
+                      {fav.bedrooms ? <span className="text-zinc-300">{fav.bedrooms} Bed</span> : null}
+                      {fav.size_sqm ? <span className="text-zinc-300">{fav.size_sqm} m²</span> : null}
+                    </div>
+                    <div className="flex items-center gap-2 pt-1.5">
+                      {fav.url && (
+                        <a
+                          href={fav.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10.5px] font-bold text-white inline-flex items-center gap-1"
+                        >
+                          <span>P24</span>
+                          <ArrowSquareOut size={11} />
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFavourite(fav.id)}
+                        className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-[10.5px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash size={11} />
+                        <span>Remove</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {extraStarredIds.map((id) => (
+                <div
+                  key={id}
+                  className="rounded-2xl bg-black/40 border border-white/10 p-3.5 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs font-extrabold text-white truncate">Starred Listing #{id}</div>
+                    <div className="text-[11px] text-zinc-400">Saved from Search Radar</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Link
+                      href="/search"
+                      className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[10.5px] font-bold"
+                    >
+                      View in Search
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveFavourite(id)}
+                      className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 cursor-pointer"
+                      title="Remove favourite"
+                    >
+                      <Trash size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
 
       {/* AI Credits & Plan Card */}
       <div className="rounded-3xl bg-zinc-900/90 border border-white/10 p-6 space-y-5">
@@ -186,9 +404,7 @@ export default function ProfilePage() {
           {avatarUrl ? (
             <img src={avatarUrl} alt="Avatar" className="w-14 h-14 rounded-2xl object-cover border border-white/20" />
           ) : (
-            <div className="w-14 h-14 rounded-2xl bg-indigo-600/30 border border-indigo-400/30 flex items-center justify-center">
-              <UserCircle size={28} className="text-indigo-300" />
-            </div>
+            <KnightAvatar size="lg" />
           )}
           <div className="min-w-0">
             <div className="text-sm font-extrabold truncate">{user?.displayName || 'HomeSeek User'}</div>
@@ -254,6 +470,8 @@ export default function ProfilePage() {
           </button>
         </div>
       </form>
+        </>
+      )}
     </div>
   );
 }

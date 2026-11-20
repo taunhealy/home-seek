@@ -1137,6 +1137,7 @@ def scrape_p24_live(
 
             # Intelligent Address & Precision Building Geocoding (Google Places + Mapbox + Gemini)
             is_address_withheld = True
+            geo_hit = None
             try:
                 from services.address_normalizer import resolve_property_precision
                 geo_hit = resolve_property_precision(
@@ -1261,8 +1262,8 @@ def scrape_p24_live(
                 'id': f"p24-{lid}",
                 'first_seen_at': prev_first_seen or int(time.time()),
                 'available_from': avail_from,
-                'is_security_estate': bool(_est.get("is_security_estate") or (geo_res.get("is_security_estate") if isinstance(geo_res, dict) else False)),
-                'estate_name': _est.get("estate_name") or (geo_res.get("estate_name") if isinstance(geo_res, dict) else None),
+                'is_security_estate': bool(_est.get("is_security_estate") or (geo_hit.get("is_security_estate") if isinstance(geo_hit, dict) else False)),
+                'estate_name': _est.get("estate_name") or (geo_hit.get("estate_name") if isinstance(geo_hit, dict) else None),
                 'p24_id': lid,
                 'title': title_str,
                 'address': final_address,
@@ -1302,22 +1303,36 @@ def scrape_p24_live(
             }
             suburb_items.append(item_obj)
 
-        # Reset consecutive trips on a clean fetch, deduplicate, and cache results
+        # Reset consecutive trips on a clean fetch, preserve user-submitted addresses, deduplicate, and cache results
         if suburb_items:
             suburb_items = deduplicate_property_listings(suburb_items)
+            try:
+                from services.listings_db import upsert_listings, merge_user_submitted_addresses
+                upsert_listings(suburb_items, clean_suburb, is_full_suburb_scrape=True)
+                suburb_items = merge_user_submitted_addresses(suburb_items)
+            except Exception as e:
+                print(f"[DB POOL] Warning: failed to upsert into listings_db: {e}")
+
             _CONSECUTIVE_TRIPS = 0
             _MEMORY_CACHE[cache_key] = {
                 "ts": time.time(),
                 "items": suburb_items,
             }
             _save_disk_cache()
-
-            # Centralized DB Pool: Upsert into persistent shared SQLite database pool
+        else:
+            # Clean live check returned 0 matching listings: still stamp sync timestamp so UI doesn't stay stuck "6d+ old"
             try:
-                from services.listings_db import upsert_listings
-                upsert_listings(suburb_items, clean_suburb, is_full_suburb_scrape=True)
+                from services.listings_db import touch_suburb_sync_state
+                touch_suburb_sync_state(clean_suburb, 0)
             except Exception as e:
-                print(f"[DB POOL] Warning: failed to upsert into listings_db: {e}")
+                print(f"[DB POOL] Warning: failed to touch sync state: {e}")
+
+            _CONSECUTIVE_TRIPS = 0
+            _MEMORY_CACHE[cache_key] = {
+                "ts": time.time(),
+                "items": [],
+            }
+            _save_disk_cache()
 
         for item in _enrich_distance([it for it in suburb_items if _matches_local_filters(it)], anchor_lat, anchor_lng):
             lid = item.get("p24_id") or item.get("id")

@@ -2,13 +2,16 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 
-export default function DashboardRedirect() {
+export default function DashboardRedirectPage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
 
   useEffect(() => {
-    router.replace('/alerts');
-  }, [router]);
+    if (loading) return;
+    router.replace(user ? '/alerts' : '/');
+  }, [user, loading, router]);
 
   return (
     <div className="min-h-screen bg-white flex items-center justify-center">

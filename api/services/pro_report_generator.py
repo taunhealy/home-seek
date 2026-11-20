@@ -55,14 +55,7 @@ async def generate_pro_ai_report(
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
         from langchain_core.messages import HumanMessage
-        
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            api_key=api_key,
-            temperature=0.2,
-            request_timeout=60
-        )
-        
+
         # Load images as base64
         image_contents = []
         for p_url in audit_photos:
@@ -160,7 +153,26 @@ Return strictly valid JSON matching this schema:
         content_parts.extend(image_contents)
 
         message = HumanMessage(content=content_parts)
-        resp = await llm.ainvoke([message])
+        resp = None
+        for m_name in ["gemini-4-neon", "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"]:
+            try:
+                llm = ChatGoogleGenerativeAI(
+                    model=m_name,
+                    api_key=api_key,
+                    temperature=0.2,
+                    request_timeout=45,
+                    max_retries=0,
+                )
+                resp = await llm.ainvoke([message])
+                if resp:
+                    break
+            except Exception as model_err:
+                err_s = str(model_err)
+                if any(k in err_s for k in ("RESOURCE_EXHAUSTED", "429", "402", "404", "NOT_FOUND", "503", "UNAVAILABLE")):
+                    continue
+                raise model_err
+        if not resp:
+            return _generate_deterministic_pro_report(listing, building_data, floor_num, has_lift, user_prompt, personal_tastes)
         resp_text = resp.content if hasattr(resp, 'content') else str(resp)
 
         clean_json = re.sub(r'^```json\s*', '', resp_text, flags=re.MULTILINE)

@@ -193,7 +193,7 @@ export default function Home() {
       </section>
 
       {/* 4 Core Pillars Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto w-full border-t border-zinc-200">
+      <section id="features" className="py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto w-full border-t border-zinc-200 scroll-mt-20">
         <div className="text-center max-w-2xl mx-auto space-y-2 mb-12">
           <h2 className="text-2xl sm:text-3xl font-bold text-zinc-950">
             Engineered For Frictionless Renting

@@ -12,12 +12,22 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/explore',
-        destination: '/properties',
+        destination: '/search',
+        permanent: false,
+      },
+      {
+        source: '/map',
+        destination: '/search',
+        permanent: false,
+      },
+      {
+        source: '/properties',
+        destination: '/search',
         permanent: false,
       },
       {
         source: '/dashboard',
-        destination: '/properties',
+        destination: '/alerts',
         permanent: false,
       },
     ];

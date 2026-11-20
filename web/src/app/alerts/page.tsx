@@ -32,15 +32,52 @@ import {
 import { useAuth } from '@/lib/auth-context';
 import { Navbar } from '@/components/Navbar';
 import { fetchWithAuth, API_BASE_URL } from '@/lib/api';
+import { SUBURB_ABBREVIATIONS } from '@/constants/capeTownGeo';
+
+const ALERT_SUBURB_SUGGESTIONS = Array.from(
+  new Set([
+    ...Object.keys(SUBURB_ABBREVIATIONS)
+      .filter((k) => k !== 'simons town')
+      .map((k) =>
+        k.replace(/\b\w/g, (c) => c.toUpperCase())
+      ),
+    'Llandudno',
+    'Noordhoek',
+    'Kommetjie',
+    'Scarborough',
+    'Tokai',
+    'Kenilworth',
+    'Wynberg',
+    'Plumstead',
+    'Mowbray',
+    'Rosebank',
+    'Zonnebloem',
+    'Three Anchor Bay',
+    'Bergvliet',
+    'Meadowridge',
+    'Kirstenhof',
+  ])
+).sort();
 
 interface AlertItem {
   id?: string;
   search_id?: string;
   target_area?: string;
   search_query?: string;
+  min_price?: number;
   max_price?: number;
   min_bedrooms?: number[] | number;
+  min_size_sqm?: number;
   property_type?: string;
+  safeish?: boolean;
+  off_main_road?: boolean;
+  off_bars?: boolean;
+  within_radius?: boolean;
+  radius_km?: number;
+  fibre_ready?: boolean;
+  off_street_parking?: boolean;
+  private_only?: boolean;
+  min_fit_score?: number;
   require_verified_sea_view?: boolean;
   require_independent_living?: boolean;
   require_private_entrance?: boolean;
@@ -65,95 +102,188 @@ export default function AlertsPage() {
   const [generatingReportId, setGeneratingReportId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Edit Alert State
+  // Edit / Create Alert State (aligned with Search page filters)
   const [editingAlert, setEditingAlert] = useState<AlertItem | null>(null);
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [editArea, setEditArea] = useState('');
-  const [editMaxPrice, setEditMaxPrice] = useState('');
-  const [editMinBedrooms, setEditMinBedrooms] = useState('1');
-  const [editPropertyType, setEditPropertyType] = useState('Apartment');
+  const [areaQuery, setAreaQuery] = useState('');
+  const [showAreaSuggestions, setShowAreaSuggestions] = useState(false);
+  const [editMinPrice, setEditMinPrice] = useState('0');
+  const [editMaxPrice, setEditMaxPrice] = useState('20000');
+  const [editMinBedrooms, setEditMinBedrooms] = useState('0.5');
+  const [editMinSqm, setEditMinSqm] = useState('0');
+  const [editRadiusKm, setEditRadiusKm] = useState('9.5');
+  const [editSafeish, setEditSafeish] = useState(true);
+  const [editOffMainRoad, setEditOffMainRoad] = useState(true);
+  const [editOffBars, setEditOffBars] = useState(false);
+  const [editWithinRadius, setEditWithinRadius] = useState(false);
+  const [editFibreReady, setEditFibreReady] = useState(false);
+  const [editOffStreetParking, setEditOffStreetParking] = useState(false);
+  const [editPetFriendly, setEditPetFriendly] = useState(false);
+  const [editPrivateOnly, setEditPrivateOnly] = useState(false);
+  const [editMinFitScore, setEditMinFitScore] = useState<number>(80);
   const [editPrompt, setEditPrompt] = useState('');
   const [editPersonalTastes, setEditPersonalTastes] = useState('');
-  const [editIndependentLiving, setEditIndependentLiving] = useState(false);
-  const [editPrivateEntrance, setEditPrivateEntrance] = useState(false);
-  const [editPrivateGarden, setEditPrivateGarden] = useState(false);
-  const [editExcludeLandlord, setEditExcludeLandlord] = useState(false);
-  const [editExcludeShared, setEditExcludeShared] = useState(false);
-  const [editVerifiedSeaView, setEditVerifiedSeaView] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
+  const AI_FIT_CHIPS = [
+    'WFH / Quiet calls',
+    'Natural light / Afternoon sun',
+    'Morning trail / ocean access',
+    'No upstairs neighbours',
+    'Secure bike / surfboard storage',
+    'Quiet street / Low traffic',
+  ];
+
+  const togglePersonalTasteChip = (chip: string) => {
+    const parts = editPersonalTastes
+      .split('·')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const exists = parts.some((p) => p.toLowerCase() === chip.toLowerCase());
+    const next = exists
+      ? parts.filter((p) => p.toLowerCase() !== chip.toLowerCase())
+      : [...parts, chip];
+    setEditPersonalTastes(next.join(' · '));
+  };
+
+  const handleOpenCreate = () => {
+    setIsCreatingNew(true);
+    setEditingAlert({ id: 'new' });
+    setEditArea('Gardens, Sea Point');
+    setAreaQuery('');
+    setShowAreaSuggestions(false);
+    setEditMinPrice('0');
+    setEditMaxPrice('18000');
+    setEditMinBedrooms('1');
+    setEditMinSqm('0');
+    setEditRadiusKm('9.5');
+    setEditSafeish(true);
+    setEditOffMainRoad(true);
+    setEditOffBars(false);
+    setEditWithinRadius(false);
+    setEditFibreReady(false);
+    setEditOffStreetParking(false);
+    setEditPetFriendly(false);
+    setEditPrivateOnly(false);
+    setEditMinFitScore(80);
+    setEditPrompt('');
+    setEditPersonalTastes('');
+  };
+
   const handleOpenEdit = (alert: AlertItem) => {
+    setIsCreatingNew(false);
     setEditingAlert(alert);
     setEditArea(alert.target_area || alert.search_query?.replace(/^AI Radar:\s*/, '').split('(')[0].trim() || 'Gardens');
+    setAreaQuery('');
+    setShowAreaSuggestions(false);
+    setEditMinPrice(alert.min_price !== undefined ? String(alert.min_price) : '0');
     setEditMaxPrice(alert.max_price ? String(alert.max_price) : '18000');
-    
-    // Parse bedrooms
-    let bedsVal = '1';
+
+    let bedsVal = 'any';
     if (alert.min_bedrooms) {
       if (Array.isArray(alert.min_bedrooms) && alert.min_bedrooms.length > 0) {
         bedsVal = String(alert.min_bedrooms[0]);
-      } else {
+      } else if (!Array.isArray(alert.min_bedrooms)) {
         bedsVal = String(alert.min_bedrooms);
       }
     }
-    setEditMinBedrooms(bedsVal.includes('+') ? bedsVal : `${bedsVal}+`);
-    setEditPropertyType(alert.property_type || 'Apartment');
+    setEditMinBedrooms(bedsVal);
+    setEditMinSqm(String(alert.min_size_sqm || 0));
+    const anchorRadius = alert.commute_anchors?.[0]?.radius_km;
+    setEditRadiusKm(String(alert.radius_km ?? anchorRadius ?? 9.5));
+
+    setEditSafeish(alert.safeish ?? true);
+    setEditOffMainRoad(alert.off_main_road ?? true);
+    setEditOffBars(!!alert.off_bars);
+    setEditWithinRadius(!!alert.within_radius);
+    setEditFibreReady(!!alert.fibre_ready);
+    setEditOffStreetParking(!!alert.off_street_parking);
+    setEditPetFriendly(!!alert.pet_friendly);
+    setEditPrivateOnly(Boolean(alert.private_only || alert.require_private_entrance || alert.require_independent_living));
+    setEditMinFitScore(typeof alert.min_fit_score === 'number' ? alert.min_fit_score : 80);
     setEditPrompt(alert.prompt || '');
     setEditPersonalTastes(alert.personal_tastes || '');
-    setEditIndependentLiving(!!alert.require_independent_living);
-    setEditPrivateEntrance(!!alert.require_private_entrance);
-    setEditPrivateGarden(!!alert.require_private_garden);
-    setEditExcludeLandlord(!!alert.exclude_landlord_on_site);
-    setEditExcludeShared(!!alert.exclude_shared_house);
-    setEditVerifiedSeaView(!!alert.require_verified_sea_view);
   };
 
   const handleSaveEdit = async () => {
     if (!editingAlert) return;
     const searchId = editingAlert.id || editingAlert.search_id;
-    if (!searchId) return;
+    if (!isCreatingNew && !searchId) return;
 
     const uid = profile?.id || user?.uid || 'taun_test_user';
-    const bedsNum = parseInt(editMinBedrooms.replace('+', '')) || 1;
-    const maxP = parseInt(editMaxPrice) || 18000;
+    const bedsNum = editMinBedrooms === 'any' ? 0 : parseFloat(editMinBedrooms) || 0;
+    const bedsLabel = editMinBedrooms === 'any' ? 'Any Beds' : `${editMinBedrooms}+ Beds`;
+    const minP = Math.max(0, parseInt(editMinPrice) || 0);
+    const maxP = Math.max(minP, parseInt(editMaxPrice) || 18000);
+    const minSqmVal = Math.max(0, parseInt(editMinSqm) || 0);
+    const radiusVal = Math.max(0.5, parseFloat(editRadiusKm) || 9.5);
 
     const updatedData = {
+      user_id: uid,
       target_area: editArea,
-      search_query: `AI Radar: ${editArea} (${bedsNum}+ Beds, max R${maxP})`,
+      search_query: `AI Radar: ${editArea} (${bedsLabel}, R${minP.toLocaleString()}–R${maxP.toLocaleString()})`,
+      min_price: minP,
       max_price: maxP,
-      min_bedrooms: [bedsNum],
-      property_type: editPropertyType,
+      min_bedrooms: bedsNum > 0 ? [bedsNum] : [],
+      min_size_sqm: minSqmVal,
+      radius_km: radiusVal,
+      safeish: editSafeish,
+      off_main_road: editOffMainRoad,
+      off_bars: editOffBars,
+      within_radius: editWithinRadius,
+      fibre_ready: editFibreReady,
+      off_street_parking: editOffStreetParking,
+      pet_friendly: editPetFriendly,
+      private_only: editPrivateOnly,
+      min_fit_score: editMinFitScore,
+      require_independent_living: editPrivateOnly,
+      require_private_entrance: editPrivateOnly,
       prompt: editPrompt,
       personal_tastes: editPersonalTastes,
-      require_independent_living: editIndependentLiving,
-      require_private_entrance: editPrivateEntrance,
-      require_private_garden: editPrivateGarden,
-      exclude_landlord_on_site: editExcludeLandlord,
-      exclude_shared_house: editExcludeShared,
-      require_verified_sea_view: editVerifiedSeaView,
+      trigger_initial_scan: false,
     };
 
     try {
       setIsSavingEdit(true);
-      const res = await fetchWithAuth(`/update-alert/${uid}/${searchId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedData),
-      });
-
-      if (res && res.ok) {
-        setAlerts((prev) =>
-          prev.map((a) =>
-            a.id === searchId || a.search_id === searchId ? { ...a, ...updatedData } : a
-          )
-        );
-        showToast(`✓ Radar alert for ${editArea} updated successfully!`);
-        setEditingAlert(null);
+      if (isCreatingNew) {
+        const res = await fetchWithAuth('/save-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedData),
+        });
+        if (res && res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const newId = data?.search_id || `alert-${Date.now()}`;
+          setAlerts((prev) => [{ ...updatedData, id: newId, search_id: newId, is_active: true }, ...prev]);
+          showToast(`✓ New AI Radar Alert created for ${editArea}!`);
+          setEditingAlert(null);
+          setIsCreatingNew(false);
+        } else {
+          showToast('Failed to create alert on server.');
+        }
       } else {
-        showToast('Failed to update alert on server.');
+        const res = await fetchWithAuth(`/update-alert/${uid}/${searchId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedData),
+        });
+
+        if (res && res.ok) {
+          setAlerts((prev) =>
+            prev.map((a) =>
+              a.id === searchId || a.search_id === searchId ? { ...a, ...updatedData } : a
+            )
+          );
+          showToast(`✓ Radar alert for ${editArea} updated with Search criteria!`);
+          setEditingAlert(null);
+        } else {
+          showToast('Failed to update alert on server.');
+        }
       }
     } catch (err) {
       console.error('Error saving alert:', err);
-      showToast('Error saving changes to alert.');
+      showToast('Error saving alert.');
     } finally {
       setIsSavingEdit(false);
     }
@@ -338,13 +468,14 @@ export default function AlertsPage() {
               <span>{isScanningAll ? 'Scanning Feeds...' : 'Pulse Scan All'}</span>
             </button>
 
-            <Link
-              href="/search"
-              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-zinc-950 hover:bg-black text-white font-semibold text-xs transition-all shadow-md active:scale-98"
+            <button
+              type="button"
+              onClick={handleOpenCreate}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-zinc-950 hover:bg-black text-white font-semibold text-xs transition-all shadow-md active:scale-98 cursor-pointer"
             >
               <Plus size={16} weight="bold" />
-              <span>New Search Criteria</span>
-            </Link>
+              <span>New Alert</span>
+            </button>
           </div>
         </div>
 
@@ -439,17 +570,29 @@ export default function AlertsPage() {
                           <span>{isActive ? 'Active Radar' : 'Standby'}</span>
                         </span>
 
-                        {alert.max_price && (
+                        {(alert.min_price !== undefined || alert.max_price) && (
                           <span className="px-3 py-1 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-800">
-                            Up to R {alert.max_price.toLocaleString()} / mo
+                            {alert.min_price ? `R ${(alert.min_price / 1000).toFixed(0)}k – ` : 'Up to '}
+                            R {((alert.max_price || 20000) / 1000).toFixed(0)}k / mo
                           </span>
                         )}
 
-                        {alert.property_type && (
-                          <span className="px-3 py-1 rounded-full text-xs font-medium bg-zinc-100 text-zinc-700">
-                            {alert.property_type}
+                        {Array.isArray(alert.min_bedrooms) && alert.min_bedrooms.length > 0 && (
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-700">
+                            {alert.min_bedrooms[0]}+ Bed
                           </span>
                         )}
+
+                        {alert.min_size_sqm && alert.min_size_sqm > 0 && (
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-700">
+                            {alert.min_size_sqm}+ m²
+                          </span>
+                        )}
+
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                          <Sparkle size={11} weight="fill" className="text-indigo-600" />
+                          <span>{(alert.min_fit_score ?? 80) > 0 ? `≥ ${alert.min_fit_score ?? 80}% AI Fit` : 'All AI Fits'}</span>
+                        </span>
                       </div>
 
                       {/* Title / Description */}
@@ -459,38 +602,58 @@ export default function AlertsPage() {
                         </h3>
                       </div>
 
-                      {/* Criteria Signals & Filters */}
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        {alert.require_verified_sea_view && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-800 bg-sky-50 border border-sky-200 px-2.5 py-0.5 rounded-full">
-                            <Waves size={13} weight="bold" />
-                            <span>Verified Sea View Required</span>
+                      {/* Search Filter Criteria Pills */}
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                        {alert.safeish && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-900 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                            <ShieldCheck size={12} weight="fill" />
+                            <span>Safe-ish</span>
                           </span>
                         )}
 
-                        {alert.require_independent_living && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-800 bg-zinc-100 border border-zinc-200 px-2.5 py-0.5 rounded-full">
-                            <ShieldCheck size={13} weight="bold" />
-                            <span>Independent Living Only</span>
+                        {alert.off_main_road && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-800 bg-zinc-100 border border-zinc-200 px-2.5 py-0.5 rounded-full">
+                            <span>Off-Main Rd</span>
                           </span>
                         )}
 
-                        {alert.require_private_entrance && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-700 bg-zinc-50 border border-zinc-200 px-2 py-0.5 rounded-full">
-                            <span>Private Entrance</span>
+                        {alert.off_bars && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-900 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full">
+                            <span>Off-Bars/Clubs</span>
+                          </span>
+                        )}
+
+                        {alert.fibre_ready && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-800 bg-zinc-100 border border-zinc-200 px-2.5 py-0.5 rounded-full">
+                            <span>Fibre ready</span>
+                          </span>
+                        )}
+
+                        {alert.off_street_parking && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-900 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full">
+                            <span>Off-street pkg</span>
                           </span>
                         )}
 
                         {alert.pet_friendly && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
-                            <span>Pet Friendly</span>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                            <span>Pet-friendly</span>
+                          </span>
+                        )}
+
+                        {(alert.private_only || alert.require_private_entrance || alert.require_independent_living) && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-900 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                            <span>Private</span>
                           </span>
                         )}
 
                         {alert.commute_anchors && alert.commute_anchors.length > 0 && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-700 bg-zinc-50 border border-zinc-200 px-2.5 py-0.5 rounded-full">
-                            <Target size={13} weight="bold" />
-                            <span>{alert.commute_anchors.length} Life Anchors</span>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                            <Target size={12} weight="bold" />
+                            <span>
+                              {alert.commute_anchors[0]?.label || `${alert.commute_anchors.length} Anchor`}
+                              {(alert.radius_km || alert.commute_anchors[0]?.radius_km) ? ` · ≤${alert.radius_km || alert.commute_anchors[0]?.radius_km} km` : ''}
+                            </span>
                           </span>
                         )}
                       </div>
@@ -512,7 +675,29 @@ export default function AlertsPage() {
                       
                       {/* View Matches in Search */}
                       <Link
-                        href="/search"
+                        href={(() => {
+                          const params = new URLSearchParams();
+                          if (area) params.set('suburbs', area);
+                          if (alert.min_price !== undefined) params.set('minPrice', String(alert.min_price));
+                          if (alert.max_price) params.set('maxPrice', String(alert.max_price));
+                          if (Array.isArray(alert.min_bedrooms) && alert.min_bedrooms.length > 0) {
+                            params.set('beds', String(alert.min_bedrooms[0]));
+                          }
+                          if (alert.min_size_sqm && alert.min_size_sqm > 0) {
+                            params.set('minSqm', String(alert.min_size_sqm));
+                          }
+                          if (alert.safeish !== undefined) params.set('safeish', alert.safeish ? '1' : '0');
+                          if (alert.off_main_road !== undefined) params.set('offMain', alert.off_main_road ? '1' : '0');
+                          if (alert.off_bars !== undefined) params.set('offBars', alert.off_bars ? '1' : '0');
+                          if (alert.fibre_ready !== undefined) params.set('fibre', alert.fibre_ready ? '1' : '0');
+                          if (alert.off_street_parking !== undefined) params.set('parking', alert.off_street_parking ? '1' : '0');
+                          if (alert.pet_friendly !== undefined) params.set('pet', alert.pet_friendly ? '1' : '0');
+                          if (alert.private_only !== undefined || alert.require_private_entrance !== undefined) {
+                            params.set('private', (alert.private_only || alert.require_private_entrance) ? '1' : '0');
+                          }
+                          const qs = params.toString();
+                          return qs ? `/search?${qs}` : '/search';
+                        })()}
                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-zinc-800 hover:text-zinc-950 bg-zinc-100 hover:bg-zinc-200 transition-colors"
                       >
                         <Eye size={15} weight="bold" />
@@ -596,10 +781,12 @@ export default function AlertsPage() {
                 <div>
                   <h3 className="text-xl font-bold text-zinc-950 flex items-center gap-2">
                     <PencilSimple size={20} weight="bold" className="text-zinc-700" />
-                    <span>Edit Radar Alert</span>
+                    <span>{isCreatingNew ? 'New Radar Alert' : 'Edit Radar Alert'}</span>
                   </h3>
                   <p className="text-xs text-zinc-500 mt-1">
-                    Update location, budget ceiling, bedrooms, and lifestyle criteria.
+                    {isCreatingNew
+                      ? 'Configure suburbs, Search filters, and your AI Dealbreakers.'
+                      : 'Update location, budget ceiling, bedrooms, and lifestyle criteria.'}
                   </p>
                 </div>
                 <button
@@ -613,25 +800,118 @@ export default function AlertsPage() {
 
               {/* Edit Form Body (Scrollable interior) */}
               <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
-                {/* Target Area */}
-                <div>
+                {/* Target Area / Suburbs with Auto-Suggest */}
+                <div className="relative">
                   <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5">
                     Target Area / Suburbs
                   </label>
-                  <input
-                    type="text"
-                    value={editArea}
-                    onChange={(e) => setEditArea(e.target.value)}
-                    placeholder="e.g. Gardens, Tamboerskloof"
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-xs text-zinc-950 focus:bg-white focus:outline-none focus:border-zinc-950 transition-all font-medium"
-                  />
+                  {(() => {
+                    const selectedAreas = editArea
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    const filteredSuggestions = ALERT_SUBURB_SUGGESTIONS.filter(
+                      (sub) =>
+                        !selectedAreas.some((sel) => sel.toLowerCase() === sub.toLowerCase()) &&
+                        (!areaQuery.trim() || sub.toLowerCase().includes(areaQuery.trim().toLowerCase()))
+                    ).slice(0, 8);
+
+                    const addSuburb = (sub: string) => {
+                      const clean = sub.trim();
+                      if (!clean) return;
+                      if (!selectedAreas.some((sel) => sel.toLowerCase() === clean.toLowerCase())) {
+                        setEditArea([...selectedAreas, clean].join(', '));
+                      }
+                      setAreaQuery('');
+                      setShowAreaSuggestions(false);
+                    };
+
+                    const removeSuburb = (sub: string) => {
+                      setEditArea(selectedAreas.filter((s) => s !== sub).join(', '));
+                    };
+
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl bg-zinc-50 border border-zinc-200 focus-within:bg-white focus-within:border-zinc-950 transition-all">
+                          {selectedAreas.map((sub) => (
+                            <span
+                              key={sub}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-900 text-[11px] font-bold"
+                            >
+                              <span>{sub}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeSuburb(sub)}
+                                className="text-indigo-500 hover:text-indigo-950 cursor-pointer"
+                                aria-label={`Remove ${sub}`}
+                              >
+                                <X size={11} weight="bold" />
+                              </button>
+                            </span>
+                          ))}
+                          <input
+                            type="text"
+                            value={areaQuery}
+                            onFocus={() => setShowAreaSuggestions(true)}
+                            onBlur={() => setTimeout(() => setShowAreaSuggestions(false), 160)}
+                            onChange={(e) => {
+                              setAreaQuery(e.target.value);
+                              setShowAreaSuggestions(true);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && areaQuery.trim()) {
+                                e.preventDefault();
+                                addSuburb(filteredSuggestions[0] || areaQuery.trim());
+                              }
+                            }}
+                            placeholder={selectedAreas.length > 0 ? '+ Add another suburb...' : 'Type suburb (e.g. Hout Bay, Gardens)...'}
+                            className="flex-1 min-w-[150px] bg-transparent px-1.5 py-1 text-xs text-zinc-950 focus:outline-none font-medium"
+                          />
+                        </div>
+
+                        {showAreaSuggestions && filteredSuggestions.length > 0 && (
+                          <div className="absolute left-0 right-0 z-30 mt-1 bg-white border border-zinc-200 rounded-xl shadow-xl max-h-44 overflow-y-auto py-1">
+                            {filteredSuggestions.map((sub) => (
+                              <button
+                                key={sub}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  addSuburb(sub);
+                                }}
+                                className="w-full text-left px-3.5 py-2 text-xs font-semibold text-zinc-800 hover:bg-indigo-50 hover:text-indigo-900 flex items-center justify-between cursor-pointer"
+                              >
+                                <span>{sub}</span>
+                                <span className="text-[10px] font-bold text-zinc-400">+ Add</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                {/* Price Ceiling & Bedrooms */}
+                {/* Budget Window (Min / Max Price) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5">
-                      Max Price (Budget Ceiling)
+                      Min Price (R)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">R</span>
+                      <input
+                        type="number"
+                        value={editMinPrice}
+                        onChange={(e) => setEditMinPrice(e.target.value)}
+                        placeholder="12000"
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded-xl pl-8 pr-3.5 py-2.5 text-xs text-zinc-950 focus:bg-white focus:outline-none focus:border-zinc-950 transition-all font-medium"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5">
+                      Max Price (R)
                     </label>
                     <div className="relative">
                       <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">R</span>
@@ -644,129 +924,174 @@ export default function AlertsPage() {
                       />
                     </div>
                   </div>
+                </div>
 
+                {/* Bedrooms & Min Size (matches Search page) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5">
                       Min Bedrooms
                     </label>
-                    <div className="flex gap-1.5">
-                      {['1+', '2+', '3+', '4+'].map((b) => (
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        { val: 'any', label: 'Any' },
+                        { val: '0.5', label: '0.5+' },
+                        { val: '1', label: '1+' },
+                        { val: '1.5', label: '1.5+' },
+                        { val: '2', label: '2+' },
+                        { val: '3', label: '3+' },
+                      ].map((b) => (
                         <button
-                          key={b}
+                          key={b.val}
                           type="button"
-                          onClick={() => setEditMinBedrooms(b)}
-                          className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                            editMinBedrooms === b
+                          onClick={() => setEditMinBedrooms(b.val)}
+                          className={`px-2.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                            editMinBedrooms === b.val
                               ? 'bg-zinc-950 text-white border-zinc-950 shadow-xs'
                               : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
                           }`}
                         >
-                          {b}
+                          {b.label}
                         </button>
                       ))}
                     </div>
                   </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5">
+                      Minimum Size (m²)
+                    </label>
+                    <select
+                      value={editMinSqm}
+                      onChange={(e) => setEditMinSqm(e.target.value)}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-xs text-zinc-950 focus:bg-white focus:outline-none focus:border-zinc-950 transition-all font-medium"
+                    >
+                      <option value="0">Any Size</option>
+                      <option value="40">40+ m²</option>
+                      <option value="55">55+ m²</option>
+                      <option value="70">70+ m²</option>
+                      <option value="90">90+ m²</option>
+                      <option value="120">120+ m²</option>
+                    </select>
+                  </div>
                 </div>
 
-                {/* Property Type */}
-                <div>
-                  <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5">
-                    Property Type
-                  </label>
-                  <select
-                    value={editPropertyType}
-                    onChange={(e) => setEditPropertyType(e.target.value)}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-xs text-zinc-950 focus:bg-white focus:outline-none focus:border-zinc-950 transition-all font-medium"
-                  >
-                    <option value="Apartment">Apartment / Flat</option>
-                    <option value="House">House</option>
-                    <option value="Townhouse">Townhouse</option>
-                    <option value="Any">Any Property Type</option>
-                  </select>
-                </div>
-
-                {/* Routine & Tastes */}
-                <div>
-                  <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5">
-                    AI Routine & Desires Prompt
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={editPrompt}
-                    onChange={(e) => setEditPrompt(e.target.value)}
-                    placeholder="Weekly routine, mountain biking, cafe work, acoustic desires..."
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 text-xs text-zinc-950 focus:bg-white focus:outline-none focus:border-zinc-950 transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5">
-                    Acoustic & Lifestyle Dealbreakers
-                  </label>
-                  <input
-                    type="text"
-                    value={editPersonalTastes}
-                    onChange={(e) => setEditPersonalTastes(e.target.value)}
-                    placeholder="Acoustic quiet for music, secure bike storage, quiet street..."
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 text-xs text-zinc-950 focus:bg-white focus:outline-none focus:border-zinc-950 transition-all"
-                  />
-                </div>
-
-                {/* Privacy Shield Toggles */}
+                {/* Search Filter Pills */}
                 <div className="pt-2 border-t border-zinc-100 space-y-2">
                   <span className="block text-xs font-bold text-zinc-800 uppercase tracking-wider">
-                    Privacy & Autonomy Shield
+                    Search Filter Criteria Pills
                   </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <label className="flex items-center gap-2 p-2 rounded-xl bg-zinc-50 border border-zinc-200 hover:bg-zinc-100/70 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={editIndependentLiving}
-                        onChange={(e) => setEditIndependentLiving(e.target.checked)}
-                        className="rounded text-zinc-950 accent-zinc-950"
-                      />
-                      <span className="font-semibold text-zinc-800">Independent Living</span>
-                    </label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: 'Fibre ready', active: editFibreReady, toggle: () => setEditFibreReady(!editFibreReady) },
+                      { label: 'Safe-ish', active: editSafeish, toggle: () => setEditSafeish(!editSafeish) },
+                      { label: 'Off-Main Rd', active: editOffMainRoad, toggle: () => setEditOffMainRoad(!editOffMainRoad) },
+                      { label: 'Off-Bars/Clubs', active: editOffBars, toggle: () => setEditOffBars(!editOffBars) },
+                      { label: `In Radius (≤${editRadiusKm} km)`, active: editWithinRadius, toggle: () => setEditWithinRadius(!editWithinRadius) },
+                      { label: 'Off-street pkg', active: editOffStreetParking, toggle: () => setEditOffStreetParking(!editOffStreetParking) },
+                      { label: 'Pet-friendly', active: editPetFriendly, toggle: () => setEditPetFriendly(!editPetFriendly) },
+                      { label: 'Private', active: editPrivateOnly, toggle: () => setEditPrivateOnly(!editPrivateOnly) },
+                    ].map((pill) => (
+                      <button
+                        key={pill.label}
+                        type="button"
+                        onClick={pill.toggle}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all cursor-pointer ${
+                          pill.active
+                            ? 'bg-zinc-950 text-white border-zinc-950 shadow-xs'
+                            : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                        }`}
+                      >
+                        {pill.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                    <label className="flex items-center gap-2 p-2 rounded-xl bg-zinc-50 border border-zinc-200 hover:bg-zinc-100/70 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={editPrivateEntrance}
-                        onChange={(e) => setEditPrivateEntrance(e.target.checked)}
-                        className="rounded text-zinc-950 accent-zinc-950"
-                      />
-                      <span className="font-semibold text-zinc-800">Private Entrance</span>
-                    </label>
+                {/* Minimum AI Fit Threshold (Suppress Noise) */}
+                <div className="pt-2 border-t border-zinc-100 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-zinc-800 uppercase tracking-wider">
+                      Minimum AI Fit Score
+                    </span>
+                    <span className="text-[11px] font-semibold text-indigo-700">
+                      Suppresses noisy P24-style spam
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { val: 0, label: 'All (Any)' },
+                      { val: 70, label: '70%+ Fit' },
+                      { val: 80, label: '80%+ Quiet' },
+                      { val: 90, label: '90%+ Top' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        onClick={() => setEditMinFitScore(opt.val)}
+                        className={`py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          editMinFitScore === opt.val
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                            : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                    <label className="flex items-center gap-2 p-2 rounded-xl bg-zinc-50 border border-zinc-200 hover:bg-zinc-100/70 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={editExcludeLandlord}
-                        onChange={(e) => setEditExcludeLandlord(e.target.checked)}
-                        className="rounded text-zinc-950 accent-zinc-950"
-                      />
-                      <span className="font-semibold text-zinc-800">Exclude Landlord On-Site</span>
+                {/* Your AI Dealbreakers & Lifestyle Fit */}
+                <div className="pt-2 border-t border-zinc-100 space-y-2.5">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1">
+                      Your AI Dealbreakers &amp; Lifestyle Fit
                     </label>
+                    <p className="text-[11px] text-zinc-500 mb-2">
+                      Click quick-chips or describe your daily routine — AI Scout scores every listing against this.
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mb-2.5">
+                      {AI_FIT_CHIPS.map((chip) => {
+                        const isSelected = editPersonalTastes
+                          .toLowerCase()
+                          .includes(chip.toLowerCase());
+                        return (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() => togglePersonalTasteChip(chip)}
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                : 'bg-indigo-50/60 text-indigo-900 border-indigo-200 hover:bg-indigo-100'
+                            }`}
+                          >
+                            {isSelected ? '✓ ' : '+ '}
+                            {chip}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <input
+                      type="text"
+                      value={editPersonalTastes}
+                      onChange={(e) => setEditPersonalTastes(e.target.value)}
+                      placeholder="WFH / Quiet calls · Natural light · No upstairs neighbours..."
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 text-xs text-zinc-950 focus:bg-white focus:outline-none focus:border-zinc-950 transition-all"
+                    />
+                  </div>
 
-                    <label className="flex items-center gap-2 p-2 rounded-xl bg-zinc-50 border border-zinc-200 hover:bg-zinc-100/70 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={editExcludeShared}
-                        onChange={(e) => setEditExcludeShared(e.target.checked)}
-                        className="rounded text-zinc-950 accent-zinc-950"
-                      />
-                      <span className="font-semibold text-zinc-800">Exclude Shared House</span>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5">
+                      Daily Routine &amp; Commute Context
                     </label>
-
-                    <label className="flex items-center gap-2 p-2 rounded-xl bg-zinc-50 border border-zinc-200 hover:bg-zinc-100/70 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={editVerifiedSeaView}
-                        onChange={(e) => setEditVerifiedSeaView(e.target.checked)}
-                        className="rounded text-zinc-950 accent-zinc-950"
-                      />
-                      <span className="font-semibold text-zinc-800">Verified Sea View</span>
-                    </label>
+                    <textarea
+                      rows={2}
+                      value={editPrompt}
+                      onChange={(e) => setEditPrompt(e.target.value)}
+                      placeholder="e.g. Morning trail run near Chapman's Peak, WFH 4 days/week, need quiet evenings..."
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 text-xs text-zinc-950 focus:bg-white focus:outline-none focus:border-zinc-950 transition-all"
+                    />
                   </div>
                 </div>
               </div>

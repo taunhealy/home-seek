@@ -140,8 +140,13 @@ class DailyScoutScheduler:
         print_safe(f"[SCHEDULER] Scouting for user {user_id} across {prefs.areas} (Max: R {prefs.max_price})...")
         scout_res: AIScoutResult = await scout_engine.scout_and_rank(prefs)
 
-        # Slice top 10 listings
-        top_10 = scout_res.ranked_listings[:10]
+        # Filter by user's minimum AI Fit threshold (suppresses noisy non-matching listings)
+        min_fit_score = int(alert.get("min_fit_score") or 0)
+        filtered_ranked = [
+            l for l in scout_res.ranked_listings
+            if min_fit_score <= 0 or (getattr(l, "match_score", 0) or 0) >= min_fit_score
+        ]
+        top_10 = filtered_ranked[:10]
         ranked_dicts = [l.dict() for l in top_10]
         
         # Populate commute & location proximities if anchors are set
@@ -169,6 +174,7 @@ class DailyScoutScheduler:
             "user_prompt": prefs.prompt,
             "personal_tastes": prefs.personal_tastes,
             "max_price": prefs.max_price,
+            "min_fit_score": min_fit_score,
             "ranked_listings": ranked_dicts,
             "commute_anchors": anchors,
             "location_anchors": anchors

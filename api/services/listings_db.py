@@ -286,6 +286,22 @@ def query_listings(
                 pass
     return results
 
+def touch_suburb_sync_state(suburb_name: str, listing_count: int = 0):
+    """Updates suburb_sync_state timestamp even when a clean live scrape returns 0 listings."""
+    now = time.time()
+    sub_norm = suburb_name.strip().lower()
+    with _get_connection() as conn:
+        conn.execute("""
+            INSERT INTO suburb_sync_state (suburb_normalized, suburb_display, last_synced_at, listing_count, status)
+            VALUES (?, ?, ?, ?, 'ok')
+            ON CONFLICT(suburb_normalized) DO UPDATE SET
+                last_synced_at=excluded.last_synced_at,
+                listing_count=excluded.listing_count,
+                status='ok'
+        """, (sub_norm, suburb_name.strip().title(), now, int(listing_count)))
+        conn.commit()
+
+
 def get_suburb_sync_age_seconds(suburb_name: str) -> float:
     """Returns seconds since the suburb was last synced, or 999999999 if never synced."""
     sub_norm = suburb_name.strip().lower()
@@ -330,6 +346,48 @@ def get_listing_by_id(listing_id: str) -> Optional[Dict[str, Any]]:
             (norm_lid, raw_pid),
         ).fetchone()
         return dict(row) if row else None
+
+
+def merge_user_submitted_addresses(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Overlays any saved user_submitted addresses/coordinates from listings_pool.db onto freshly scraped items."""
+    if not items:
+        return items
+    try:
+        with _get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, p24_id, address, lat, lng, raw_json FROM listings WHERE is_address_withheld = 0 AND raw_json LIKE '%user_submitted%'"
+            ).fetchall()
+        by_id: Dict[str, Dict[str, Any]] = {}
+        for r in rows:
+            try:
+                raw = json.loads(r["raw_json"] or "{}")
+            except Exception:
+                raw = {}
+            if raw.get("address_source") != "user_submitted":
+                continue
+            override = {
+                "address": r["address"],
+                "lat": r["lat"],
+                "lng": r["lng"],
+                "is_address_withheld": False,
+                "address_source": "user_submitted",
+            }
+            if r["id"]:
+                by_id[str(r["id"])] = override
+            if r["p24_id"]:
+                by_id[str(r["p24_id"])] = override
+                by_id[f"p24-{r['p24_id']}"] = override
+        if not by_id:
+            return items
+        merged: List[Dict[str, Any]] = []
+        for it in items:
+            lid = str(it.get("id") or "")
+            pid = str(it.get("p24_id") or lid.replace("p24-", ""))
+            ov = by_id.get(lid) or by_id.get(pid)
+            merged.append({**it, **ov} if ov else it)
+        return merged
+    except Exception:
+        return items
 
 
 def update_listing_address(

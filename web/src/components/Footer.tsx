@@ -25,12 +25,16 @@ export const Footer = () => {
           </p>
         </div>
 
-        {/* 4 Main Links */}
-        <div className="flex flex-wrap justify-center items-center gap-6 text-xs font-semibold text-zinc-700">
+        {/* Main & Legal Links */}
+        <div className="flex flex-wrap justify-center items-center gap-5 text-xs font-semibold text-zinc-700">
           <Link href="/" className="hover:text-zinc-950 transition-colors">Home</Link>
           <Link href="/search" className="hover:text-zinc-950 transition-colors">Search</Link>
           <Link href="/compare" className="hover:text-zinc-950 transition-colors">Compare</Link>
+          <Link href="/inspection" className="hover:text-zinc-950 transition-colors">Inspection</Link>
+          <Link href="/pricing" className="hover:text-zinc-950 transition-colors">Pro</Link>
           <Link href="/contact" className="hover:text-zinc-950 transition-colors">Contact</Link>
+          <Link href="/privacy" className="text-zinc-500 hover:text-zinc-950 transition-colors">Privacy</Link>
+          <Link href="/terms" className="text-zinc-500 hover:text-zinc-950 transition-colors">Terms</Link>
         </div>
 
         {/* Copyright & Info */}

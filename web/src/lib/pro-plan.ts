@@ -173,6 +173,23 @@ export function removeFromCompare(propId: string): PropertyMapItem[] {
   return next;
 }
 
+export function replaceCompareProperty(oldPropId: string, newProp: PropertyMapItem): PropertyMapItem[] {
+  const current = getCompareList();
+  const filtered = current.filter((p) => String(p.id) !== String(newProp.id) || String(p.id) === String(oldPropId));
+  const idx = filtered.findIndex((p) => String(p.id) === String(oldPropId));
+  const next =
+    idx >= 0
+      ? filtered.map((p, i) => (i === idx ? newProp : p))
+      : filtered.length < 4
+        ? [...filtered, newProp]
+        : filtered;
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(COMPARE_LIST_KEY, JSON.stringify(next));
+    window.dispatchEvent(new Event('homeseek-compare-updated'));
+  }
+  return next;
+}
+
 export function clearCompareList(): void {
   if (typeof window !== 'undefined') {
     localStorage.setItem(COMPARE_LIST_KEY, JSON.stringify([]));

@@ -316,27 +316,43 @@ Return STRICT JSON only (no markdown fences) with these exact keys:
   "stove_type": "gas | induction | electric | unknown"
 }}"""
 
-        models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]
+        models_to_try = ["gemini-4-neon", "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"]
         last_err = None
         parsed = None
 
+        from google import genai
+        from google.genai import types
+        g_client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)),
+        )
+        vision_parts: List[Any] = [prompt]
+        for img_obj in image_contents:
+            url_str = (img_obj.get("image_url") or {}).get("url") or ""
+            if url_str.startswith("data:image/") and ";base64," in url_str:
+                header_part, b64_part = url_str.split(";base64,", 1)
+                mime_t = header_part.replace("data:", "") or "image/jpeg"
+                try:
+                    vision_parts.append(types.Part.from_bytes(data=base64.b64decode(b64_part), mime_type=mime_t))
+                except Exception:
+                    pass
+
         for m_name in models_to_try:
             try:
-                llm = ChatGoogleGenerativeAI(
+                resp = await asyncio.to_thread(
+                    g_client.models.generate_content,
                     model=m_name,
-                    api_key=api_key,
-                    temperature=0.2,
-                    request_timeout=45,
+                    contents=vision_parts,
+                    config=types.GenerateContentConfig(temperature=0.2),
                 )
-                msg = HumanMessage(content=[{"type": "text", "text": prompt}, *image_contents])
-                resp = await llm.ainvoke([msg])
-                text = (resp.content if isinstance(resp.content, str) else str(resp.content)).strip()
+                text = (getattr(resp, "text", None) or "").strip()
                 text = re.sub(r'^```(?:json)?\s*', '', text)
                 text = re.sub(r'\s*```$', '', text)
                 parsed = json_mod.loads(text)
                 parsed["inspected_photo_count"] = len(image_contents)
                 parsed["building_intel"] = building_intel
                 parsed["is_fallback"] = False
+                parsed["model"] = m_name
                 _forensic_vision_cache[cache_key] = parsed
                 if req.id and parsed.get("stove_type") in ("gas", "induction", "electric"):
                     try:
@@ -349,8 +365,9 @@ Return STRICT JSON only (no markdown fences) with these exact keys:
                 return {"status": "success", "vision": parsed, "cached": False}
             except Exception as e:
                 last_err = e
-                # If quota/prepayment exhausted, try fallback model
-                if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e) or "402" in str(e):
+                # If quota/availability/model-version error, try fallback model
+                err_str = str(e)
+                if any(k in err_str for k in ("RESOURCE_EXHAUSTED", "429", "402", "404", "NOT_FOUND", "503", "UNAVAILABLE")):
                     continue
                 raise e
 
@@ -515,14 +532,21 @@ async def compare_properties_ai(req: ComparePropertiesRequest):
         return {"status": "fallback", "comparison": _build_compare_fallback(props, req.personal_preferences, "No Gemini API key configured")}
 
     try:
+        import asyncio
         import json as json_mod
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        from langchain_core.messages import HumanMessage
+        from google import genai
+        from google.genai import types
+        from services.lens_rectifier import fetch_image_bytes
 
         summaries = []
-        for p in props:
+        image_tasks = []
+        image_meta = []
+
+        for idx, p in enumerate(props, start=1):
+            pid = str(p.get("id", ""))
             summaries.append({
-                "id": str(p.get("id", "")),
+                "index": idx,
+                "id": pid,
                 "title": p.get("title"),
                 "suburb": p.get("suburb"),
                 "address": p.get("address"),
@@ -537,15 +561,38 @@ async def compare_properties_ai(req: ComparePropertiesRequest):
                 "has_secure_bay": p.get("has_secure_bay"),
                 "stove_type": p.get("stove_type"),
                 "pet_friendly": p.get("pet_friendly"),
-                "description": (p.get("description") or "")[:700],
+                "dwelling_privacy": p.get("dwelling_privacy"),
+                "is_landlord_on_site": p.get("is_landlord_on_site"),
+                "description": (p.get("description") or "")[:900],
             })
+            raw_imgs = list(p.get("images") or [])
+            if not raw_imgs and p.get("image"):
+                raw_imgs = [p.get("image")]
+            clean_urls = [u for u in raw_imgs if isinstance(u, str) and u.startswith("http")][:2]
+            for img_i, u in enumerate(clean_urls, start=1):
+                image_tasks.append(asyncio.to_thread(fetch_image_bytes, u))
+                image_meta.append((idx, pid, p.get("title") or "Listing", img_i))
 
-        prompt = f"""You are an objective Cape Town rental advisor comparing {len(summaries)} shortlisted properties side-by-side.
+        photo_parts: List[Any] = []
+        if image_tasks:
+            try:
+                raw_bytes_list = await asyncio.gather(*image_tasks)
+                for (idx, pid, title_s, img_i), raw_b in zip(image_meta, raw_bytes_list):
+                    if raw_b:
+                        photo_parts.append(f"[Property #{idx} (id={pid}, {title_s}) — Photo {img_i}]")
+                        photo_parts.append(types.Part.from_bytes(data=raw_b, mime_type="image/jpeg"))
+            except Exception:
+                photo_parts = []
+
+        prompt = f"""You are a sharp, architect-trained Cape Town rental advisor comparing {len(summaries)} shortlisted properties side-by-side.
 USER WORK & LIFESTYLE PREFERENCES: {req.personal_preferences or 'General quiet, safe, good-value residential rental'}
 
-Apply our forensic guidelines:
-- Evaluate 0.5-bed / <=55 m² open-plan units strictly if user works from home full-time (no acoustic door, fridge hum, call backdrop).
-- Weigh acoustic dBA, privacy (landlord on-site vs standalone), parking security, load-shedding resilience (gas/solar), and price-per-sqm value.
+Inspect BOTH the attached property photographs (labeled by Property # and id) AND the listing metadata. Give the renter deep, candid, Chrome-Gemini-caliber architectural & lifestyle insights for EVERY property:
+- Floor echo & wall material for acoustics (e.g. hollow drywall vs solid brick/Art Deco, hard tile/wood echo vs soft surfaces, upstairs/party-wall exposure, road/bar noise).
+- Window placement, daylight & solar glare (north-facing winter warmth vs west/afternoon screen glare, mountain shadow, sightline vs overlooking neighbours).
+- Light fixtures & evening livability (warm layered downlights/sconces vs harsh single central bulb or windowless rooms).
+- WFH & desk ergonomics (where a >=1.2m desk + chair actually fits in the photos, acoustic door separation from fridge/kitchen, video-call backdrop).
+- Specific gotchas & red flags (e.g. "Landlord property on site — possible shared driveway or garden", "0.5x ultra-wide lens stretch hiding tight floor area", "Unconfirmed fibre routing", "Steep stairs / tandem bay").
 
 PROPERTIES:
 {json_mod.dumps(summaries, indent=2)}
@@ -553,39 +600,59 @@ PROPERTIES:
 Return STRICT JSON only (no markdown fences):
 {{
   "winner_id": "id of #1 recommended property",
-  "executive_verdict": "2-3 concise sentences explaining why the winner beats the others for this user's lifestyle and key trade-offs.",
+  "executive_verdict": "2-4 candid sentences explaining why the winner beats the others for this user's lifestyle, referencing visual and acoustic differences.",
   "rankings": [
     {{
       "id": "property id",
       "rank": 1,
       "score": 88,
-      "headline": "Short title",
+      "headline": "Short punchy title",
       "best_for": "Top 1-2 strengths",
       "biggest_tradeoff": "Top 1-2 compromises or risks",
-      "wfh_fit": "1 concise sentence on WFH suitability",
-      "acoustic_verdict": "1 concise sentence on noise/privacy",
-      "value_verdict": "1 concise sentence on rent vs space/amenities"
+      "photo_story": "2-3 vivid sentences describing what is actually visible in this property's photos (flooring, proportions, sightlines, finishes).",
+      "wfh_fit": "1-2 detailed sentences on desk placement, acoustic door separation, call backdrop & outlet/fibre considerations.",
+      "wall_acoustic_audit": "1-2 sentences on inferred wall construction (brick vs drywall), floor echo (tiles/hardwood), and road/neighbour noise.",
+      "window_light_audit": "1-2 sentences on window placement, daylight/sun glare angle, mountain shadow, and ventilation.",
+      "lighting_fixtures_audit": "1 concise sentence on light fixtures (warm layered vs harsh central bulb) and evening livability.",
+      "acoustic_verdict": "1 concise summary sentence on noise/privacy",
+      "value_verdict": "1 concise sentence on rent vs space/amenities",
+      "gotchas": [
+        "2 to 4 concrete gotchas / viewing red flags specific to this property (e.g. Landlord property on site — possible shared driveway)"
+      ]
     }}
   ],
   "matrix_highlights": [
     {{"category": "Overall AI Fit", "winner_id": "id", "note": "short reason"}},
     {{"category": "Monthly Value", "winner_id": "id", "note": "short reason"}},
-    {{"category": "Acoustic & Privacy", "winner_id": "id", "note": "short reason"}}
+    {{"category": "Acoustic & Privacy", "winner_id": "id", "note": "short reason"}},
+    {{"category": "Light & WFH Space", "winner_id": "id", "note": "short reason"}}
   ]
 }}"""
 
-        for m_name in ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]:
+        g_client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)),
+        )
+        contents_payload: Any = [prompt, *photo_parts] if photo_parts else prompt
+
+        for m_name in ["gemini-4-neon", "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"]:
             try:
-                llm = ChatGoogleGenerativeAI(model=m_name, api_key=api_key, temperature=0.2, request_timeout=40)
-                resp = await llm.ainvoke([HumanMessage(content=prompt)])
-                text = (resp.content if isinstance(resp.content, str) else str(resp.content)).strip()
+                resp = await asyncio.to_thread(
+                    g_client.models.generate_content,
+                    model=m_name,
+                    contents=contents_payload,
+                    config=types.GenerateContentConfig(temperature=0.25),
+                )
+                text = (getattr(resp, "text", None) or "").strip()
                 text = re.sub(r'^```(?:json)?\s*', '', text)
                 text = re.sub(r'\s*```$', '', text)
                 parsed = json_mod.loads(text)
                 parsed["is_fallback"] = False
+                parsed["model"] = m_name
                 return {"status": "success", "comparison": parsed}
             except Exception as e:
-                if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e) or "402" in str(e):
+                err_str = str(e)
+                if any(k in err_str for k in ("RESOURCE_EXHAUSTED", "429", "402", "404", "NOT_FOUND", "503", "UNAVAILABLE")):
                     continue
                 raise e
         return {"status": "fallback", "comparison": _build_compare_fallback(props, req.personal_preferences, "AI Studio prepayment credits depleted")}
@@ -661,32 +728,63 @@ async def listing_followup_chat(req: ListingChatRequest):
         }
 
         sys_prompt = (
-            "You are HomeSeek's forensic Cape Town rental advisor. Answer the user's follow-up question about this specific "
-            "property concisely (2-5 sentences or tight bullet points), grounding your answer strictly in the listing data, "
-            "location context, and forensic report below. Flag unknowns honestly and suggest what to verify at a viewing.\n\n"
+            "You are HomeSeek's architect-trained Cape Town rental advisor having a thoughtful, practical conversation with a renter. "
+            "Ground every insight in what is ACTUALLY visible in the attached listing photos, the street/location context, and the forensic report below. "
+            "Write in a warm, perceptive, human tone (never robotic or generic) using this natural structure:\n"
+            "1. Opening (1–2 sentences): Capture the real feel of the space or location right away (e.g. sightline, orientation to the road vs bay/mountain, or room proportions).\n"
+            "2. What works well here (2–3 crisp bullet points with bold lead-ins): Highlight concrete living & WFH strengths you can see or verify from the data (natural light, airflow/fans, floor layout, desk placement, acoustic buffer).\n"
+            "3. Practical things to spot-check (2–3 crisp bullet points with bold lead-ins): Flag specific things to verify in person (e.g. sun glare/monitor angle by orientation, hard-floor echo/acoustics, power outlet & fibre router routing, or peak-hour road/bar noise).\n"
+            "4. Closing question (1 natural sentence): Ask one helpful follow-up question to guide their decision (e.g. about how they plan to use the rooms or what matters most at the viewing).\n\n"
             f"PROPERTY & REPORT CONTEXT:\n{json_mod.dumps(context_obj, default=str)}"
         )
 
-        lc_msgs: List[Any] = [SystemMessage(content=sys_prompt)]
+        import asyncio
+        from google import genai
+        from google.genai import types
+        from services.lens_rectifier import fetch_image_bytes
+
+        client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)),
+        )
+        history_lines = []
         for m in (req.messages or [])[-10:]:
             txt = (m.content or "").strip()
             if not txt:
                 continue
-            if m.role == "assistant":
-                lc_msgs.append(AIMessage(content=txt))
-            else:
-                lc_msgs.append(HumanMessage(content=txt))
-        lc_msgs.append(HumanMessage(content=question))
+            speaker = "Assistant" if m.role == "assistant" else "User"
+            history_lines.append(f"{speaker}: {txt}")
+        history_block = ("\n\nCONVERSATION SO FAR:\n" + "\n".join(history_lines)) if history_lines else ""
+        full_prompt = f"{sys_prompt}{history_block}\n\nUser Question: {question}"
 
-        for m_name in ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]:
+        # Attach up to 3 listing photos so Gemini can inspect actual rooms, sightlines & finishes
+        photo_urls = [u for u in (prop.get("images") or []) if isinstance(u, str) and u.startswith("http")][:3]
+        photo_parts = []
+        if photo_urls:
             try:
-                llm = ChatGoogleGenerativeAI(model=m_name, api_key=api_key, temperature=0.3, request_timeout=35)
-                resp = await llm.ainvoke(lc_msgs)
-                reply = (resp.content if isinstance(resp.content, str) else str(resp.content)).strip()
+                raw_imgs = await asyncio.gather(*[asyncio.to_thread(fetch_image_bytes, u) for u in photo_urls])
+                for raw_b in raw_imgs:
+                    if raw_b:
+                        photo_parts.append(types.Part.from_bytes(data=raw_b, mime_type="image/jpeg"))
+            except Exception:
+                photo_parts = []
+
+        contents_payload: Any = [full_prompt, *photo_parts] if photo_parts else full_prompt
+
+        for m_name in ["gemini-4-neon", "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"]:
+            try:
+                resp = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=m_name,
+                    contents=contents_payload,
+                    config=types.GenerateContentConfig(temperature=0.35),
+                )
+                reply = (getattr(resp, "text", None) or "").strip()
                 if reply:
-                    return {"status": "success", "reply": reply, "is_fallback": False}
+                    return {"status": "success", "reply": reply, "is_fallback": False, "model": m_name}
             except Exception as e:
-                if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e) or "402" in str(e):
+                err_str = str(e)
+                if any(k in err_str for k in ("RESOURCE_EXHAUSTED", "429", "402", "404", "NOT_FOUND", "503", "UNAVAILABLE")):
                     continue
                 raise e
 

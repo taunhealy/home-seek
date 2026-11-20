@@ -452,7 +452,7 @@ class AIScoutEngine:
         if not self.api_key:
             return None
         from langchain_google_genai import ChatGoogleGenerativeAI
-        candidate_models = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
+        candidate_models = ["gemini-3-flash-preview", "gemini-4-neon", "gemini-3.8-flash", "gemini-flash-latest"]
         for m in candidate_models:
             try:
                 return ChatGoogleGenerativeAI(
